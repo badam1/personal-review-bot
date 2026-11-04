@@ -1,4 +1,4 @@
-# personal-review-bot
+# <img src="internal/web/icon.svg" alt="" width="40" align="top"> personal-review-bot
 
 [![CI](https://github.com/badam1/personal-review-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/badam1/personal-review-bot/actions/workflows/ci.yml)
 

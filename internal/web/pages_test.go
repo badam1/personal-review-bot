@@ -372,3 +372,23 @@ func TestRetry(t *testing.T) {
 		t.Error("nothing failed is left, the section should go")
 	}
 }
+
+// Every page links the icon as its favicon, both files are served, and the CSP lets the browser load them.
+func TestFavicon(t *testing.T) {
+	s := newSite(t)
+	for _, path := range []string{"/", "/history", "/stats"} {
+		_, page := s.get(path)
+		want(t, page, `<link rel="icon" href="/favicon.png" sizes="32x32" type="image/png">`,
+			`<link rel="icon" href="/icon.svg" type="image/svg+xml">`)
+	}
+	for path, typ := range map[string]string{"/icon.svg": "image/svg+xml", "/favicon.png": "image/png"} {
+		rec := httptest.NewRecorder()
+		s.h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://localhost:12346"+path, nil))
+		if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), typ) || rec.Body.Len() == 0 {
+			t.Errorf("%s: %d %q, %d bytes", path, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
+		}
+		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "img-src 'self'") {
+			t.Errorf("CSP doesn't allow the icon: %q", csp)
+		}
+	}
+}
