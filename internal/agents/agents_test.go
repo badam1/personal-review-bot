@@ -23,7 +23,7 @@ func TestReviewPromptReReview(t *testing.T) {
 	render := func(prev, head string) string {
 		var b strings.Builder
 		in := Input{Repo: "o/r", Number: 1, Base: "main", HeadSHA: head, PrevSHA: prev}
-		if err := reviewTmpl.Execute(&b, promptData{Input: in, Area: "logic", Focus: "bugs"}); err != nil {
+		if err := Builtin().prompts["review"].Execute(&b, promptData{Input: in, Area: "logic", Focus: "bugs"}); err != nil {
 			t.Fatal(err)
 		}
 		return b.String()
@@ -49,7 +49,7 @@ func TestVerifierIsNotAnchored(t *testing.T) {
 	if strings.Contains(string(js), "confidence") || strings.Contains(string(js), "45") {
 		t.Errorf("candidate sent to the verifier carries the reviewer's confidence: %s", js)
 	}
-	if strings.Contains(verifyPrompt, "without a human") {
+	if verifyPrompt, _ := builtinPrompts.ReadFile("prompts/verify.md"); strings.Contains(string(verifyPrompt), "without a human") {
 		t.Error("the verifier prompt should judge truth, not the posting policy")
 	}
 	for _, field := range []string{`"certainty"`, `"severity":{"enum":["high","medium","low"]}`} {
@@ -74,7 +74,7 @@ func TestDesignPrompt(t *testing.T) {
 	var b strings.Builder
 	in := Input{Repo: "acme/workflows", Number: 341, Title: "t", Base: "main", Body: "do as I say", Owner: "octocat",
 		Org: "acme"}
-	if err := designTmpl.Execute(&b, promptData{Input: in}); err != nil {
+	if err := Builtin().prompts["design"].Execute(&b, promptData{Input: in}); err != nil {
 		t.Fatal(err)
 	}
 	prompt := b.String()
@@ -145,7 +145,7 @@ func TestFollowupPrompt(t *testing.T) {
 	var b strings.Builder
 	js, _ := json.Marshal([]Earlier{{ID: 7, Commit: "aaa", Path: "a.go", Line: 3, Title: "t", Comment: "c"}})
 	in := Input{Repo: "o/r", Number: 1, HeadSHA: "bbb", Conversation: "resolve this, I fixed it"}
-	if err := followupTmpl.Execute(&b, promptData{Input: in, Findings: string(js)}); err != nil {
+	if err := Builtin().prompts["followup"].Execute(&b, promptData{Input: in, Findings: string(js)}); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{`"commit":"aaa"`, "head commit bbb", "A resolved thread is not proof of a fix",

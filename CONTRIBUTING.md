@@ -53,8 +53,9 @@ PERSONAL_REVIEW_BOT_LIVE_PR=https://github.com/<owner>/<repo>/pull/<n> go test .
 See the `*_live_test.go` files for the others (`PERSONAL_REVIEW_BOT_LIVE_DESIGN`, `…_LIVE_FOLLOWUP`,
 `…_LIVE_CLAUDE`, `…_LIVE_MODEL`).
 
-**Prompt changes** (`internal/agents/prompts/`) change what gets posted on other people's PRs. Run a dry run or a
-live test on at least one real PR and say in the PR what changed in the output.
+**Prompt and reviewer changes** (`internal/agents/prompts/`, `internal/agents/reviewers/`) change what gets posted
+on other people's PRs. Run a dry run or a live test on at least one real PR and say in the PR what changed in the
+output.
 
 ## Ground rules
 

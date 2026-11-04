@@ -5,6 +5,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,6 +55,12 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		}
 	}()
 
+	// Read on every review, so edits to the reviewers, prompts and context apply without a restart.
+	kit, err := agents.Load(d.Cfg.ConfigDir)
+	if err != nil {
+		return fail(fmt.Errorf("reviewers and prompts (check with `personal-review-bot agents`): %w", err))
+	}
+
 	stage("fetching PR")
 	pr, err := d.GH.GetPR(r.Repo, r.Number)
 	if err != nil {
@@ -67,7 +74,10 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	if err != nil {
 		return fail(fmt.Errorf("fetch diff: %w", err))
 	}
-	plan := triage.Make(pr, files)
+	plan := triage.Make(pr, files, kit.Reviewers)
+	if len(plan.Agents) == 0 {
+		return fail(errors.New("no reviewer runs on this PR: none is enabled for these files (see `personal-review-bot agents`)"))
+	}
 	if u, ok := usageNow(ctx, d, stage); ok {
 		used, window := u.Peak(time.Now())
 		plan = plan.Within(used, window, float64(d.Cfg.SaveAt)/100, float64(d.Cfg.MinAt)/100)
@@ -114,7 +124,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	if withFollowup {
 		also += fmt.Sprintf(" + follow-up on %d earlier (%s)", len(earlier), plan.FollowupModel)
 	}
-	stage("reviewing: %s (%s)%s", strings.Join(plan.Agents, ", "), plan.AgentModel, also)
+	stage("reviewing: %s%s", byModel(plan), also)
 	type result struct {
 		agent    string
 		findings []agents.Finding
@@ -124,13 +134,14 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	results := make(chan result, len(plan.Agents))
 	var wg sync.WaitGroup
 	for _, a := range plan.Agents {
+		rev, _ := kit.Reviewer(a)
 		wg.Add(1)
-		go func(a string) {
+		go func() {
 			defer wg.Done()
-			fs, run, err := agents.Review(ctx, a, plan.AgentModel, in, d.Cfg.AgentTimeout)
+			fs, run, err := kit.Review(ctx, rev, plan.ModelFor(a), in, d.Cfg.AgentTimeout)
 			_ = d.Store.AddCost(id, run.Cost)
 			results <- result{a, fs, run, err}
-		}(a)
+		}()
 	}
 	var concerns []agents.Concern
 	var designRun agents.Run
@@ -139,7 +150,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			concerns, designRun, designErr = agents.Design(ctx, plan.DesignModel, in, d.Cfg.AgentTimeout)
+			concerns, designRun, designErr = kit.Design(ctx, plan.DesignModel, in, d.Cfg.AgentTimeout)
 			_ = d.Store.AddCost(id, designRun.Cost)
 		}()
 	}
@@ -150,7 +161,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			followups, followupRun, followupErr = agents.CheckEarlier(ctx, plan.FollowupModel, in, earlier, d.Cfg.AgentTimeout)
+			followups, followupRun, followupErr = kit.CheckEarlier(ctx, plan.FollowupModel, in, earlier, d.Cfg.AgentTimeout)
 			_ = d.Store.AddCost(id, followupRun.Cost)
 		}()
 	}
@@ -200,7 +211,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	var cands []agents.Candidate
 	var failed []string
 	for res := range results {
-		saveRun(d, id, res.agent, plan.AgentModel, len(res.findings), res.run, res.err)
+		saveRun(d, id, res.agent, plan.ModelFor(res.agent), len(res.findings), res.run, res.err)
 		if res.err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %v", res.agent, res.err))
 			continue
@@ -223,9 +234,9 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	verdicts := map[int64]agents.Verdict{}
 	if len(cands) > 0 {
 		stage("verifying %d finding(s) (%s)", len(cands), plan.VerifierModel)
-		vs, sum, run, err := agents.Verify(ctx, plan.VerifierModel, in, cands, d.Cfg.AgentTimeout)
+		vs, sum, run, err := kit.Verify(ctx, plan.VerifierModel, in, cands, d.Cfg.AgentTimeout)
 		_ = d.Store.AddCost(id, run.Cost)
-		saveRun(d, id, "verifier", plan.VerifierModel, len(vs), run, err)
+		saveRun(d, id, agents.VerifierAgent, plan.VerifierModel, len(vs), run, err)
 		if err != nil {
 			d.Log("%s: verifier failed, everything goes to the confirmation page: %v", tag, err)
 		}
@@ -334,6 +345,24 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	}
 	d.Log("%s: done: %s", tag, decision)
 	return d.Store.Finish(id, store.Done, decision, summary, strings.Join(failed, "; "))
+}
+
+// byModel lists the reviewers by the model they run on, e.g. "logic, go-tests (haiku), security (sonnet)".
+func byModel(p triage.Plan) string {
+	var models []string
+	names := map[string][]string{}
+	for _, a := range p.Agents {
+		m := p.ModelFor(a)
+		if names[m] == nil {
+			models = append(models, m)
+		}
+		names[m] = append(names[m], a)
+	}
+	groups := make([]string, len(models))
+	for i, m := range models {
+		groups[i] = fmt.Sprintf("%s (%s)", strings.Join(names[m], ", "), m)
+	}
+	return strings.Join(groups, ", ")
 }
 
 // relatedOrg is where reviewers look for the repos a PR affects: the configured org, else the PR repo's owner.

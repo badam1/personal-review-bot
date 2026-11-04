@@ -186,3 +186,12 @@ func TestUnsettled(t *testing.T) {
 		t.Errorf("prior = %q", prior)
 	}
 }
+
+// The progress line says which model each reviewer runs on, without suggesting an unpinned one chose its own.
+func TestByModel(t *testing.T) {
+	p := triage.Plan{AgentModel: "haiku", Agents: []string{"logic", "security", "go-tests"},
+		Pinned: map[string]string{"security": "sonnet"}}
+	if got := byModel(p); got != "logic, go-tests (haiku), security (sonnet)" {
+		t.Errorf("byModel = %q", got)
+	}
+}

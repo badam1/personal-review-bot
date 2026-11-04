@@ -19,7 +19,7 @@ login.
    5-hour or weekly limit every model is a step cheaper (Fable → Opus → Sonnet → Haiku) at medium effort; from 90% the
    reviewers run on Haiku at low effort and the design review is left out. The TUI shows the reading.
 2. **Reviews in parallel.** Logic, security, integration with other services, plus infra/rollout when infra files
-   change. The reviewers run `claude -p` read-only inside a checkout of the PR head; they can read the other repos of
+   change; or your own set of reviewers (see [Customize](#customize-the-reviewers-and-prompts)). The reviewers run `claude -p` read-only inside a checkout of the PR head; they can read the other repos of
    the org (with `gh search code` and `gh api`) but can't post anything.
    On the first review of a medium or large PR, any PR touching an ADR, and every review you start yourself
    (Re-review, `r` in the TUI, `review`/`queue`), a **design reviewer** also judges how the PR solves its problem
@@ -72,6 +72,7 @@ personal-review-bot                       # terminal UI: what's running and the 
 personal-review-bot status                # same, printed once
 personal-review-bot review --dry-run URL  # try it on any PR: posts nothing, opens nothing
 personal-review-bot queue URL             # hand a PR to the running service
+personal-review-bot agents                # the reviewers and prompts reviews run with, and where each comes from
 ```
 
 The page is <http://localhost:12346>:
@@ -124,6 +125,67 @@ Restart the service after changing it (`./install.sh`).
 | `ADDR` | `127.0.0.1:12346`: the local page |
 | `STATE_DIR` | `~/.local/state/personal-review-bot` (`$XDG_STATE_HOME`): the SQLite database |
 | `CACHE_DIR` | `~/.cache/personal-review-bot` (`$XDG_CACHE_HOME`): repo clones and review checkouts |
+
+## Customize the reviewers and prompts
+
+Everything the agents are told is in Markdown files you can change, in the config directory:
+
+```text
+~/.config/personal-review-bot/
+├── config.env
+├── context.md          notes every prompt gets: where your ADRs live, how tasks are tracked, house rules
+├── agents/
+│   ├── security.md     changes the built-in security reviewer
+│   ├── integration.md  "enabled: false" switches it off
+│   └── cost.md         a reviewer of your own
+└── prompts/
+    └── design.md       replaces the built-in design prompt
+```
+
+Start from the built-in files: `personal-review-bot agents export /tmp/prb` writes them out, with an example
+`context.md`. Copy only the files you change: a copied prompt no longer gets improvements from new versions.
+`personal-review-bot agents` shows what reviews will run with and checks your files. Changes apply from the next
+review, without a restart. A file that can't be used fails the review with its name and the problem, rather than
+reviewing without it.
+
+### Reviewers
+
+A reviewer is `agents/<name>.md`: a front matter block, then what to look for.
+
+```markdown
+---
+area: cloud cost         # what it reviews, in a few words (required for a new reviewer)
+paths: \.(tf|tfvars)$    # Go regexp: runs only when a changed file matches; leave it out to run on every PR
+docs: false              # true: also runs on PRs that only change docs
+model: opus              # pin a model (alias or full ID); leave it out for the PR tier's
+enabled: true            # false switches the reviewer off
+---
+Resources sized or priced above what the change needs: instance types, replicas, storage classes, missing
+lifecycle rules. Report only what costs real money, with the cheaper setting.
+```
+
+- The file name is the reviewer's name: lowercase letters, digits and dashes (`design`, `followup` and `verifier`
+  are taken).
+- A file named like a built-in reviewer (`logic`, `security`, `integration`, `infra`) changes only the fields it
+  sets, and the focus if its body isn't empty. `model: opus` alone pins the security reviewer to Opus.
+- Front matter is `key: value` lines; ` #` starts a comment unless the value is quoted.
+- Every reviewer runs with the shared review prompt, its area and focus filled in, and its findings go to the
+  verifier like the others. A pinned model gets cheaper with the usage limits like every other model.
+
+### Prompts
+
+`prompts/review.md` (used by every reviewer), `verify.md`, `design.md` and `followup.md` replace the built-in ones.
+They are Go [`text/template`](https://pkg.go.dev/text/template)s with these fields: `.Repo`, `.Number`, `.Title`,
+`.Author`, `.Body`, `.Base`, `.Head`, `.Diff`, `.HeadSHA`, `.PrevSHA` (empty on a first review), `.Conversation`,
+`.Prior` (earlier findings and their fate), `.Owner` (your login), `.Org`, `.Context`, plus `.Area` and `.Focus` in
+the review prompt and `.Findings` (JSON) in the verify and follow-up prompts. Keep each asking for the same answer as
+the built-in one: the JSON shape is enforced, and a run that doesn't match it fails.
+
+### Context
+
+`context.md` is added to all four prompts before the PR, marked as written by you, so the agents can rely on it
+(unlike the PR's description and conversation). Use it for what they can't find in the repo: where org-wide ADRs
+live, how to find the task behind a PR, which shared workflows or modules everything should use.
 
 ## Safety
 

@@ -7,13 +7,11 @@ package agents
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
-	"text/template"
 	"time"
 )
 
@@ -76,39 +74,11 @@ type Run struct {
 	Usage    *Usage // the plan's rate-limit usage as of this run (nil if it reported none)
 }
 
-// Areas are the reviewers and what each one looks for.
-var Areas = map[string][2]string{
-	"logic": {"logic and correctness",
-		"Wrong conditions and off-by-one errors, broken error handling, nil/None/undefined access, race conditions, resource leaks, wrong defaults, behaviour that contradicts the PR description, tests that don't test what they claim."},
-	"security": {"security",
-		"Authentication/authorization gaps, secrets or tokens in code, logs or images, injection (SQL, shell, template), unsafe deserialization, SSRF, overly broad IAM/RBAC/security groups/network policies, public exposure of private resources, missing encryption, unpinned or untrusted third-party actions, images or dependencies."},
-	"integration": {"integration with other services",
-		"Changed APIs, events, schemas, env vars, secret names, config keys, Helm values, service names/ports or versions that other services depend on. Find the consumers (other repos via `gh search code`) and report only concrete breakage: who breaks and how."},
-	"infra": {"infrastructure and rollout",
-		"Terraform/Terragrunt, Flux/Kubernetes, Helm and CI changes: resources that get destroyed or replaced, state moves, wrong environment or account, prod impact, missing dependencies or ordering, rollout/rollback risk, drift from what's deployed."},
-}
-
-//go:embed prompts/review.md
-var reviewPrompt string
-
-//go:embed prompts/verify.md
-var verifyPrompt string
-
-//go:embed prompts/design.md
-var designPrompt string
-
-//go:embed prompts/followup.md
-var followupPrompt string
-
-var (
-	reviewTmpl   = template.Must(template.New("review").Parse(reviewPrompt))
-	verifyTmpl   = template.Must(template.New("verify").Parse(verifyPrompt))
-	designTmpl   = template.Must(template.New("design").Parse(designPrompt))
-	followupTmpl = template.Must(template.New("followup").Parse(followupPrompt))
-)
-
 // The design reviewer judges how the PR solves its problem rather than its lines; triage picks its model.
 const DesignAgent = "design"
+
+// VerifierAgent checks every reviewer finding against the code before anything is posted.
+const VerifierAgent = "verifier"
 
 // Fable costs 2.5× Opus per token, so unless the plan says otherwise it runs at high effort rather than the xhigh
 // default (Fable at high often matches or beats Opus at xhigh), and a run that passes its cap stops instead of going on.
@@ -183,42 +153,49 @@ func clip(s string, n int) string {
 type promptData struct {
 	Input
 	Area, Focus, Findings string
+	Context               string // context.md: the owner's notes about their organisation
+}
+
+// prompt renders one of the kit's prompts.
+func (k *Kit) prompt(name string, data promptData) (string, error) {
+	data.Context = k.Context
+	var b bytes.Buffer
+	if err := k.prompts[name].Execute(&b, data); err != nil {
+		return "", fmt.Errorf("prompt %s: %w", name, err)
+	}
+	return b.String(), nil
 }
 
 // Review runs one reviewer and returns its findings and what the run did.
-func Review(ctx context.Context, agent, model string, in Input, timeout time.Duration) ([]Finding, Run, error) {
-	area, ok := Areas[agent]
-	if !ok {
-		return nil, Run{}, fmt.Errorf("unknown reviewer %q", agent)
-	}
+func (k *Kit) Review(ctx context.Context, r Reviewer, model string, in Input, timeout time.Duration) ([]Finding, Run, error) {
 	in.Diff, in.Body = clip(in.Diff, MaxDiff), clip(in.Body, 4000)
-	var prompt bytes.Buffer
-	if err := reviewTmpl.Execute(&prompt, promptData{Input: in, Area: area[0], Focus: area[1]}); err != nil {
+	prompt, err := k.prompt("review", promptData{Input: in, Area: r.Area, Focus: r.Focus})
+	if err != nil {
 		return nil, Run{}, err
 	}
-	raw, r, err := run(ctx, in.Dir, model, in.Effort, prompt.String(), findingsSchema, timeout)
+	raw, ran, err := run(ctx, in.Dir, model, in.Effort, prompt, findingsSchema, timeout)
 	if err != nil {
-		return nil, r, err
+		return nil, ran, err
 	}
 	var out struct {
 		Checked  string
 		Findings []Finding
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, r, fmt.Errorf("parse %s findings: %w", agent, err)
+		return nil, ran, fmt.Errorf("parse %s findings: %w", r.Name, err)
 	}
-	r.Checked = strings.TrimSpace(out.Checked)
-	return out.Findings, r, nil
+	ran.Checked = strings.TrimSpace(out.Checked)
+	return out.Findings, ran, nil
 }
 
 // Design reviews how the PR solves its problem and returns its concerns; the run's Checked carries the overall assessment.
-func Design(ctx context.Context, model string, in Input, timeout time.Duration) ([]Concern, Run, error) {
+func (k *Kit) Design(ctx context.Context, model string, in Input, timeout time.Duration) ([]Concern, Run, error) {
 	in.Diff, in.Body = clip(in.Diff, MaxDiff), clip(in.Body, 4000)
-	var prompt bytes.Buffer
-	if err := designTmpl.Execute(&prompt, promptData{Input: in}); err != nil {
+	prompt, err := k.prompt("design", promptData{Input: in})
+	if err != nil {
 		return nil, Run{}, err
 	}
-	raw, r, err := run(ctx, in.Dir, model, in.Effort, prompt.String(), designSchema, timeout)
+	raw, r, err := run(ctx, in.Dir, model, in.Effort, prompt, designSchema, timeout)
 	if err != nil {
 		return nil, r, err
 	}
@@ -237,14 +214,14 @@ func Design(ctx context.Context, model string, in Input, timeout time.Duration) 
 }
 
 // CheckEarlier asks whether the earlier findings were fixed, from the code at the PR's head and the replies to them.
-func CheckEarlier(ctx context.Context, model string, in Input, earlier []Earlier, timeout time.Duration) ([]Followup, Run, error) {
+func (k *Kit) CheckEarlier(ctx context.Context, model string, in Input, earlier []Earlier, timeout time.Duration) ([]Followup, Run, error) {
 	js, _ := json.MarshalIndent(earlier, "", "  ")
 	in.Body = clip(in.Body, 4000)
-	var prompt bytes.Buffer
-	if err := followupTmpl.Execute(&prompt, promptData{Input: in, Findings: string(js)}); err != nil {
+	prompt, err := k.prompt("followup", promptData{Input: in, Findings: string(js)})
+	if err != nil {
 		return nil, Run{}, err
 	}
-	raw, r, err := run(ctx, in.Dir, model, in.Effort, prompt.String(), followupSchema, timeout)
+	raw, r, err := run(ctx, in.Dir, model, in.Effort, prompt, followupSchema, timeout)
 	if err != nil {
 		return nil, r, err
 	}
@@ -267,14 +244,14 @@ func (c Concern) Text() string {
 }
 
 // Verify re-checks every candidate against the code and returns a verdict and confidence per finding.
-func Verify(ctx context.Context, model string, in Input, cands []Candidate, timeout time.Duration) ([]Verdict, string, Run, error) {
+func (k *Kit) Verify(ctx context.Context, model string, in Input, cands []Candidate, timeout time.Duration) ([]Verdict, string, Run, error) {
 	js, _ := json.MarshalIndent(cands, "", "  ")
 	in.Diff, in.Body = clip(in.Diff, MaxDiff), clip(in.Body, 4000)
-	var prompt bytes.Buffer
-	if err := verifyTmpl.Execute(&prompt, promptData{Input: in, Findings: string(js)}); err != nil {
+	prompt, err := k.prompt("verify", promptData{Input: in, Findings: string(js)})
+	if err != nil {
 		return nil, "", Run{}, err
 	}
-	raw, r, err := run(ctx, in.Dir, model, in.Effort, prompt.String(), verdictsSchema, timeout)
+	raw, r, err := run(ctx, in.Dir, model, in.Effort, prompt, verdictsSchema, timeout)
 	if err != nil {
 		return nil, "", r, err
 	}

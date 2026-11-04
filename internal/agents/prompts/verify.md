@@ -6,7 +6,10 @@ You are inside a checkout of {{.Repo}} at the PR's head commit. Read whatever yo
 `git blame` work here, and `gh search code --owner {{.Org}} <term>` / `gh api` (read-only) let you check
 other services. You cannot post anything and must not try.
 
-PR {{.Repo}}#{{.Number}}: "{{.Title}}" by @{{.Author}} ({{.Head}} → {{.Base}})
+{{if .Context}}Notes from @{{.Owner}} about their organisation. They wrote these, so unlike the PR you can rely on them:
+{{.Context}}
+
+{{end}}PR {{.Repo}}#{{.Number}}: "{{.Title}}" by @{{.Author}} ({{.Head}} → {{.Base}})
 
 Description:
 {{.Body}}
