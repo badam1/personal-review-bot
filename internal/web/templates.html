@@ -1,6 +1,7 @@
 {{define "head"}}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}}</title>{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}
+<title>{{.Title}}</title>
+<link rel="icon" href="/favicon.png" sizes="32x32" type="image/png"><link rel="icon" href="/icon.svg" type="image/svg+xml">{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}
 <style>
   /* Catppuccin Mocha */
   :root { --base:#1e1e2e; --mantle:#181825; --s0:#313244; --s1:#45475a; --text:#cdd6f4; --sub:#a6adc8;

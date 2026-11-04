@@ -22,7 +22,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/store"
 )
 
-//go:embed templates.html select-all.js running.js
+//go:embed templates.html select-all.js running.js icon.svg favicon.png
 var files embed.FS
 
 var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
@@ -90,8 +90,8 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /r/{id}", s.review)
 	mux.HandleFunc("POST /r/{id}", s.act)
 	mux.HandleFunc("GET /active.json", s.active)
-	for _, js := range []string{"select-all.js", "running.js"} {
-		mux.HandleFunc("GET /"+js, func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, files, js) })
+	for _, name := range []string{"select-all.js", "running.js", "icon.svg", "favicon.png"} {
+		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, files, name) })
 	}
 	return mux
 }
@@ -114,8 +114,8 @@ func (s *server) guard(next http.Handler) http.Handler {
 		}
 		h := w.Header()
 		// script-src 'self' allows only the embedded scripts; inline scripts stay blocked. connect-src 'self' lets
-		// running.js read /active.json.
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+		// running.js read /active.json; img-src 'self' the favicon.
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("X-Frame-Options", "DENY")
 		// same-origin, not no-referrer: with no-referrer browsers send "Origin: null" on the page's own form posts,
 		// which the origin check above (rightly) refuses. Links out to GitHub still get no referrer.
