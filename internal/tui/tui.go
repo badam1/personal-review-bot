@@ -39,6 +39,8 @@ type snapshot struct {
 	lastPoll       time.Time
 	usage          agents.Usage
 	hasUsage       bool
+	spentToday     float64        // on reviews since midnight, dry runs left out (as on the stats page)
+	spentWeek      float64        // in the last 7 days
 	update         update.Release // a newer release ("" Version: none)
 	updateState    string         // what an update under way is doing
 	err            error
@@ -52,6 +54,13 @@ func load(st *store.Store) snapshot {
 	}
 	s.lastPoll, _ = time.Parse(time.RFC3339, st.Meta("last_poll"))
 	s.usage, s.hasUsage = pipeline.LoadUsage(st)
+	now := time.Now()
+	if t, err := st.Totals(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())); err == nil {
+		s.spentToday = t.CostUSD
+	}
+	if t, err := st.Totals(now.AddDate(0, 0, -7)); err == nil {
+		s.spentWeek = t.CostUSD
+	}
 	s.update, _ = update.Available(update.Load(st), version.String())
 	s.updateState = update.State(st)
 	return s
@@ -157,6 +166,16 @@ func queue(st *store.Store, r store.Review) string {
 
 func (m model) View() string { return render(m.cfg, m.snap, m.cursor, m.msg, true, m.width, m.height) }
 
+func money(usd float64) string { return fmt.Sprintf("$%.2f", usd) }
+
+// cost is a review's price for its column: "–" when it spent nothing (skipped, or failed before any Claude run).
+func cost(usd float64) string {
+	if usd < 0.005 {
+		return "–"
+	}
+	return money(usd)
+}
+
 func trunc(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -219,6 +238,7 @@ func header(cfg config.Config, s snapshot, interactive bool, width, height int) 
 	}
 	lines := []string{titleStyle.Render(title) + " " + dim.Render(version.String()), daemon,
 		dim.Render(fmt.Sprintf("auto-post ≥ %d%% · %s+ · %s", cfg.Threshold, cfg.AutoSeverity, cfg.WebURL()))}
+	lines = append(lines, dim.Render(fmt.Sprintf("spend: today %s · 7 days %s", money(s.spentToday), money(s.spentWeek))))
 	if s.hasUsage {
 		lines = append(lines, strings.TrimSuffix(usageLine(cfg, s.usage, time.Now()), "\n"))
 	}
@@ -252,14 +272,17 @@ func render(cfg config.Config, s snapshot, cursor int, msg string, interactive b
 		if it := web.IterationLabel(r); it != "" {
 			elapsed += " · " + it
 		}
+		if r.CostUSD > 0 {
+			elapsed += " · " + money(r.CostUSD) + " so far"
+		}
 		fmt.Fprintf(&b, "  %s %s %s\n", runStyle.Render(web.StatusLabel(r)),
 			fmt.Sprintf("%s#%d %s", short(r.Repo), r.Number, trunc(r.Title, 50)), dim.Render(r.Tier+elapsed))
 	}
 
 	b.WriteString("\n" + headStyle.Render("LAST 10") + "\n")
 	titleW := 42
-	if width > 140 {
-		titleW = width - 98
+	if width > 148 {
+		titleW = width - 106
 	}
 	for i, r := range s.recent {
 		status := web.StatusLabel(r)
@@ -282,9 +305,9 @@ func render(cfg config.Config, s snapshot, cursor int, msg string, interactive b
 		if r.Reran() {
 			pr += " · " + web.Ordinal(r.Iteration)
 		}
-		line := fmt.Sprintf("%-10s %-26s %-*s %-16s %-14s %s %s",
+		line := fmt.Sprintf("%-10s %-26s %-*s %-16s %-14s %s %7s %s",
 			agoShort(r.CreatedAt), trunc(pr, 26), titleW, trunc(r.Title, titleW),
-			trunc("@"+r.Author, 16), status, dry, dim.Render(trunc(r.Decision, 44)))
+			trunc("@"+r.Author, 16), status, dry, cost(r.CostUSD), dim.Render(trunc(r.Decision, 44)))
 		if interactive && i == cursor {
 			line = selStyle.Render(line)
 		}
