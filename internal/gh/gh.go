@@ -400,3 +400,129 @@ func (c *Client) Download(assetURL string, w io.Writer) error {
 	_, err = io.Copy(w, resp.Body)
 	return err
 }
+
+// Thread is one inline review thread on a PR, with its comments oldest first.
+type Thread struct {
+	ID           string // GraphQL node ID, to reply to the thread or reopen it
+	Resolved     bool
+	Path         string
+	Line         int // on the PR's head; 0 when that line no longer exists
+	OriginalLine int // on the commit the thread was started on
+	Comments     []ThreadComment
+}
+
+type ThreadComment struct {
+	Author    string
+	Body      string
+	CreatedAt time.Time
+}
+
+// ReviewThreads returns the PR's inline review threads (the latest 100, each with its first 50 comments).
+func (c *Client) ReviewThreads(repo string, number int) ([]Thread, error) {
+	owner, name, _ := strings.Cut(repo, "/")
+	const query = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
+	  pullRequest(number: $number) { reviewThreads(last: 100) { nodes { id isResolved path line originalLine
+	    comments(first: 50) { nodes { author { login } body createdAt } } } } } } }`
+	var resp struct {
+		Repository struct {
+			PullRequest struct {
+				ReviewThreads struct {
+					Nodes []struct {
+						ID           string `json:"id"`
+						IsResolved   bool   `json:"isResolved"`
+						Path         string `json:"path"`
+						Line         int    `json:"line"`
+						OriginalLine int    `json:"originalLine"`
+						Comments     struct {
+							Nodes []struct {
+								Author    struct{ Login string } `json:"author"`
+								Body      string                 `json:"body"`
+								CreatedAt time.Time              `json:"createdAt"`
+							}
+						} `json:"comments"`
+					}
+				} `json:"reviewThreads"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	}
+	if err := c.gql.Do(query, map[string]any{"owner": owner, "name": name, "number": number}, &resp); err != nil {
+		return nil, err
+	}
+	var out []Thread
+	for _, n := range resp.Repository.PullRequest.ReviewThreads.Nodes {
+		t := Thread{ID: n.ID, Resolved: n.IsResolved, Path: n.Path, Line: n.Line, OriginalLine: n.OriginalLine}
+		for _, cm := range n.Comments.Nodes {
+			t.Comments = append(t.Comments, ThreadComment{Author: cm.Author.Login, Body: cm.Body, CreatedAt: cm.CreatedAt})
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+// Reply is a comment posted as a reply in an existing review thread.
+type Reply struct {
+	ThreadID string
+	Body     string
+	Reopen   bool // the thread is resolved: unresolve it, so the reply is seen
+}
+
+// PostReviewWithReplies submits one review that also replies in existing threads, so the author gets one
+// notification. The REST API can't reply within a review, so it starts a pending review with the new comments, adds
+// the replies to it through GraphQL, and submits it; a pending review left by a failure is deleted. Threads to reopen
+// are unresolved after the review is posted; failing that is reported with the review's URL, which is then posted.
+func (c *Client) PostReviewWithReplies(repo string, number int, commitSHA, event, body string, comments []Comment,
+	replies []Reply) (string, error) {
+	if len(replies) == 0 {
+		return c.PostReview(repo, number, commitSHA, event, body, comments)
+	}
+	if comments == nil {
+		comments = []Comment{}
+	}
+	payload, err := json.Marshal(map[string]any{"commit_id": commitSHA, "comments": comments}) // no event: pending
+	if err != nil {
+		return "", err
+	}
+	var pending struct {
+		ID     int64  `json:"id"`
+		NodeID string `json:"node_id"`
+	}
+	reviews := fmt.Sprintf("repos/%s/pulls/%d/reviews", repo, number)
+	if err := c.rest.Post(reviews, bytes.NewReader(payload), &pending); err != nil {
+		return "", fmt.Errorf("start the review: %w", err)
+	}
+	discard := func(err error) (string, error) {
+		_ = c.rest.Delete(fmt.Sprintf("%s/%d", reviews, pending.ID), nil)
+		return "", err
+	}
+	const reply = `mutation($review: ID!, $thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input:
+	  {pullRequestReviewId: $review, pullRequestReviewThreadId: $thread, body: $body}) { comment { id } } }`
+	for _, r := range replies {
+		vars := map[string]any{"review": pending.NodeID, "thread": r.ThreadID, "body": r.Body}
+		if err := c.gql.Do(reply, vars, &struct{}{}); err != nil {
+			return discard(fmt.Errorf("reply in a thread: %w", err))
+		}
+	}
+	payload, err = json.Marshal(map[string]any{"event": event, "body": body})
+	if err != nil {
+		return discard(err)
+	}
+	var out struct {
+		HTMLURL string `json:"html_url"`
+	}
+	if err := c.rest.Post(fmt.Sprintf("%s/%d/events", reviews, pending.ID), bytes.NewReader(payload), &out); err != nil {
+		return discard(fmt.Errorf("submit the review: %w", err))
+	}
+	const reopen = `mutation($thread: ID!) { unresolveReviewThread(input: {threadId: $thread}) { thread { id } } }`
+	var failed []string
+	for _, r := range replies {
+		if r.Reopen {
+			if err := c.gql.Do(reopen, map[string]any{"thread": r.ThreadID}, &struct{}{}); err != nil {
+				failed = append(failed, err.Error())
+			}
+		}
+	}
+	if len(failed) > 0 {
+		return out.HTMLURL, fmt.Errorf("posted, but couldn't reopen %d resolved thread(s): %s", len(failed), failed[0])
+	}
+	return out.HTMLURL, nil
+}

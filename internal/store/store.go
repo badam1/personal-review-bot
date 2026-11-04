@@ -85,11 +85,13 @@ type Finding struct {
 	Status          string
 	Inline          bool // line is inside the diff, so it can be an inline comment
 	PostedURL       string
-	Context         string // the code around Line at review time: "line\tmark\ttext" rows, mark "+" for an added line
-	Wrong           bool   // posted, then marked wrong by you
-	Followup        string // what a later review found: fixed | partly | open | moot | declined ("" = not checked)
-	FollowupNote    string // its evidence: a commit, a line, the author's reply
-	FollowupReview  int64  // the review that checked it last
+	Context         string    // the code around Line at review time: "line\tmark\ttext" rows, mark "+" for an added line
+	Wrong           bool      // posted, then marked wrong by you
+	Followup        string    // what a later review found: fixed | partly | open | moot | declined ("" = not checked)
+	FollowupNote    string    // its evidence: a commit, a line, the author's reply
+	FollowupReview  int64     // the review that checked it last
+	RemindedSHA     string    // the PR's head when you last reminded the author it is still open ("" = never)
+	RemindedAt      time.Time // when
 }
 
 // Follow-up statuses. Fixed, moot and declined are settled and not checked again.
@@ -139,7 +141,8 @@ CREATE TABLE IF NOT EXISTS findings (
   agent_confidence INTEGER NOT NULL, confidence INTEGER NOT NULL DEFAULT 0, verdict TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL, inline INTEGER NOT NULL DEFAULT 0, posted_url TEXT NOT NULL DEFAULT '',
   context TEXT NOT NULL DEFAULT '', wrong INTEGER NOT NULL DEFAULT 0, followup TEXT NOT NULL DEFAULT '',
-  followup_note TEXT NOT NULL DEFAULT '', followup_review INTEGER NOT NULL DEFAULT 0);
+  followup_note TEXT NOT NULL DEFAULT '', followup_review INTEGER NOT NULL DEFAULT 0,
+  reminded_sha TEXT NOT NULL DEFAULT '', reminded_at TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS runs (
   id INTEGER PRIMARY KEY, review_id INTEGER NOT NULL REFERENCES reviews (id), agent TEXT NOT NULL, model TEXT NOT NULL,
   findings INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, denials INTEGER NOT NULL DEFAULT 0,
@@ -174,6 +177,8 @@ func Open(path string) (*Store, error) {
 		{"findings", "followup", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "followup_note", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "followup_review", "INTEGER NOT NULL DEFAULT 0"},
+		{"findings", "reminded_sha", "TEXT NOT NULL DEFAULT ''"},
+		{"findings", "reminded_at", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := addColumn(db, c.table, c.column, c.def); err != nil {
 			db.Close()
@@ -544,7 +549,7 @@ func (s *Store) Decisions(threshold int) (time.Time, []DecisionRow, error) {
 }
 
 const findingCols = `id, review_id, agent, path, line, severity, title, comment, agent_confidence, confidence, verdict,
-  status, inline, posted_url, context, wrong, followup, followup_note, followup_review`
+  status, inline, posted_url, context, wrong, followup, followup_note, followup_review, reminded_sha, reminded_at`
 
 func (s *Store) AddFinding(f *Finding) (int64, error) {
 	res, err := s.db.Exec(`INSERT INTO findings (review_id, agent, path, line, severity, title, comment, agent_confidence,
@@ -591,12 +596,18 @@ func (s *Store) SetFollowup(id int64, status, note string, reviewID int64) error
 	return err
 }
 
+// SetReminded records that you reminded the author, at the PR's head sha, that a finding is still open.
+func (s *Store) SetReminded(id int64, sha string) error {
+	_, err := s.db.Exec(`UPDATE findings SET reminded_sha = ?, reminded_at = ? WHERE id = ?`, sha, now(), id)
+	return err
+}
+
 // EarlierPosted returns the findings posted (by the bot or by you) on the PR's reviews before review before, dry runs
 // left out, oldest first.
 func (s *Store) EarlierPosted(repo string, number int, before int64) ([]Finding, error) {
 	return s.queryFindings(`SELECT f.id, f.review_id, f.agent, f.path, f.line, f.severity, f.title, f.comment,
 	  f.agent_confidence, f.confidence, f.verdict, f.status, f.inline, f.posted_url, f.context, f.wrong, f.followup,
-	  f.followup_note, f.followup_review
+	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at
 	  FROM findings f JOIN reviews r ON r.id = f.review_id
 	  WHERE r.repo = ? AND r.number = ? AND r.id < ? AND r.dry_run = 0 AND f.status IN (?, ?) ORDER BY f.id`,
 		repo, number, before, AutoPosted, Posted)
@@ -622,7 +633,7 @@ func (s *Store) Findings(reviewID int64) ([]Finding, error) {
 func (s *Store) PriorFindings(repo string, number int, before int64) ([]Finding, error) {
 	return s.queryFindings(`SELECT f.id, f.review_id, f.agent, f.path, f.line, f.severity, f.title, f.comment,
 	  f.agent_confidence, f.confidence, f.verdict, f.status, f.inline, f.posted_url, f.context, f.wrong, f.followup,
-	  f.followup_note, f.followup_review
+	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at
 	  FROM findings f JOIN reviews r ON r.id = f.review_id
 	  WHERE r.repo = ? AND r.number = ? AND r.id < ? AND f.status IN (?, ?, ?, ?)
 	  ORDER BY f.id DESC LIMIT 50`, repo, number, before, AutoPosted, Posted, Discarded, Pending)
@@ -638,12 +649,13 @@ func (s *Store) queryFindings(query string, args ...any) ([]Finding, error) {
 	for rows.Next() {
 		var f Finding
 		var inline, wrong int
+		var reminded string
 		if err := rows.Scan(&f.ID, &f.ReviewID, &f.Agent, &f.Path, &f.Line, &f.Severity, &f.Title, &f.Comment,
 			&f.AgentConfidence, &f.Confidence, &f.Verdict, &f.Status, &inline, &f.PostedURL, &f.Context, &wrong,
-			&f.Followup, &f.FollowupNote, &f.FollowupReview); err != nil {
+			&f.Followup, &f.FollowupNote, &f.FollowupReview, &f.RemindedSHA, &reminded); err != nil {
 			return nil, err
 		}
-		f.Inline, f.Wrong = inline == 1, wrong == 1
+		f.Inline, f.Wrong, f.RemindedAt = inline == 1, wrong == 1, parseTime(reminded)
 		out = append(out, f)
 	}
 	return out, rows.Err()

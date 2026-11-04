@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/agents"
+	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
 	"github.com/badam1/personal-review-bot/internal/update"
@@ -57,6 +58,9 @@ type server struct {
 	head    func(repo string, number int) (string, error) // the PR's current head commit
 	updates Updater                                       // nil: the page alone, which can't update
 	version string                                        // the running build's version
+	threads func(repo string, number int) ([]gh.Thread, error)
+	login   string // whose reviews these are: the owner of the bot's earlier comments
+	send    func(rev *store.Review, event string, fs []store.Finding, reminders []pipeline.Reminder) (string, error)
 }
 
 // Updater is the daemon's side of updates: install the newest release, or look for one right away. Each says what it
@@ -77,7 +81,10 @@ func Serve(ctx context.Context, d pipeline.Deps, updates Updater) error {
 	s := &server{d: d, token: token, hosts: d.Cfg.AllowedHosts(), head: func(repo string, number int) (string, error) {
 		pr, err := d.GH.GetPR(repo, number)
 		return pr.HeadSHA, err
-	}, updates: updates, version: version.String()}
+	}, updates: updates, version: version.String(), threads: d.GH.ReviewThreads, login: d.GH.Login,
+		send: func(rev *store.Review, event string, fs []store.Finding, rms []pipeline.Reminder) (string, error) {
+			return pipeline.Post(d, rev, event, fs, rms)
+		}}
 	for _, h := range s.hosts {
 		s.origins = append(s.origins, "http://"+h)
 	}
@@ -159,10 +166,27 @@ type reviewPage struct {
 	DesignPending                []findingView // design concerns waiting for you (never posted without you)
 	Assessment                   string        // the design reviewer's verdict
 	Selectable                   bool          // there is something to tick and post
-	Earlier                      []findingView // findings posted on the PR's earlier reviews, with what became of them
+	Earlier                      []earlierView // findings posted on the PR's earlier reviews, with what became of them
 	EarlierSummary               string        // e.g. "3 fixed · 1 still open"
 	OpenHigh                     int           // high-severity earlier findings a follow-up found still open
 	Confirm                      bool          // approving was asked once with OpenHigh > 0: the next click approves anyway
+	Reminders                    int           // earlier findings you can remind the author of
+	ThreadsErr                   string        // the PR's review threads couldn't be read
+}
+
+// earlierView is a finding posted on an earlier review, with the reminder you can send about it.
+type earlierView struct {
+	findingView
+	Remind *reminderView // set when the follow-up found it still open and you can remind the author on this review
+}
+
+type reminderView struct {
+	Text     string // what the reminder says; you can edit it
+	Ticked   bool   // nobody answered its thread, and it wasn't reminded at this commit yet
+	Thread   bool   // it goes as a reply in the finding's thread, else as a line in the review body
+	Resolved bool   // the thread is resolved: reminding reopens it
+	Answer   string // the latest reply by someone else, e.g. "@dev: done in a follow-up PR"
+	Reminded string // e.g. "you reminded the author at abc1234 (2h ago)"
 }
 
 func (s *server) index(w http.ResponseWriter, r *http.Request) {
@@ -404,11 +428,24 @@ func (s *server) review(w http.ResponseWriter, r *http.Request) {
 			p.Old = append(p.Old, v)
 		}
 	}
-	p.Selectable = len(p.Pending)+len(p.DesignPending) > 0
 	earlier, _ := s.d.Store.EarlierPosted(rev.Repo, rev.Number, rev.ID)
-	for _, f := range earlier {
-		p.Earlier = append(p.Earlier, findingView{Finding: f})
+	var threads []gh.Thread
+	canRemind := rev.Status == store.AwaitingYou && !rev.DryRun && slices.ContainsFunc(earlier, pipeline.Remindable)
+	if canRemind {
+		var err error
+		if threads, err = s.threads(rev.Repo, rev.Number); err != nil {
+			p.ThreadsErr = err.Error()
+		}
 	}
+	for _, f := range earlier {
+		v := earlierView{findingView: findingView{Finding: f}}
+		if canRemind && pipeline.Remindable(f) {
+			v.Remind = s.reminder(rev, f, threads)
+			p.Reminders++
+		}
+		p.Earlier = append(p.Earlier, v)
+	}
+	p.Selectable = len(p.Pending)+len(p.DesignPending)+p.Reminders > 0
 	p.EarlierSummary, p.OpenHigh = summarize(earlier)
 	p.Confirm = r.URL.Query().Get("confirm") == "1"
 	s.render(w, "review", p)
@@ -446,17 +483,21 @@ func (s *server) act(w http.ResponseWriter, r *http.Request) {
 	}
 
 	action := r.FormValue("action")
+	var reminders []pipeline.Reminder
+	if action == "post" || action == "post_approve" {
+		reminders = s.tickedReminders(r, rev)
+	}
 	var event, you string
 	var post []store.Finding
 	switch action {
 	case "post":
-		if len(selected) == 0 {
-			http.Redirect(w, r, back+"?msg=Select+at+least+one+finding+to+post.", http.StatusSeeOther)
+		if len(selected)+len(reminders) == 0 {
+			http.Redirect(w, r, back+"?msg=Select+at+least+one+finding+or+reminder+to+post.", http.StatusSeeOther)
 			return
 		}
-		event, post, you = "COMMENT", selected, fmt.Sprintf("you posted %d", len(selected))
+		event, post, you = "COMMENT", selected, posted(len(selected), len(reminders))
 	case "post_approve":
-		event, post, you = "APPROVE", selected, fmt.Sprintf("you posted %d and approved", len(selected))
+		event, post, you = "APPROVE", selected, posted(len(selected), len(reminders))+" and approved"
 	case "approve":
 		event, rest, you = "APPROVE", append(rest, selected...), "you approved"
 	case "skip":
@@ -497,13 +538,19 @@ func (s *server) act(w http.ResponseWriter, r *http.Request) {
 				http.Redirect(w, r, back+"?msg="+template.URLQueryEscaper(msg), http.StatusSeeOther)
 				return
 			}
-			url, err := pipeline.Post(s.d, rev, event, post)
-			if err != nil {
+			url, err := s.send(rev, event, post, reminders)
+			if url == "" {
 				http.Redirect(w, r, back+"?msg="+template.URLQueryEscaper("GitHub refused it: "+err.Error()), http.StatusSeeOther)
 				return
 			}
+			if err != nil { // posted, with a part that didn't go through: say so on the page
+				back += "?msg=" + template.URLQueryEscaper("Posted, but: "+err.Error())
+			}
 			for i := range post {
 				post[i].PostedURL = url
+			}
+			for _, rm := range reminders {
+				_ = s.d.Store.SetReminded(rm.Finding.ID, rev.HeadSHA)
 			}
 		}
 	}
@@ -525,6 +572,69 @@ func (s *server) act(w http.ResponseWriter, r *http.Request) {
 	}
 	s.d.Log("%s#%d: %s", rev.Repo, rev.Number, decision)
 	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+// posted says what you posted, e.g. "you posted 2 and reminded of 1".
+func posted(findings, reminders int) string {
+	switch {
+	case reminders == 0:
+		return fmt.Sprintf("you posted %d", findings)
+	case findings == 0:
+		return fmt.Sprintf("you reminded of %d still open", reminders)
+	}
+	return fmt.Sprintf("you posted %d and reminded of %d still open", findings, reminders)
+}
+
+// reminder is what the page offers for a still-open earlier finding: its thread's state and the text to post.
+func (s *server) reminder(rev *store.Review, f store.Finding, threads []gh.Thread) *reminderView {
+	rm := &reminderView{Text: pipeline.ReminderText(f, rev.HeadSHA), Ticked: f.RemindedSHA != rev.HeadSHA}
+	if t, ok := pipeline.MatchThread(f, threads, s.login, s.d.Cfg.Watermark); ok {
+		rm.Thread, rm.Resolved = true, t.Resolved
+		if a, ok := pipeline.Answer(t, s.login); ok {
+			body := strings.Join(strings.Fields(a.Body), " ")
+			if r := []rune(body); len(r) > 240 {
+				body = string(r[:240]) + "…"
+			}
+			rm.Answer, rm.Ticked = "@"+a.Author+": "+body, false
+		}
+	}
+	if f.RemindedSHA != "" {
+		rm.Reminded = fmt.Sprintf("you reminded the author at %.7s (%s)", f.RemindedSHA, ago(f.RemindedAt))
+	}
+	return rm
+}
+
+// tickedReminders are the reminders ticked on the page, each with its edited text and, when it was posted inline,
+// its thread. If the threads can't be read, the reminders go in the review body.
+func (s *server) tickedReminders(r *http.Request, rev *store.Review) []pipeline.Reminder {
+	if rev.DryRun {
+		return nil
+	}
+	earlier, _ := s.d.Store.EarlierPosted(rev.Repo, rev.Number, rev.ID)
+	var out []pipeline.Reminder
+	for _, f := range earlier {
+		if !pipeline.Remindable(f) || r.FormValue(fmt.Sprintf("rm_%d", f.ID)) != "on" {
+			continue
+		}
+		text := strings.TrimSpace(r.FormValue(fmt.Sprintf("rt_%d", f.ID)))
+		if text == "" {
+			text = pipeline.ReminderText(f, rev.HeadSHA)
+		}
+		out = append(out, pipeline.Reminder{Finding: f, Text: text})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	threads, err := s.threads(rev.Repo, rev.Number)
+	if err != nil {
+		s.d.Log("%s#%d: review threads unavailable, reminders go in the review body: %v", rev.Repo, rev.Number, err)
+	}
+	for i := range out {
+		if t, ok := pipeline.MatchThread(out[i].Finding, threads, s.login, s.d.Cfg.Watermark); ok {
+			out[i].Thread = &t
+		}
+	}
+	return out
 }
 
 // rereview queues the PR again at its latest commit. The review it replaces stays as it is until the new one

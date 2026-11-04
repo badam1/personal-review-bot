@@ -96,6 +96,11 @@ func (c Config) DesignFooter(confidence int) string {
 	return fmt.Sprintf("<sub>%s · design · %d%%</sub>", c.Watermark, confidence)
 }
 
+// ReminderFooter ends a reminder that an earlier finding is still open, e.g. "🤖 personal-review-bot · reminder".
+func (c Config) ReminderFooter() string {
+	return fmt.Sprintf("<sub>%s · reminder</sub>", c.Watermark)
+}
+
 // WebURL is the address to open in the browser (localhost rather than 127.0.0.1, same server).
 func (c Config) WebURL() string {
 	return "http://" + strings.Replace(c.WebAddr, "127.0.0.1", "localhost", 1)
