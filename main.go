@@ -24,6 +24,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
 	"github.com/badam1/personal-review-bot/internal/tui"
+	"github.com/badam1/personal-review-bot/internal/version"
 	"github.com/badam1/personal-review-bot/internal/web"
 )
 
@@ -38,6 +39,7 @@ const usage = `personal-review-bot: reviews PRs where your review is requested d
   personal-review-bot page                  serve only the confirmation page (no polling, no reviews)
   personal-review-bot agents                the reviewers and prompts reviews run with, and where each comes from
   personal-review-bot agents export <dir>   write the built-in reviewers, prompts and an example context.md to <dir>
+  personal-review-bot version               the version of this build
 `
 
 func main() {
@@ -65,6 +67,8 @@ func main() {
 		err = page(ctx, cfg)
 	case "agents":
 		err = agentsCmd(cfg, args, os.Stdout)
+	case "version", "--version":
+		fmt.Println("personal-review-bot", version.String())
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

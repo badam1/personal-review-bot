@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build & draft the release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # create the draft release
+      id-token: write     # sign the build attestation
+      attestations: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build binaries
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+            os="${target%/*}" arch="${target#*/}"
+            name="personal-review-bot_${VERSION#v}_${os}_${arch}"
+            mkdir "dist/$name"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X github.com/badam1/personal-review-bot/internal/version.Version=$VERSION" \
+              -o "dist/$name/personal-review-bot" .
+            cp LICENSE README.md "dist/$name/"
+            tar -C dist -czf "dist/$name.tar.gz" "$name"
+          done
+          (cd dist && sha256sum ./*.tar.gz > checksums.txt)
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.tar.gz
+
+      - name: Draft the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A draft: the maintainer reads the notes and publishes it. Tags with a "-" (v0.1.0-beta.1) are pre-releases.
+          prerelease=()
+          if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "$TAG" dist/*.tar.gz dist/checksums.txt --verify-tag --draft --generate-notes \
+            --title "$TAG" "${prerelease[@]}"
