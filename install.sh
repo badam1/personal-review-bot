@@ -9,8 +9,10 @@ cd "$(dirname "$0")"
 
 bin="$HOME/.local/bin/personal-review-bot"
 mkdir -p "$(dirname "$bin")"
-go build -o "$bin" .
-echo "🔨 built $bin"
+# The version is the nearest tag, e.g. v0.1.0-beta.1-3-gabc1234; without tags, Go's own (with the commit).
+version="$(git describe --tags --dirty 2>/dev/null || true)"
+go build -ldflags "-X github.com/badam1/personal-review-bot/internal/version.Version=$version" -o "$bin" .
+echo "🔨 built $bin ($("$bin" version))"
 [ "${1:-}" = "--build" ] && exit 0
 
 # The service gets the PATH you install from, so it finds gh, git and claude the way your shell does.

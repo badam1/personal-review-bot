@@ -12,6 +12,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
+	"github.com/badam1/personal-review-bot/internal/version"
 	"github.com/badam1/personal-review-bot/internal/web"
 )
 
@@ -26,8 +27,8 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	d := pipeline.Deps{Cfg: cfg, Store: st, GH: client, Log: log.Printf}
-	log.Printf("personal-review-bot started for @%s (org %q, every %s, auto-post ≥ %d%% and %s+, page %s)",
-		client.Login, cfg.Org, cfg.PollInterval, cfg.Threshold, cfg.AutoSeverity, cfg.WebURL())
+	log.Printf("personal-review-bot %s started for @%s (org %q, every %s, auto-post ≥ %d%% and %s+, page %s)",
+		version.String(), client.Login, cfg.Org, cfg.PollInterval, cfg.Threshold, cfg.AutoSeverity, cfg.WebURL())
 
 	if err := st.ResetRunning(); err != nil {
 		return err

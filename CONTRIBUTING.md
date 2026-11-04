@@ -57,6 +57,21 @@ See the `*_live_test.go` files for the others (`PERSONAL_REVIEW_BOT_LIVE_DESIGN`
 on other people's PRs. Run a dry run or a live test on at least one real PR and say in the PR what changed in the
 output.
 
+## Releasing
+
+For the maintainer. Versions follow [SemVer](https://semver.org/); while the version is 0.x, a minor release may
+change settings or file formats, and its notes must say what to change.
+
+1. On `main`, with CI green, tag the release and push the tag:
+
+   ```sh
+   git tag -a v0.2.0 -m v0.2.0 && git push origin v0.2.0   # a pre-release: v0.2.0-beta.1
+   ```
+
+2. The Release workflow runs the tests, builds the binaries (macOS and Linux, arm64 and amd64), attests them, and
+   creates a **draft** release with notes generated from the merged PRs. A tag with a `-` is marked a pre-release.
+3. Read the draft, put the highlights and anything users must change at the top, and publish it.
+
 ## Ground rules
 
 These keep the bot safe to run on other people's PRs; a change that weakens one needs a strong reason in its PR.

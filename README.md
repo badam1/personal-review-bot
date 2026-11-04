@@ -53,9 +53,19 @@ login.
 ```sh
 git clone https://github.com/badam1/personal-review-bot.git
 cd personal-review-bot
+git checkout "$(git describe --tags --abbrev=0)"  # the latest release; stay on main for unreleased changes
 ./install.sh          # builds ~/.local/bin/personal-review-bot and (re)starts the background service
 ./install.sh --build  # build only
 ```
+
+To update, check out the new release and run `./install.sh` again; `personal-review-bot version` says which one
+runs. The project is in beta (0.x): a minor release may change settings or file formats, and its notes say how.
+
+[Releases](https://github.com/badam1/personal-review-bot/releases) also have prebuilt binaries for macOS and Linux
+(arm64 and amd64), with checksums and build attestations, to run `personal-review-bot` without Go. Check where one
+was built with `gh attestation verify <file> -R badam1/personal-review-bot`. They aren't notarized by Apple: on
+macOS, run `xattr -d com.apple.quarantine personal-review-bot` once on a downloaded one. `install.sh` builds from
+source.
 
 On macOS the service is a launchd agent (log: `~/Library/Logs/personal-review-bot.log`); on Linux, a systemd user
 service (log: `journalctl --user -u personal-review-bot`; run `loginctl enable-linger` to keep it running while you're
@@ -73,6 +83,7 @@ personal-review-bot status                # same, printed once
 personal-review-bot review --dry-run URL  # try it on any PR: posts nothing, opens nothing
 personal-review-bot queue URL             # hand a PR to the running service
 personal-review-bot agents                # the reviewers and prompts reviews run with, and where each comes from
+personal-review-bot version               # which build this is
 ```
 
 The page is <http://localhost:12346>:
