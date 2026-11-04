@@ -116,12 +116,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if r, ok := m.selected(); ok {
 				m.msg = openURL(r.URL, "the PR on GitHub")
 			}
-		case "u":
-			if m.snap.update.Version == "" {
-				m.msg = "already up to date (" + version.String() + ")"
-				break
-			}
-			m.msg = "asking the daemon to update to " + m.snap.update.Version + "…"
+		case "u": // the daemon looks for the newest release itself, so this works right after a release too
+			m.msg = "asking the daemon for the newest release…"
 			return m, func() tea.Msg { return updateMsg(requestUpdate(m.cfg, m.st)) }
 		case "r":
 			if r, ok := m.selected(); ok {

@@ -16,8 +16,8 @@ import (
 // ErrRestart is what Run returns once a new binary is in place and no review is running: the caller restarts into it.
 var ErrRestart = errors.New("restart into the updated binary")
 
-// checkEvery is how often the daemon looks for a new release.
-const checkEvery = 6 * time.Hour
+// checkEvery is how often the daemon looks for a new release (one GitHub API call).
+const checkEvery = time.Hour
 
 // updater looks for new releases, installs one when you ask (from the page, the TUI or the CLI), and then has the
 // daemon stop taking reviews and restart once the ones it is running have finished.
@@ -67,6 +67,18 @@ func (u *updater) loop(ctx context.Context) {
 		case <-time.After(checkEvery):
 		}
 	}
+}
+
+// CheckNow looks for a newer release right away and says what it found.
+func (u *updater) CheckNow() (string, error) {
+	rel, ok, err := u.check()
+	switch {
+	case err != nil:
+		return "", fmt.Errorf("couldn't look for releases: %w", err)
+	case !ok:
+		return fmt.Sprintf("Up to date (%s).", u.current()), nil
+	}
+	return fmt.Sprintf("%s is available.", rel.Version), nil
 }
 
 // Start installs the newest release in the background and says what it is doing. Once the binary is in place the

@@ -51,7 +51,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	}
 
 	go func() {
-		if err := web.Serve(ctx, d, upd.Start); err != nil {
+		if err := web.Serve(ctx, d, upd); err != nil {
 			log.Printf("confirmation page stopped: %v", err)
 		}
 	}()

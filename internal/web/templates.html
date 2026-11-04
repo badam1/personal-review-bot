@@ -59,6 +59,8 @@
   .code .add { background: rgba(166, 227, 161, .07); } .code .add b { color: var(--green); }
   .code .tgt { background: rgba(137, 180, 250, .16); } .code .tgt i { color: var(--blue); }
   .inline { display: inline; } .inline button, .small { padding: 4px 10px; font-size: .8rem; font-weight: 600; }
+  .inline button.linkbtn { background: none; border: 0; padding: 0; color: var(--blue); font: inherit; font-weight: 400; cursor: pointer; }
+  .inline button.linkbtn:hover { text-decoration: underline; }
   .tag { display:inline-block; padding: 1px 8px; border-radius: 99px; font-size: .78rem; background: #3b2a35; color: var(--red); }
   .filters { display:flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 4px; }
   select { font: inherit; font-size: .9rem; background: var(--mantle); color: var(--text); border: 1px solid var(--s1); border-radius: 8px; padding: 6px 8px; }
@@ -121,7 +123,8 @@
 <div class="footer">A retry reviews the PR's latest commit, the same way the failed attempt would have.</div>{{end}}
 <h2>Last 10</h2>
 {{template "review-rows" .Recent}}
-<div class="footer"><a href="/history">All reviews →</a> · this page refreshes every minute</div>
+<div class="footer"><a href="/history">All reviews →</a> · this page refreshes every minute{{if .CanUpdate}} ·
+  <form class="inline" method="post" action="/update/check"><input type="hidden" name="csrf" value="{{.Token}}"><button class="linkbtn">Check for updates</button></form>{{end}}</div>
 <script src="/running.js" defer></script>
 {{template "foot"}}{{end}}
 

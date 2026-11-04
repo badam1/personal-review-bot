@@ -413,16 +413,13 @@ func TestUpdateNotice(t *testing.T) {
 		t.Error("the page alone can't install, so it offers no button")
 	}
 
-	calls := 0
-	s.srv.update = func() (string, error) {
-		calls++
-		return "Updating to v0.1.0-beta.3: it restarts once the running reviews finish.", nil
-	}
+	fake := &fakeUpdates{start: "Updating to v0.1.0-beta.3: it restarts once the running reviews finish."}
+	s.srv.updates = fake
 	_, page = s.get("/")
 	want(t, page, `action="/update"`, "Update and restart")
 	rec := s.post("/update", url.Values{})
-	if loc := rec.Header().Get("Location"); calls != 1 || !strings.HasPrefix(loc, "/?msg=Updating+to+v0.1.0-beta.3") {
-		t.Fatalf("POST /update: %d calls, redirect %q", calls, loc)
+	if loc := rec.Header().Get("Location"); fake.starts != 1 || !strings.HasPrefix(loc, "/?msg=Updating+to+v0.1.0-beta.3") {
+		t.Fatalf("POST /update: %d calls, redirect %q", fake.starts, loc)
 	}
 	_, page = s.get(rec.Header().Get("Location"))
 	want(t, page, "Updating to v0.1.0-beta.3: it restarts once the running reviews finish.")
@@ -437,7 +434,7 @@ func TestUpdateNotice(t *testing.T) {
 	_, page = s.get("/")
 	want(t, page, "failed: attestation not verified", `action="/update"`)
 
-	s.srv.update = nil
+	s.srv.updates = nil
 	if rec := s.post("/update", url.Values{}); rec.Code != http.StatusNotFound {
 		t.Errorf("the page alone: POST /update = %d", rec.Code)
 	}
@@ -465,5 +462,32 @@ func TestPageFooter(t *testing.T) {
 	about.Version = "v0.1.0-beta.4-2-gabc1234"
 	if got := about.ReleaseURL(); got != "https://github.com/acme/prb/releases" {
 		t.Errorf("a build between releases links the releases list, got %q", got)
+	}
+}
+
+type fakeUpdates struct {
+	start, check   string
+	starts, checks int
+}
+
+func (f *fakeUpdates) Start() (string, error)    { f.starts++; return f.start, nil }
+func (f *fakeUpdates) CheckNow() (string, error) { f.checks++; return f.check, nil }
+
+// Check for updates asks the daemon to look right away and says what it found; the page alone has no such link.
+func TestCheckForUpdates(t *testing.T) {
+	s := newSite(t)
+	if _, page := s.get("/"); strings.Contains(page, "Check for updates") {
+		t.Error("the page alone can't check")
+	}
+	fake := &fakeUpdates{check: "v0.1.0-beta.5 is available."}
+	s.srv.updates = fake
+	_, page := s.get("/")
+	want(t, page, `action="/update/check"`, `class="linkbtn">Check for updates</button>`)
+	rec := s.post("/update/check", url.Values{})
+	if loc := rec.Header().Get("Location"); fake.checks != 1 || loc != "/?msg=v0.1.0-beta.5+is+available." {
+		t.Errorf("POST /update/check: %d checks, redirect %q", fake.checks, loc)
+	}
+	if fake.starts != 0 {
+		t.Error("checking must not install")
 	}
 }

@@ -55,13 +55,20 @@ type server struct {
 	hosts   []string
 	origins []string
 	head    func(repo string, number int) (string, error) // the PR's current head commit
-	update  func() (string, error)                        // installs the newest release (nil: only the daemon can)
+	updates Updater                                       // nil: the page alone, which can't update
 	version string                                        // the running build's version
 }
 
-// Serve runs the page until ctx ends. update installs the newest release; nil (the page alone, without the daemon)
-// leaves updating out.
-func Serve(ctx context.Context, d pipeline.Deps, update func() (string, error)) error {
+// Updater is the daemon's side of updates: install the newest release, or look for one right away. Each says what it
+// did, for the page's message.
+type Updater interface {
+	Start() (string, error)
+	CheckNow() (string, error)
+}
+
+// Serve runs the page until ctx ends. updates is the daemon's; nil (the page alone, without the daemon) leaves
+// updating out.
+func Serve(ctx context.Context, d pipeline.Deps, updates Updater) error {
 	token, err := d.Store.CSRFToken()
 	if err != nil {
 		return err
@@ -70,7 +77,7 @@ func Serve(ctx context.Context, d pipeline.Deps, update func() (string, error)) 
 	s := &server{d: d, token: token, hosts: d.Cfg.AllowedHosts(), head: func(repo string, number int) (string, error) {
 		pr, err := d.GH.GetPR(repo, number)
 		return pr.HeadSHA, err
-	}, update: update, version: version.String()}
+	}, updates: updates, version: version.String()}
 	for _, h := range s.hosts {
 		s.origins = append(s.origins, "http://"+h)
 	}
@@ -97,6 +104,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /f/{id}/wrong", s.markWrong)
 	mux.HandleFunc("POST /retry", s.retry)
 	mux.HandleFunc("POST /update", s.startUpdate)
+	mux.HandleFunc("POST /update/check", s.checkUpdate)
 	mux.HandleFunc("GET /r/{id}", s.review)
 	mux.HandleFunc("POST /r/{id}", s.act)
 	mux.HandleFunc("GET /active.json", s.active)
@@ -173,7 +181,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, "index", map[string]any{"Title": title, "Waiting": waiting, "Active": active, "Recent": recent,
 		"Failed": failed, "Token": s.token, "Threshold": s.d.Cfg.Threshold, "AutoSeverity": s.d.Cfg.AutoSeverity,
-		"Msg": r.URL.Query().Get("msg"), "Update": s.updateView()})
+		"Msg": r.URL.Query().Get("msg"), "Update": s.updateView(), "CanUpdate": s.updates != nil})
 }
 
 // updateView is what the main page says about updates: a newer release to install, or an update under way.
@@ -184,7 +192,7 @@ type updateView struct {
 }
 
 func (s *server) updateView() *updateView {
-	v := &updateView{Current: s.version, State: update.State(s.d.Store), CanInstall: s.update != nil}
+	v := &updateView{Current: s.version, State: update.State(s.d.Store), CanInstall: s.updates != nil}
 	v.Busy = v.State != "" && !strings.Contains(v.State, "failed")
 	if rel, ok := update.Available(update.Load(s.d.Store), s.version); ok {
 		v.Version, v.URL = rel.Version, rel.URL
@@ -197,13 +205,27 @@ func (s *server) updateView() *updateView {
 
 // startUpdate installs the newest release (through the daemon) and comes back to the main page saying what it does.
 func (s *server) startUpdate(w http.ResponseWriter, r *http.Request) {
-	if s.update == nil {
+	if s.updates == nil {
 		http.Error(w, "updates are installed by the daemon (personal-review-bot daemon), not the page alone", http.StatusNotFound)
 		return
 	}
-	msg, err := s.update()
+	msg, err := s.updates.Start()
 	if err != nil {
 		msg = "Not updated: " + err.Error()
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+}
+
+// checkUpdate looks for a newer release right away (instead of waiting for the hourly check) and says what it found;
+// a newer one then shows with its Update button.
+func (s *server) checkUpdate(w http.ResponseWriter, r *http.Request) {
+	if s.updates == nil {
+		http.Error(w, "the daemon looks for updates, not the page alone", http.StatusNotFound)
+		return
+	}
+	msg, err := s.updates.CheckNow()
+	if err != nil {
+		msg = "Couldn't check: " + err.Error()
 	}
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(msg), http.StatusSeeOther)
 }

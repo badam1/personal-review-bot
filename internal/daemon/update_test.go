@@ -160,3 +160,21 @@ func TestUpdateFails(t *testing.T) {
 		t.Error("a failed update replaced the binary")
 	}
 }
+
+// Check for updates looks right away and says what it found, without installing.
+func TestCheckNow(t *testing.T) {
+	u, st, exe := testUpdater(t, "v0.1.0-beta.1")
+	if msg, err := u.CheckNow(); err != nil || msg != "v0.1.0-beta.2 is available." {
+		t.Errorf("CheckNow = %q, %v", msg, err)
+	}
+	if c := update.Load(st); c.Latest == nil || c.Latest.Version != "v0.1.0-beta.2" {
+		t.Errorf("the check isn't saved for the page: %+v", c)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "OLD" || u.busy.Load() {
+		t.Error("checking installed something")
+	}
+	u.current = func() string { return "v0.1.0-beta.2" }
+	if msg, err := u.CheckNow(); err != nil || msg != "Up to date (v0.1.0-beta.2)." {
+		t.Errorf("CheckNow = %q, %v", msg, err)
+	}
+}
