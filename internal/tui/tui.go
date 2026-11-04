@@ -64,6 +64,7 @@ type model struct {
 	cursor int
 	msg    string
 	width  int
+	height int
 }
 
 type tickMsg struct{}
@@ -84,7 +85,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.msg = string(msg)
 		m.snap = load(m.st)
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
 		n := len(m.snap.recent)
 		switch msg.String() {
@@ -154,7 +155,7 @@ func queue(st *store.Store, r store.Review) string {
 	return fmt.Sprintf("queued %s#%d", r.Repo, r.Number)
 }
 
-func (m model) View() string { return render(m.cfg, m.snap, m.cursor, m.msg, true, m.width) }
+func (m model) View() string { return render(m.cfg, m.snap, m.cursor, m.msg, true, m.width, m.height) }
 
 func trunc(s string, n int) string {
 	r := []rune(s)
@@ -204,18 +205,36 @@ func updateLine(s snapshot, interactive bool) string {
 	return needStyle.Render(line) + "\n"
 }
 
-func render(cfg config.Config, s snapshot, cursor int, msg string, interactive bool, width int) string {
-	var b strings.Builder
+// header is the top of the screen: the title and version, whether the daemon runs, the posting rule and the page, the
+// plan's usage and any update, with the logo beside it when the terminal has room for it.
+func header(cfg config.Config, s snapshot, interactive bool, width, height int) string {
+	withLogo := interactive && width >= 64 && height >= 26
+	title := "🤖 personal-review-bot"
+	if withLogo {
+		title = "personal-review-bot"
+	}
 	daemon := badStyle.Render("● daemon not running")
 	if !s.lastPoll.IsZero() && time.Since(s.lastPoll) < 2*cfg.PollInterval+30*time.Second {
 		daemon = okStyle.Render(fmt.Sprintf("● watching (checked %s ago)", time.Since(s.lastPoll).Round(time.Second)))
 	}
-	fmt.Fprintf(&b, "%s  %s  %s\n", titleStyle.Render("🤖 personal-review-bot"), daemon,
-		dim.Render(fmt.Sprintf("auto-post ≥ %d%% · %s+ · %s", cfg.Threshold, cfg.AutoSeverity, cfg.WebURL())))
+	lines := []string{titleStyle.Render(title) + " " + dim.Render(version.String()), daemon,
+		dim.Render(fmt.Sprintf("auto-post ≥ %d%% · %s+ · %s", cfg.Threshold, cfg.AutoSeverity, cfg.WebURL()))}
 	if s.hasUsage {
-		b.WriteString(usageLine(cfg, s.usage, time.Now()))
+		lines = append(lines, strings.TrimSuffix(usageLine(cfg, s.usage, time.Now()), "\n"))
 	}
-	b.WriteString(updateLine(s, interactive))
+	if u := updateLine(s, interactive); u != "" {
+		lines = append(lines, strings.TrimSuffix(u, "\n"))
+	}
+	text := strings.Join(lines, "\n")
+	if !withLogo {
+		return text + "\n"
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Center, logo(), "   ", text) + "\n"
+}
+
+func render(cfg config.Config, s snapshot, cursor int, msg string, interactive bool, width, height int) string {
+	var b strings.Builder
+	b.WriteString(header(cfg, s, interactive, width, height))
 	b.WriteString("\n")
 	if s.err != nil {
 		fmt.Fprintf(&b, "%s\n\n", badStyle.Render("database: "+s.err.Error()))
@@ -276,6 +295,8 @@ func render(cfg config.Config, s snapshot, cursor int, msg string, interactive b
 	}
 	if interactive {
 		b.WriteString("\n" + dim.Render("↑/↓ select · enter review page · o open PR · r review again · u update · q quit"))
+		b.WriteString("\n" + dim.Render(fmt.Sprintf("personal-review-bot %s · bugs and ideas: github.com/%s/issues",
+			version.String(), cfg.UpdateRepo)))
 		if msg != "" {
 			b.WriteString("   " + okStyle.Render(msg))
 		}
@@ -320,7 +341,7 @@ func PrintStatus(cfg config.Config, w io.Writer) error {
 		return err
 	}
 	defer st.Close()
-	_, err = io.WriteString(w, render(cfg, load(st), -1, "", false, 160))
+	_, err = io.WriteString(w, render(cfg, load(st), -1, "", false, 160, 0))
 	return err
 }
 
