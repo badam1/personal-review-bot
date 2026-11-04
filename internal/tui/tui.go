@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -86,13 +87,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if r, ok := m.selected(); ok {
-				_ = exec.Command("open", fmt.Sprintf("%s/r/%d", m.cfg.WebURL(), r.ID)).Start()
-				m.msg = "opened the review page"
+				m.msg = openURL(fmt.Sprintf("%s/r/%d", m.cfg.WebURL(), r.ID), "the review page")
 			}
 		case "o":
 			if r, ok := m.selected(); ok {
-				_ = exec.Command("open", r.URL).Start()
-				m.msg = "opened the PR on GitHub"
+				m.msg = openURL(r.URL, "the PR on GitHub")
 			}
 		case "r":
 			if r, ok := m.selected(); ok {
@@ -264,4 +263,27 @@ func PrintStatus(cfg config.Config, w io.Writer) error {
 	defer st.Close()
 	_, err = io.WriteString(w, render(cfg, load(st), -1, "", false, 160))
 	return err
+}
+
+// opener is the command that opens a URL in the browser: open on macOS, xdg-open on Linux and the BSDs.
+func opener(goos string) (string, bool) {
+	switch goos {
+	case "darwin":
+		return "open", true
+	case "windows", "plan9":
+		return "", false
+	}
+	return "xdg-open", true
+}
+
+// openURL opens url in the browser and says so, or, when it can't, gives the URL to open by hand.
+func openURL(url, what string) string {
+	if name, ok := opener(runtime.GOOS); ok {
+		cmd := exec.Command(name, url)
+		if cmd.Start() == nil {
+			go func() { _ = cmd.Wait() }() // reap it, so it doesn't linger until the TUI exits
+			return "opened " + what
+		}
+	}
+	return "couldn't open a browser: " + url
 }
