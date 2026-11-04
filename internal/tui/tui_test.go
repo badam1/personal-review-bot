@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/store"
 	"github.com/badam1/personal-review-bot/internal/update"
 	"github.com/badam1/personal-review-bot/internal/version"
 )
@@ -80,5 +81,26 @@ func TestHeader(t *testing.T) {
 	}
 	if screen := render(cfg, snapshot{}, 0, "", true, 100, 40); !strings.Contains(screen, "bugs and ideas: github.com/acme/prb/issues") {
 		t.Error("the TUI should say where to report bugs")
+	}
+}
+
+// Each review shows what it cost, a running one what it has cost so far, and the header what was spent today and this
+// week.
+func TestCosts(t *testing.T) {
+	for usd, want := range map[float64]string{0: "–", 0.004: "–", 0.02: "$0.02", 5.294: "$5.29", 113.386: "$113.39"} {
+		if got := cost(usd); got != want {
+			t.Errorf("cost(%v) = %q, want %q", usd, got, want)
+		}
+	}
+	cfg := config.Config{Threshold: 80, AutoSeverity: "high", WebAddr: "127.0.0.1:12346", UpdateRepo: "acme/prb"}
+	s := snapshot{spentToday: 12.5, spentWeek: 80.25,
+		active: []store.Review{{Repo: "acme/api", Number: 3, Title: "Add retries", Status: store.Running, CostUSD: 0.38}},
+		recent: []store.Review{{Repo: "acme/api", Number: 1, Title: "Fix login", Author: "dev", Status: store.Done, CostUSD: 1.4},
+			{Repo: "acme/api", Number: 2, Title: "Old one", Author: "dev", Status: store.Ignored}}}
+	screen := render(cfg, s, 0, "", false, 160, 0)
+	for _, want := range []string{"spend: today $12.50 · 7 days $80.25", "$0.38 so far", "  $1.40 ", "      – "} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("screen is missing %q:\n%s", want, screen)
+		}
 	}
 }

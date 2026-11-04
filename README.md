@@ -79,7 +79,7 @@ press `r` on one in the TUI to review it.
 ## Use
 
 ```sh
-personal-review-bot                       # terminal UI: what's running and the last 10 reviews
+personal-review-bot                       # terminal UI: what's running and the last 10 reviews, with their cost
 personal-review-bot status                # same, printed once
 personal-review-bot review --dry-run URL  # try it on any PR: posts nothing, opens nothing
 personal-review-bot queue URL             # hand a PR to the running service
