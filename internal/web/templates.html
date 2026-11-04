@@ -78,6 +78,12 @@
 {{define "index"}}{{template "head" (page .Title 60)}}
 <h1>personal-review-bot</h1>
 <p class="meta">Reviews PRs where your review is requested directly. Findings the verifier confirms at {{.Threshold}}% certainty or more, and of {{.AutoSeverity}} severity or higher, are posted automatically; everything else, and every approval, waits here.</p>
+{{with .Msg}}<div class="summary">{{.}}</div>{{end}}
+{{with .Update}}<div class="summary">{{if .State}}<div><b>Update:</b> {{.State}}</div>{{end}}
+  {{if and .Version (not .Busy)}}<b>personal-review-bot {{.Version}}</b> is available (you run {{.Current}}) ·
+    <a href="{{.URL}}" target="_blank" rel="noopener">what's new</a>
+    {{if .CanInstall}}<form class="inline" method="post" action="/update"><input type="hidden" name="csrf" value="{{$.Token}}">
+      <button class="primary small">Update and restart</button></form>{{end}}{{end}}</div>{{end}}
 <h2>Needs you</h2>
 {{range .Waiting}}<div class="card"><a href="/r/{{.ID}}"><span class="title">{{.Title}}</span></a>
   <div class="meta"><a href="{{timeline .Repo .Number}}" title="{{.Repo}}">{{repoName .Repo}}#{{.Number}}</a> · by <b>@{{.Author}}</b>{{with iteration .}} · {{.}}{{end}} · {{.Decision}} · {{ago .FinishedAt}}</div></div>

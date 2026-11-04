@@ -6,6 +6,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -24,6 +26,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
 	"github.com/badam1/personal-review-bot/internal/tui"
+	"github.com/badam1/personal-review-bot/internal/update"
 	"github.com/badam1/personal-review-bot/internal/version"
 	"github.com/badam1/personal-review-bot/internal/web"
 )
@@ -40,6 +43,8 @@ const usage = `personal-review-bot: reviews PRs where your review is requested d
   personal-review-bot agents                the reviewers and prompts reviews run with, and where each comes from
   personal-review-bot agents export <dir>   write the built-in reviewers, prompts and an example context.md to <dir>
   personal-review-bot version               the version of this build
+  personal-review-bot update [--check]      install the newest release (through the daemon when it runs);
+                                            --check only says whether there is one
 `
 
 func main() {
@@ -58,7 +63,9 @@ func main() {
 	case "status":
 		err = tui.PrintStatus(cfg, os.Stdout)
 	case "daemon":
-		err = daemon.Run(ctx, cfg)
+		err = runDaemon(ctx, cfg)
+	case "update":
+		err = updateCmd(ctx, cfg, args)
 	case "review":
 		err = review(ctx, cfg, args)
 	case "queue":
@@ -154,7 +161,7 @@ func page(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	fmt.Printf("confirmation page on %s (Ctrl+C to stop)\n", cfg.WebURL())
-	return web.Serve(ctx, pipeline.Deps{Cfg: cfg, Store: st, GH: client, Log: log.Printf})
+	return web.Serve(ctx, pipeline.Deps{Cfg: cfg, Store: st, GH: client, Log: log.Printf}, nil)
 }
 
 func queue(cfg config.Config, args []string) error {
@@ -237,5 +244,66 @@ func agentsCmd(cfg config.Config, args []string, w io.Writer) error {
 	} else {
 		fmt.Fprintln(w, "\nContext: none (add context.md to tell every prompt about your organisation)")
 	}
+	return nil
+}
+
+// runDaemon runs the bot. After an update it restarts into the new binary in place, as the same process, so launchd,
+// systemd or a terminal keep it without noticing.
+func runDaemon(ctx context.Context, cfg config.Config) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if err := daemon.Run(ctx, cfg); !errors.Is(err, daemon.ErrRestart) {
+		return err
+	}
+	return syscall.Exec(exe, os.Args, os.Environ())
+}
+
+// updateCmd installs the newest release: through the running daemon, which restarts into it once its reviews finish,
+// or, when no daemon runs, by replacing this binary.
+func updateCmd(ctx context.Context, cfg config.Config, args []string) error {
+	fs := flag.NewFlagSet("update", flag.ExitOnError)
+	check := fs.Bool("check", false, "only say whether a newer release is out")
+	_ = fs.Parse(args)
+	client, err := gh.New()
+	if err != nil {
+		return err
+	}
+	releases, err := client.Releases(cfg.UpdateRepo)
+	if err != nil {
+		return fmt.Errorf("releases of %s: %w", cfg.UpdateRepo, err)
+	}
+	rel, ok := update.Newest(releases, version.String(), runtime.GOOS, runtime.GOARCH)
+	if !ok {
+		fmt.Printf("personal-review-bot %s is up to date\n", version.String())
+		return nil
+	}
+	if *check {
+		fmt.Printf("%s is available (running %s): %s\n", rel.Version, version.String(), rel.URL)
+		return nil
+	}
+	st, err := store.Open(cfg.DBPath())
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	msg, err := update.Request(cfg, st)
+	switch {
+	case err == nil:
+		fmt.Println(msg)
+		return nil
+	case !errors.Is(err, update.ErrNoDaemon):
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("no daemon running: installing %s in %s\n", rel.Version, exe)
+	if err := update.Install(ctx, client, cfg.UpdateRepo, rel, exe, update.Attested); err != nil {
+		return err
+	}
+	fmt.Printf("updated to %s (%s)\n", rel.Version, rel.URL)
 	return nil
 }

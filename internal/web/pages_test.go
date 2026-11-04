@@ -14,13 +14,15 @@ import (
 	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
+	"github.com/badam1/personal-review-bot/internal/update"
 )
 
 // site serves the pages through the guard, the way the browser reaches them.
 type site struct {
-	t  *testing.T
-	st *store.Store
-	h  http.Handler
+	t   *testing.T
+	st  *store.Store
+	h   http.Handler
+	srv *server
 }
 
 func newSite(t *testing.T) *site {
@@ -32,7 +34,7 @@ func newSite(t *testing.T) *site {
 	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf, Cfg: config.Config{Threshold: 80, AutoSeverity: "high"}},
 		token: "secret", hosts: []string{"localhost:12346"}, origins: []string{"http://localhost:12346"},
 		head: func(string, int) (string, error) { return "aaa", nil }}
-	return &site{t: t, st: st, h: s.guard(s.routes())}
+	return &site{t: t, st: st, h: s.guard(s.routes()), srv: s}
 }
 
 func (s *site) get(path string) (int, string) {
@@ -390,5 +392,53 @@ func TestFavicon(t *testing.T) {
 		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "img-src 'self'") {
 			t.Errorf("CSP doesn't allow the icon: %q", csp)
 		}
+	}
+}
+
+// The main page offers a newer release with a button (only when the daemon serves it), shows an update under way
+// instead of the button, and offers it again after a failure.
+func TestUpdateNotice(t *testing.T) {
+	s := newSite(t)
+	s.srv.version = "v0.1.0-beta.2"
+	if _, page := s.get("/"); strings.Contains(page, "is available") {
+		t.Error("no check yet, nothing to offer")
+	}
+	rel := update.Release{Version: "v0.1.0-beta.3", URL: "https://github.com/o/r/releases/tag/v0.1.0-beta.3"}
+	update.Save(s.st, update.Check{Checked: time.Now(), Latest: &rel})
+
+	_, page := s.get("/")
+	want(t, page, "<b>personal-review-bot v0.1.0-beta.3</b> is available (you run v0.1.0-beta.2)",
+		`href="https://github.com/o/r/releases/tag/v0.1.0-beta.3"`)
+	if strings.Contains(page, `action="/update"`) {
+		t.Error("the page alone can't install, so it offers no button")
+	}
+
+	calls := 0
+	s.srv.update = func() (string, error) {
+		calls++
+		return "Updating to v0.1.0-beta.3: it restarts once the running reviews finish.", nil
+	}
+	_, page = s.get("/")
+	want(t, page, `action="/update"`, "Update and restart")
+	rec := s.post("/update", url.Values{})
+	if loc := rec.Header().Get("Location"); calls != 1 || !strings.HasPrefix(loc, "/?msg=Updating+to+v0.1.0-beta.3") {
+		t.Fatalf("POST /update: %d calls, redirect %q", calls, loc)
+	}
+	_, page = s.get(rec.Header().Get("Location"))
+	want(t, page, "Updating to v0.1.0-beta.3: it restarts once the running reviews finish.")
+
+	update.SetState(s.st, "v0.1.0-beta.3 installed: restarting once the running reviews finish")
+	_, page = s.get("/")
+	want(t, page, "<b>Update:</b> v0.1.0-beta.3 installed: restarting")
+	if strings.Contains(page, `action="/update"`) {
+		t.Error("no second update while one is under way")
+	}
+	update.SetState(s.st, "updating to v0.1.0-beta.3 failed: attestation not verified")
+	_, page = s.get("/")
+	want(t, page, "failed: attestation not verified", `action="/update"`)
+
+	s.srv.update = nil
+	if rec := s.post("/update", url.Values{}); rec.Code != http.StatusNotFound {
+		t.Errorf("the page alone: POST /update = %d", rec.Code)
 	}
 }

@@ -58,8 +58,9 @@ git checkout "$(git describe --tags --abbrev=0)"  # the latest release; stay on 
 ./install.sh --build  # build only
 ```
 
-To update, check out the new release and run `./install.sh` again; `personal-review-bot version` says which one
-runs. The project is in beta (0.x): a minor release may change settings or file formats, and its notes say how.
+To update, use the page's button, `u` in the TUI or `personal-review-bot update` (see [Updating](#updating)).
+`personal-review-bot version` says which one runs. The project is in beta (0.x): a minor release may change settings
+or file formats, and its notes say how.
 
 [Releases](https://github.com/badam1/personal-review-bot/releases) also have prebuilt binaries for macOS and Linux
 (arm64 and amd64), with checksums and build attestations, to run `personal-review-bot` without Go. Check where one
@@ -84,6 +85,7 @@ personal-review-bot review --dry-run URL  # try it on any PR: posts nothing, ope
 personal-review-bot queue URL             # hand a PR to the running service
 personal-review-bot agents                # the reviewers and prompts reviews run with, and where each comes from
 personal-review-bot version               # which build this is
+personal-review-bot update [--check]      # install the newest release (--check: only say if there is one)
 ```
 
 The page is <http://localhost:12346>:
@@ -98,6 +100,22 @@ The page is <http://localhost:12346>:
 - **History** (`/history`): every review, filtered by repo, author or status; ignored PRs, with "Un-ignore".
 - **Stats** (`/stats`): spend, findings and their fate per reviewer, model, PR size and repo, spend per day, and the
   plan's usage.
+
+## Updating
+
+The daemon looks for a new release when it starts and every 6 hours. When there is one, the page and the TUI say so,
+with a link to its notes; nothing is installed until you ask:
+
+- the **Update and restart** button on the page, `u` in the TUI, or `personal-review-bot update`;
+- it downloads the release's binary for your OS and CPU, checks it against the release's checksums and its GitHub
+  build attestation (built by this repo's release workflow, checked with `gh attestation verify`), and puts it in
+  place of the installed binary;
+- the daemon then takes no new reviews, lets the running ones finish, and restarts into the new version in place
+  (same process, so launchd, systemd or a terminal keep it).
+
+While you run a beta you are offered betas; a stable release only offers stable ones. Without a running daemon,
+`personal-review-bot update` just replaces the binary. Only the binary is updated: when a release changes the
+service setup, its notes say to run `./install.sh` from it.
 
 ## How it decides who asked
 
@@ -134,6 +152,8 @@ Restart the service after changing it (`./install.sh`).
 | `SKIP_DRAFTS` | `1` |
 | `MAX_AGE_DAYS` | `14`: PRs with no activity (commits, comments, reviews, edits) for longer are skipped automatically; a skipped PR is reviewed once it sees activity again, and `r` in the TUI reviews it anyway; `0` = no limit |
 | `ADDR` | `127.0.0.1:12346`: the local page |
+| `UPDATE_CHECK` | `1`: look for new releases every 6 hours; `0` = only when you run `personal-review-bot update` |
+| `UPDATE_REPO` | `badam1/personal-review-bot`: where releases come from, for a fork that publishes its own (its release workflow must attest the binaries the same way) |
 | `STATE_DIR` | `~/.local/state/personal-review-bot` (`$XDG_STATE_HOME`): the SQLite database |
 | `CACHE_DIR` | `~/.cache/personal-review-bot` (`$XDG_CACHE_HOME`): repo clones and review checkouts |
 
@@ -207,6 +227,8 @@ live, how to find the task behind a PR, which shared workflows or modules everyt
 - **The page can't be triggered from outside.** It listens on 127.0.0.1 only, checks the Host header (against DNS
   rebinding), rejects cross-site requests, requires a secret token on every action, and runs only its own scripts
   (no inline JavaScript).
+- **Updates are verified.** A new binary is installed only if it matches the release's checksum and GitHub attests it
+  was built by the release workflow of `UPDATE_REPO`; you start every update.
 - **Reviews leave no transcripts.** They run with `--no-session-persistence`.
 
 ## Contributing

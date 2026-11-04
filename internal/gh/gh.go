@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ type Client struct {
 	rest  *api.RESTClient
 	diff  *api.RESTClient
 	gql   *api.GraphQLClient
+	dl    *http.Client // release asset downloads
 	Login string
 }
 
@@ -70,13 +72,17 @@ func New() (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	dl, err := api.NewHTTPClient(api.ClientOptions{Headers: map[string]string{"Accept": "application/octet-stream"}})
+	if err != nil {
+		return nil, err
+	}
 	var u struct {
 		Login string `json:"login"`
 	}
 	if err := rest.Get("user", &u); err != nil {
 		return nil, fmt.Errorf("GitHub user: %w", err)
 	}
-	return &Client{rest: rest, diff: diff, gql: gql, Login: u.Login}, nil
+	return &Client{rest: rest, diff: diff, gql: gql, dl: dl, Login: u.Login}, nil
 }
 
 var prURL = regexp.MustCompile(`github\.com/([^/]+/[^/]+)/pull/(\d+)`)
@@ -356,4 +362,41 @@ func (c *Client) PostReview(repo string, number int, commitSHA, event, body stri
 	}
 	err = c.rest.Post(fmt.Sprintf("repos/%s/pulls/%d/reviews", repo, number), bytes.NewReader(payload), &out)
 	return out.HTMLURL, err
+}
+
+// Release is a published GitHub release and its files.
+type Release struct {
+	Tag        string    `json:"tag_name"`
+	URL        string    `json:"html_url"`
+	Draft      bool      `json:"draft"`
+	Prerelease bool      `json:"prerelease"`
+	Published  time.Time `json:"published_at"`
+	Assets     []Asset   `json:"assets"`
+}
+
+type Asset struct {
+	Name string `json:"name"`
+	URL  string `json:"url"` // the API address, which Download fetches
+	Size int64  `json:"size"`
+}
+
+// Releases lists repo's latest 30 releases, newest first.
+func (c *Client) Releases(repo string) ([]Release, error) {
+	var out []Release
+	err := c.rest.Get(fmt.Sprintf("repos/%s/releases?per_page=30", repo), &out)
+	return out, err
+}
+
+// Download writes a release asset to w.
+func (c *Client) Download(assetURL string, w io.Writer) error {
+	resp, err := c.dl.Get(assetURL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s: %s", assetURL, resp.Status)
+	}
+	_, err = io.Copy(w, resp.Body)
+	return err
 }

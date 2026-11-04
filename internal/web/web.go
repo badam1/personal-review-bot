@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"math"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,6 +21,8 @@ import (
 	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
+	"github.com/badam1/personal-review-bot/internal/update"
+	"github.com/badam1/personal-review-bot/internal/version"
 )
 
 //go:embed templates.html select-all.js running.js icon.svg favicon.png
@@ -51,9 +54,13 @@ type server struct {
 	hosts   []string
 	origins []string
 	head    func(repo string, number int) (string, error) // the PR's current head commit
+	update  func() (string, error)                        // installs the newest release (nil: only the daemon can)
+	version string                                        // the running build's version
 }
 
-func Serve(ctx context.Context, d pipeline.Deps) error {
+// Serve runs the page until ctx ends. update installs the newest release; nil (the page alone, without the daemon)
+// leaves updating out.
+func Serve(ctx context.Context, d pipeline.Deps, update func() (string, error)) error {
 	token, err := d.Store.CSRFToken()
 	if err != nil {
 		return err
@@ -61,7 +68,7 @@ func Serve(ctx context.Context, d pipeline.Deps) error {
 	s := &server{d: d, token: token, hosts: d.Cfg.AllowedHosts(), head: func(repo string, number int) (string, error) {
 		pr, err := d.GH.GetPR(repo, number)
 		return pr.HeadSHA, err
-	}}
+	}, update: update, version: version.String()}
 	for _, h := range s.hosts {
 		s.origins = append(s.origins, "http://"+h)
 	}
@@ -87,6 +94,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /unignore", s.unignore)
 	mux.HandleFunc("POST /f/{id}/wrong", s.markWrong)
 	mux.HandleFunc("POST /retry", s.retry)
+	mux.HandleFunc("POST /update", s.startUpdate)
 	mux.HandleFunc("GET /r/{id}", s.review)
 	mux.HandleFunc("POST /r/{id}", s.act)
 	mux.HandleFunc("GET /active.json", s.active)
@@ -162,7 +170,40 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 		title = fmt.Sprintf("(%d) personal-review-bot", len(waiting))
 	}
 	s.render(w, "index", map[string]any{"Title": title, "Waiting": waiting, "Active": active, "Recent": recent,
-		"Failed": failed, "Token": s.token, "Threshold": s.d.Cfg.Threshold, "AutoSeverity": s.d.Cfg.AutoSeverity})
+		"Failed": failed, "Token": s.token, "Threshold": s.d.Cfg.Threshold, "AutoSeverity": s.d.Cfg.AutoSeverity,
+		"Msg": r.URL.Query().Get("msg"), "Update": s.updateView()})
+}
+
+// updateView is what the main page says about updates: a newer release to install, or an update under way.
+type updateView struct {
+	Version, URL, Current, State string
+	CanInstall                   bool // the daemon serves the page, so it can install
+	Busy                         bool // an update is installing or waiting to restart
+}
+
+func (s *server) updateView() *updateView {
+	v := &updateView{Current: s.version, State: update.State(s.d.Store), CanInstall: s.update != nil}
+	v.Busy = v.State != "" && !strings.Contains(v.State, "failed")
+	if rel, ok := update.Available(update.Load(s.d.Store), s.version); ok {
+		v.Version, v.URL = rel.Version, rel.URL
+	}
+	if v.Version == "" && v.State == "" {
+		return nil
+	}
+	return v
+}
+
+// startUpdate installs the newest release (through the daemon) and comes back to the main page saying what it does.
+func (s *server) startUpdate(w http.ResponseWriter, r *http.Request) {
+	if s.update == nil {
+		http.Error(w, "updates are installed by the daemon (personal-review-bot daemon), not the page alone", http.StatusNotFound)
+		return
+	}
+	msg, err := s.update()
+	if err != nil {
+		msg = "Not updated: " + err.Error()
+	}
+	http.Redirect(w, r, "/?msg="+url.QueryEscape(msg), http.StatusSeeOther)
 }
 
 type statsPage struct {
