@@ -1,0 +1,39 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      placeholder: |
+        1. Request a review on a PR that …
+        2. …
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`personal-review-bot version`; the link in the page's footer fills it in."
+      placeholder: v0.1.0-beta.3
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and CPU
+      placeholder: darwin/arm64
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >-
+        The lines around the problem: ~/Library/Logs/personal-review-bot.log on macOS,
+        `journalctl --user -u personal-review-bot` on Linux. The log names repos and PRs, so remove anything private first.
+      render: text

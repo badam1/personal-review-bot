@@ -80,7 +80,7 @@ func TestIndexLive(t *testing.T) {
 	s.review(2, store.AwaitingYou, "no issues: approve?")
 	s.review(3, store.Running, "")
 	_, page := s.get("/")
-	want(t, page, `<h1 class="brand"><img src="/icon.svg" alt="">personal-review-bot</h1>`, "<title>(2) personal-review-bot</title>", `<meta http-equiv="refresh" content="60">`, "Running now",
+	want(t, page, `<h1 class="brand"><img src="/icon.svg" alt="">personal-review-bot <span class="ver">`, "<title>(2) personal-review-bot</title>", `<meta http-equiv="refresh" content="60">`, "Running now",
 		`href="/pr/acme/infra/3"`, ">infra#3<", `href="/history"`, "All reviews →")
 	if strings.Contains(page, ">acme/infra#") {
 		t.Error("lists should show the repo without its owner")
@@ -440,5 +440,30 @@ func TestUpdateNotice(t *testing.T) {
 	s.srv.update = nil
 	if rec := s.post("/update", url.Values{}); rec.Code != http.StatusNotFound {
 		t.Errorf("the page alone: POST /update = %d", rec.Code)
+	}
+}
+
+// Every page ends with the footer: the version linked to its release, the platform, help links into the repo (the bug
+// form filled in with both), and where your files are.
+func TestPageFooter(t *testing.T) {
+	defer func(a About) { about = a }(about)
+	about = About{Version: "v0.1.0-beta.4", Platform: "darwin/arm64", Repo: "https://github.com/acme/prb",
+		ConfigDir: "~/.config/personal-review-bot", StateDir: "~/.local/state/personal-review-bot", Log: "~/Library/Logs/personal-review-bot.log"}
+	s := newSite(t)
+	id := s.review(1, store.Done, "you approved")
+	for _, path := range []string{"/", "/history", "/stats", fmt.Sprintf("/r/%d", id), "/pr/acme/infra/1"} {
+		_, page := s.get(path)
+		want(t, page, `<footer class="site">`,
+			`<a href="https://github.com/acme/prb/releases/tag/v0.1.0-beta.4" target="_blank" rel="noopener" title="Release notes">v0.1.0-beta.4</a> · darwin/arm64`,
+			`href="https://github.com/acme/prb/issues/new?platform=darwin%2Farm64&amp;template=bug_report.yml&amp;version=v0.1.0-beta.4"`,
+			`href="https://github.com/acme/prb/issues/new?template=feature_request.yml"`, `href="https://github.com/acme/prb/issues"`,
+			`href="https://github.com/acme/prb#settings"`, "config ~/.config/personal-review-bot · data ~/.local/state/personal-review-bot · log ~/Library/Logs/personal-review-bot.log")
+	}
+	_, page := s.get("/")
+	want(t, page, `personal-review-bot <span class="ver">v0.1.0-beta.4</span></h1>`)
+
+	about.Version = "v0.1.0-beta.4-2-gabc1234"
+	if got := about.ReleaseURL(); got != "https://github.com/acme/prb/releases" {
+		t.Errorf("a build between releases links the releases list, got %q", got)
 	}
 }

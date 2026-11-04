@@ -46,6 +46,7 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"followup":  followup,
 	"source":    source,
 	"wrongForm": wrongForm,
+	"about":     func() About { return about },
 }).ParseFS(files, "templates.html"))
 
 type server struct {
@@ -65,6 +66,7 @@ func Serve(ctx context.Context, d pipeline.Deps, update func() (string, error)) 
 	if err != nil {
 		return err
 	}
+	about = newAbout(d.Cfg)
 	s := &server{d: d, token: token, hosts: d.Cfg.AllowedHosts(), head: func(repo string, number int) (string, error) {
 		pr, err := d.GH.GetPR(repo, number)
 		return pr.HeadSHA, err
