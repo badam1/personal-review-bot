@@ -1,0 +1,19 @@
+# Binary (./install.sh builds into ~/.local/bin instead)
+/personal-review-bot
+/dist/
+
+# Test binaries and coverage
+*.test
+*.out
+coverage.*
+*.coverprofile
+
+# Go workspace
+go.work
+go.work.sum
+
+# Local settings: config.env lives in ~/.config/personal-review-bot, never in the repo
+.env
+config.env
+
+.DS_Store

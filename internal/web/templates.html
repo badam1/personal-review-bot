@@ -1,0 +1,317 @@
+{{define "head"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}
+<style>
+  /* Catppuccin Mocha */
+  :root { --base:#1e1e2e; --mantle:#181825; --s0:#313244; --s1:#45475a; --text:#cdd6f4; --sub:#a6adc8;
+          --blue:#89b4fa; --green:#a6e3a1; --red:#f38ba8; --peach:#fab387; --yellow:#f9e2af; --mauve:#cba6f7; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--base); color:var(--text); font:15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 28px 20px 60px; }
+  a { color: var(--blue); text-decoration: none; } a:hover { text-decoration: underline; }
+  h1 { font-size: 1.45rem; margin: 6px 0 4px; line-height: 1.3; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--sub); margin: 30px 0 10px; }
+  .meta { color: var(--sub); font-size: .92rem; } .meta b { color: var(--text); font-weight: 600; }
+  .pill { display:inline-block; padding: 2px 10px; border-radius: 99px; background: var(--s0); font-size: .82rem; }
+  .summary { margin-top: 14px; padding: 12px 14px; background: var(--mantle); border-left: 3px solid var(--mauve); border-radius: 6px; }
+  .msg { margin: 16px 0; padding: 10px 14px; background: #3b2a35; border-left: 3px solid var(--red); border-radius: 6px; }
+  .card { background: var(--mantle); border: 1px solid var(--s0); border-radius: 10px; padding: 14px 16px; margin: 10px 0; }
+  .card label.head { display:flex; gap:10px; align-items:baseline; cursor:pointer; }
+  .card .title { font-weight: 600; }
+  .where { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; color: var(--sub); }
+  .conf { font-weight: 700; } .hi { color: var(--green); } .mid { color: var(--yellow); } .lo { color: var(--peach); }
+  .sev-high { color: var(--red); } .sev-medium { color: var(--peach); } .sev-low { color: var(--sub); }
+  textarea { width: 100%; margin-top: 10px; min-height: 64px; background: var(--base); color: var(--text);
+             border: 1px solid var(--s1); border-radius: 8px; padding: 8px 10px; font: inherit; resize: vertical; }
+  input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--blue); }
+  .actions { display:flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+  .primary { background: var(--blue); color: var(--mantle); } .approve { background: var(--green); color: var(--mantle); }
+  .quiet { background: var(--s0); color: var(--text); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .empty { padding: 18px; text-align:center; color: var(--sub); background: var(--mantle); border-radius: 10px; }
+  details { margin-top: 10px; color: var(--sub); } summary { cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; } td { padding: 8px 6px; border-bottom: 1px solid var(--s0); vertical-align: top; }
+  .footer { margin-top: 8px; color: var(--sub); font-size: .8rem; }
+  nav { display:flex; gap: 18px; margin-bottom: 14px; font-size: .92rem; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.head td { color: var(--sub); font-size: .85rem; }
+  .tiles { display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile { background: var(--mantle); border: 1px solid var(--s0); border-radius: 10px; padding: 12px 14px; }
+  .tile .l { color: var(--sub); font-size: .82rem; } .tile .v { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile .all { color: var(--sub); font-size: .8rem; }
+  .chart { width: 100%; height: auto; display: block; }
+  .chart .grid { stroke: var(--s1); stroke-width: 1; } .chart .bar { fill: var(--blue); } .chart .hit { fill: transparent; }
+  .chart g:hover .bar { fill: var(--mauve); } .chart g:hover .hit { fill: var(--s0); opacity: .35; }
+  .chart text { fill: var(--sub); font-size: 11px; } .chart text.val { fill: var(--text); font-weight: 600; }
+  .code { margin: 10px 0 0; padding: 6px 0; background: var(--base); border: 1px solid var(--s0); border-radius: 8px;
+          overflow-x: auto; font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .code span { display: block; padding: 0 12px; white-space: pre; } .code i, .code b { font-style: normal; font-weight: 400; color: var(--s1); user-select: none; }
+  .code i { display: inline-block; width: 3.2em; text-align: right; margin-right: .8em; } .code b { margin-right: .6em; }
+  .code .add { background: rgba(166, 227, 161, .07); } .code .add b { color: var(--green); }
+  .code .tgt { background: rgba(137, 180, 250, .16); } .code .tgt i { color: var(--blue); }
+  .inline { display: inline; } .inline button, .small { padding: 4px 10px; font-size: .8rem; font-weight: 600; }
+  .tag { display:inline-block; padding: 1px 8px; border-radius: 99px; font-size: .78rem; background: #3b2a35; color: var(--red); }
+  .filters { display:flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 4px; }
+  select { font: inherit; font-size: .9rem; background: var(--mantle); color: var(--text); border: 1px solid var(--s1); border-radius: 8px; padding: 6px 8px; }
+  .pager { display:flex; justify-content: space-between; margin-top: 12px; }
+  .fate { white-space: nowrap; width: 190px; }
+  .running { margin-top: 6px; font-size: .92rem; }
+  .running .spin { display: inline-block; width: 1.1em; color: var(--peach); }
+  .running .verb { font-weight: 600; color: var(--peach); }
+  .running .stage:not(:empty)::before { content: " · "; }
+  @media (prefers-reduced-motion: no-preference) {
+    .running[data-status="running"] .verb { background: linear-gradient(90deg, var(--peach) 35%, #fde2cf 50%, var(--peach) 65%);
+      background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+      animation: shimmer 2.4s linear infinite; }
+  }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+</style></head><body><main>
+<nav><a href="/">Reviews</a><a href="/history">History</a><a href="/stats">Stats</a></nav>{{end}}
+
+{{define "foot"}}</main></body></html>{{end}}
+
+{{define "confidence"}}<span class="conf {{if ge . 80}}hi{{else if ge . 60}}mid{{else}}lo{{end}}">{{.}}%</span>{{end}}
+
+{{define "index"}}{{template "head" (page .Title 60)}}
+<h1>personal-review-bot</h1>
+<p class="meta">Reviews PRs where your review is requested directly. Findings the verifier confirms at {{.Threshold}}% certainty or more, and of {{.AutoSeverity}} severity or higher, are posted automatically; everything else, and every approval, waits here.</p>
+<h2>Needs you</h2>
+{{range .Waiting}}<div class="card"><a href="/r/{{.ID}}"><span class="title">{{.Title}}</span></a>
+  <div class="meta"><a href="{{timeline .Repo .Number}}" title="{{.Repo}}">{{repoName .Repo}}#{{.Number}}</a> · by <b>@{{.Author}}</b>{{with iteration .}} · {{.}}{{end}} · {{.Decision}} · {{ago .FinishedAt}}</div></div>
+{{else}}<div class="empty">Nothing waiting for you 🎉</div>{{end}}
+<div data-running-all>{{if .Active}}<h2>Running now</h2>
+{{range .Active}}<div class="card"><a href="/r/{{.ID}}"><span class="title">{{.Title}}</span></a>
+  <div class="meta"><a href="{{timeline .Repo .Number}}" title="{{.Repo}}">{{repoName .Repo}}#{{.Number}}</a> · by <b>@{{.Author}}</b>{{with iteration .}} · {{.}}{{end}}</div>
+  {{template "running-line" .}}</div>{{end}}{{end}}</div>
+{{if .Failed}}<h2>Failed · last 7 days</h2>
+{{if gt (len .Failed) 1}}<form method="post" action="/retry"><input type="hidden" name="csrf" value="{{.Token}}">
+  <button class="primary small">Retry all {{len .Failed}}</button></form>{{end}}
+{{range .Failed}}<div class="card"><a href="/r/{{.ID}}"><span class="title">{{.Title}}</span></a>
+  <div class="meta"><a href="{{timeline .Repo .Number}}" title="{{.Repo}}">{{repoName .Repo}}#{{.Number}}</a> · by <b>@{{.Author}}</b> · {{ago .FinishedAt}} ·
+  <form class="inline" method="post" action="/retry"><input type="hidden" name="csrf" value="{{$.Token}}">
+    <input type="hidden" name="id" value="{{.ID}}"><button class="quiet small">Retry</button></form></div>
+  <div class="meta">{{.Error}}</div></div>{{end}}
+<div class="footer">A retry reviews the PR's latest commit, the same way the failed attempt would have.</div>{{end}}
+<h2>Last 10</h2>
+{{template "review-rows" .Recent}}
+<div class="footer"><a href="/history">All reviews →</a> · this page refreshes every minute</div>
+<script src="/running.js" defer></script>
+{{template "foot"}}{{end}}
+
+{{define "running-line"}}<div class="running" data-id="{{.ID}}" data-status="{{.Status}}" data-started="{{unixms .StartedAt}}">
+  <span class="spin" aria-hidden="true">{{if eq .Status "running"}}✻{{else}}·{{end}}</span><span class="verb">{{if eq .Status "running"}}Thinking…{{else}}Waiting in line…{{end}}</span>
+  <span class="meta">(<span class="elapsed">{{if eq .Status "running"}}{{since .StartedAt}}{{else}}queued{{end}}</span><span class="stage">{{.Stage}}</span>)</span></div>{{end}}
+
+{{define "review-rows"}}<table>{{range .}}<tr><td><a href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>{{with iteration .}}<div class="meta">{{.}}</div>{{end}}</td>
+  <td><a href="/r/{{.ID}}">{{.Title}}</a><div class="meta">@{{.Author}}</div></td>
+  <td class="meta">{{status .}}</td><td class="meta">{{.Decision}}</td><td class="meta">{{ago .CreatedAt}}</td></tr>{{end}}</table>{{end}}
+
+{{define "code"}}{{if .Code}}<pre class="code">{{range .Code}}<span class="{{if .Added}}add{{end}}{{if .Target}} tgt{{end}}"><i>{{.N}}</i><b>{{if .Added}}+{{else}} {{end}}</b>{{.Text}}</span>{{end}}</pre>{{end}}{{end}}
+
+{{define "wrong"}}<form class="inline" method="post" action="/f/{{.F.ID}}/wrong"><input type="hidden" name="csrf" value="{{.Token}}">
+  <input type="hidden" name="back" value="/r/{{.F.ReviewID}}">{{if .F.Wrong}}<span class="tag">marked wrong</span>
+  <button class="quiet small" name="wrong" value="0">Undo</button>{{else}}<button class="quiet small" name="wrong" value="1"
+  title="It was posted, but it was wrong: the stats count it, and re-reviews of this PR are told">Mark as wrong</button>{{end}}</form>{{end}}
+
+{{define "finding-meta"}}{{if eq .Agent "design"}}<span class="sev-{{.Severity}}">{{.Severity}}</span> ·
+  {{if .Confidence}}{{template "confidence" .Confidence}} · {{end}}design ·
+  <span class="meta">goes in the review body</span>{{else}}{{if .URL}}<a class="where" href="{{.URL}}" target="_blank" rel="noopener" title="Open this line on GitHub">{{.Path}}:{{.Line}}</a>{{else}}<span class="where">{{.Path}}:{{.Line}}</span>{{end}} · <span class="sev-{{.Severity}}">{{.Severity}}</span> ·
+  {{template "confidence" .Confidence}} · {{.Agent}}{{if not .Inline}} · <span class="meta">goes in the review body (line not in diff)</span>{{end}}{{end}}{{end}}
+
+{{define "review"}}{{template "head" (page .Title .Refresh)}}
+<h1><a href="{{.R.URL}}" target="_blank" rel="noopener">{{.R.Title}}</a></h1>
+<div class="meta"><a href="{{timeline .R.Repo .R.Number}}">{{.R.Repo}}#{{.R.Number}}</a> · opened by <b>@{{.R.Author}}</b> · +{{.R.Additions}} −{{.R.Deletions}} in {{.R.Files}} files</div>
+<div class="meta" style="margin-top:6px"><span class="pill">{{status .R}}</span>{{with iteration .R}} <span class="pill">{{.}}</span>{{end}}
+  {{if .R.Tier}}<span class="pill">{{.R.Tier}} · {{.R.Models}}</span>{{end}} <span class="pill">{{money .R.CostUSD}}</span>
+  {{if .R.DryRun}}<span class="pill">🧪 dry run: nothing goes to GitHub</span>{{end}}</div>
+{{if .R.Reasons}}<div class="meta" style="margin-top:6px">Why {{.R.Tier}}: {{.R.Reasons}}</div>{{end}}
+{{if or (eq .R.Status "queued") (eq .R.Status "running")}}{{template "running-line" .R}}<script src="/running.js" defer></script>{{end}}
+{{if .R.Summary}}<div class="summary">{{.R.Summary}}</div>{{end}}
+{{with .Assessment}}<div class="summary"><b>Design:</b> {{.}}</div>{{end}}
+{{if .Msg}}<div class="msg">{{.Msg}}</div>{{end}}
+{{if .Stale}}<div class="msg">New commits since this review: it covered <code>{{short .R.HeadSHA}}</code>, the PR is now at
+  <code>{{short .Stale}}</code>. GitHub refuses a review of an old commit, so re-review it before posting or approving.</div>{{end}}
+{{with .Newer}}<div class="summary">There is a newer review of this PR: <a href="/r/{{.ID}}">{{status .}}{{if .Decision}} · {{.Decision}}{{end}}</a></div>{{end}}
+{{if .R.Error}}<div class="msg">{{if eq .R.Status "failed"}}Failed: {{.R.Error}}{{else}}Some reviewers failed, so this review
+  is incomplete{{if .Incomplete}} and can't be approved until a re-review completes{{end}}: {{.R.Error}}{{end}}</div>{{end}}
+
+{{if .Earlier}}<h2>Earlier findings · {{.EarlierSummary}}</h2>
+{{range .Earlier}}<div class="card"><div><span class="pill">{{followup .Finding}}</span> <span class="title">{{.Title}}</span>{{if .Wrong}} <span class="tag">marked wrong</span>{{end}}</div>
+  <div class="meta">{{.Agent}} · <span class="sev-{{.Severity}}">{{.Severity}}</span>{{if .Path}} · <span class="where">{{.Path}}:{{.Line}}</span>{{end}}
+    · {{fate .Finding}}{{if .PostedURL}} · <a href="{{.PostedURL}}" target="_blank" rel="noopener">the comment</a>{{end}}</div>
+  {{with .FollowupNote}}<p>{{.}}</p>{{end}}
+  {{if and .FollowupReview (ne .FollowupReview $.R.ID)}}<div class="footer">Checked by <a href="/r/{{.FollowupReview}}">another review</a>.</div>{{end}}</div>{{end}}
+{{if .OpenHigh}}<div class="msg">{{.OpenHigh}} high-severity finding(s) posted earlier are still open. Approving asks once more.</div>{{end}}
+{{end}}
+
+{{if .Runs}}<h2>Reviewers</h2>
+<table>{{range .Runs}}<tr><td><b>{{.Agent}}</b><div class="meta">{{.Model}}</div></td>
+  <td>{{if .Error}}<span class="sev-high">failed</span>{{else if eq .Agent "verifier"}}{{.Findings}} verdict(s){{else if eq .Agent "followup"}}{{.Findings}} earlier finding(s) checked{{else if eq .Agent "design"}}{{if .Findings}}{{.Findings}} concern(s){{else}}no concerns{{end}}{{else if .Findings}}{{.Findings}} finding(s){{else}}nothing found{{end}}
+    {{if .Checked}}<div class="meta">{{.Checked}}</div>{{else if .Error}}<div class="meta">{{.Error}}</div>{{end}}</td>
+  <td class="meta">{{.Turns}} turns · {{dur .Duration}} · {{money .CostUSD}}{{if .Denials}}<br><span class="sev-high">{{.Denials}} tool call(s) refused</span>{{end}}</td></tr>{{end}}</table>{{end}}
+
+{{if eq .R.Status "awaiting_you"}}
+<form method="post" action="/r/{{.R.ID}}">
+  <input type="hidden" name="csrf" value="{{.Token}}">
+  {{if .Confirm}}<input type="hidden" name="anyway" value="1">{{end}}
+  {{if .DesignPending}}
+    <h2>Design concerns · never posted without you</h2>
+    {{range .DesignPending}}<div class="card">
+      <label class="head"><input type="checkbox" name="f_{{.ID}}"><span><span class="title">{{.Title}}</span><br>{{template "finding-meta" .}}</span></label>
+      <textarea name="c_{{.ID}}" aria-label="Comment for {{.Title}}" style="min-height:110px">{{.Comment}}</textarea>
+    </div>{{end}}
+    <div class="footer">Ticked concerns go at the top of the review body, under "Design:", with the {{.Watermark}} footer and
+      their confidence: the design reviewer's own, since no verifier checks a judgement.</div>
+  {{end}}
+  {{if .Pending}}
+    <h2>Needs your decision</h2>
+    {{range .Pending}}<div class="card">
+      <label class="head"><input type="checkbox" name="f_{{.ID}}"><span><span class="title">{{.Title}}</span><br>{{template "finding-meta" .}}</span></label>
+      {{template "code" .}}
+      <textarea name="c_{{.ID}}" aria-label="Comment for {{.Title}}">{{.Comment}}</textarea>
+    </div>{{end}}
+    <div class="footer">Ticked findings are posted with the {{.Watermark}} footer and their confidence. You can edit the text first.</div>
+  {{else if .Incomplete}}
+    <h2>Result</h2><div class="empty">The reviewers that ran found nothing, but not all of them ran. Re-review it.</div>
+  {{else if and (not .Auto) (not .DesignPending)}}
+    <h2>Result</h2><div class="empty">No issues found. Approve this PR?</div>
+  {{end}}
+  <div class="actions">
+    {{$noApprove := or .Stale .Incomplete}}
+    {{if $noApprove}}<button class="primary" name="action" value="rereview">Re-review latest commit</button>{{end}}
+    {{if .Selectable}}<button type="button" class="quiet" id="select-all" hidden>Select all</button>
+    <button class="primary" name="action" value="post"{{if .Stale}} disabled{{end}}>Post selected</button>
+    <button class="approve" name="action" value="post_approve"{{if $noApprove}} disabled{{end}}>Post selected &amp; approve</button>{{end}}
+    <button class="approve" name="action" value="approve"{{if $noApprove}} disabled{{end}}>Approve{{if .Selectable}} without comments{{end}}</button>
+    {{if not $noApprove}}<button class="quiet" name="action" value="rereview">Re-review</button>{{end}}
+    <button class="quiet" name="action" value="skip">Skip: do nothing</button>
+    <button class="quiet" name="action" value="ignore">Ignore this PR from now on</button>
+  </div>
+  {{if .ApproveText}}<div class="footer">Approving says “{{.ApproveText}}”, unless you already approved this PR with it.</div>{{end}}
+</form>
+{{if .Selectable}}<script src="/select-all.js" defer></script>{{end}}
+{{else}}
+  {{if .R.Decision}}<h2>Decision</h2><div class="card">{{.R.Decision}}</div>{{end}}
+  {{if and (ne .R.Status "queued") (ne .R.Status "running") (not .Newer)}}
+  <form method="post" action="/r/{{.R.ID}}"><input type="hidden" name="csrf" value="{{.Token}}">
+    <div class="actions">{{if eq .R.Status "failed"}}<button class="primary" name="action" value="rereview">Retry</button>{{else}}<button class="quiet" name="action" value="rereview">Re-review latest commit</button>{{end}}</div></form>{{end}}
+{{end}}
+
+{{if .Auto}}<h2>Posted automatically · confirmed, {{.Threshold}}%+ certain, {{.AutoSeverity}} severity or higher</h2>
+  {{range .Auto}}<div class="card"><div class="title">{{.Title}}</div><div>{{template "finding-meta" .}}</div>{{template "code" .}}<p>{{.Comment}}</p>
+  {{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">view on GitHub</a> · {{end}}{{if eq .Status "auto_posted"}}{{template "wrong" (wrongForm . $.Token)}}{{end}}</div>{{end}}{{end}}
+
+{{if .Old}}<h2>Your earlier decisions</h2>
+  {{range .Old}}<div class="card"><div class="title">{{.Title}} · {{fate .Finding}}</div><div>{{template "finding-meta" .}}</div>{{template "code" .}}<p>{{.Comment}}</p>
+  {{if eq .Status "posted"}}{{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">view on GitHub</a> · {{end}}{{template "wrong" (wrongForm . $.Token)}}{{end}}</div>{{end}}{{end}}
+
+{{if .Rejected}}<details><summary>{{len .Rejected}} finding(s) the verifier rejected</summary>
+  {{range .Rejected}}<div class="card"><div class="title">{{.Title}}</div><div>{{template "finding-meta" .}}</div>{{template "code" .}}<p>{{.Comment}}</p></div>{{end}}
+</details>{{end}}
+{{template "foot"}}{{end}}
+
+{{define "stats"}}{{template "head" (page "Stats · personal-review-bot" 0)}}
+<h1>Stats</h1>
+<p class="meta">Dry runs left out. Findings the verifier confirms at {{.Threshold}}%+ certainty and {{.AutoSeverity}} severity or higher are posted automatically; the rest wait for you.</p>
+{{if .HasUsage}}<p class="meta">Plan usage: <b>{{pct .FiveHour}}</b> of the 5-hour limit (resets {{.FiveHourResets.Local.Format "15:04"}}) ·
+  <b>{{pct .WeekUsage}}</b> of the week (resets {{.WeekResets.Local.Format "Mon 15:04"}}), read {{ago .UsageSeen}}.
+  Reviews get cheaper from {{.SaveAt}}% and cheapest from {{.MinAt}}%.</p>{{end}}
+
+<h2>Last 7 days</h2>
+<div class="tiles">
+  <div class="tile"><div class="l">Reviews</div><div class="v">{{.Week.Reviews}}</div><div class="all">{{.Week.PRs}} PRs · all time {{.All.Reviews}}</div></div>
+  <div class="tile"><div class="l">Spend</div><div class="v">{{money .Week.CostUSD}}</div><div class="all">all time {{money .All.CostUSD}}</div></div>
+  <div class="tile"><div class="l">Per review</div><div class="v">{{money .Week.PerReview}}</div><div class="all">all time {{money .All.PerReview}}</div></div>
+  <div class="tile"><div class="l">Findings posted</div><div class="v">{{.Week.Posted}}</div><div class="all">bot {{.Week.BotPosted}} · you {{.Week.YouPosted}}{{if .Week.Wrong}} · {{.Week.Wrong}} marked wrong{{end}} · all time {{.All.Posted}}</div></div>
+  <div class="tile"><div class="l">You dropped</div><div class="v">{{.Week.Discarded}}</div><div class="all">verifier rejected {{.Week.Rejected}}</div></div>
+  <div class="tile"><div class="l">Approvals</div><div class="v">{{.Week.Approvals}}</div><div class="all">all time {{.All.Approvals}}</div></div>
+</div>
+
+<h2>Spend per day · last 14 days</h2>
+<div class="card">
+<svg class="chart" viewBox="0 0 {{.Chart.Width}} {{.Chart.Height}}" role="img" aria-label="Spend per day over the last 14 days">
+  <line class="grid" x1="{{.Chart.Left}}" x2="{{.Chart.Right}}" y1="{{.Chart.Top}}" y2="{{.Chart.Top}}"/>
+  <text x="{{.Chart.TickX}}" y="{{.Chart.TopTickY}}" text-anchor="end">{{.Chart.TopLabel}}</text>
+  <text x="{{.Chart.TickX}}" y="{{.Chart.BaseTickY}}" text-anchor="end">$0</text>
+  {{range .Chart.Bars}}<g><title>{{.Tip}}</title>
+    <rect class="hit" x="{{.X}}" y="{{$.Chart.Top}}" width="{{.W}}" height="{{$.Chart.PlotH}}"/>
+    {{if .Path}}<path class="bar" d="{{.Path}}"/>{{end}}
+    {{if .Value}}<text class="val" x="{{.CX}}" y="{{.LabelY}}" text-anchor="middle">{{.Value}}</text>{{end}}
+    {{if .Day}}<text x="{{.CX}}" y="{{$.Chart.DayY}}" text-anchor="middle">{{.Day}}</text>{{end}}
+  </g>{{end}}
+  <line class="grid" x1="{{.Chart.Left}}" x2="{{.Chart.Right}}" y1="{{.Chart.Baseline}}" y2="{{.Chart.Baseline}}"/>
+</svg>
+<details><summary>As a table</summary><table><tr class="head"><td>day</td><td class="n">reviews</td><td class="n">spend</td></tr>
+{{range .Days}}<tr><td>{{.Day.Format "Mon Jan 2"}}</td><td class="n">{{.Reviews}}</td><td class="n">{{money .CostUSD}}</td></tr>{{end}}</table></details>
+</div>
+
+<h2>Reviewers · all time</h2>
+<table><tr class="head"><td>reviewer</td><td class="n">runs</td><td class="n">found</td><td class="n">posted</td><td class="n">marked wrong</td>
+  <td class="n">fixed</td><td class="n">you dropped</td><td class="n">verifier rejected</td><td class="n">spend</td><td class="n">per posted finding</td></tr>
+{{range .Reviewers}}<tr><td><b>{{.Agent}}</b>{{if .Failed}}<div class="meta">{{.Failed}} failed</div>{{end}}</td><td class="n">{{.Runs}}</td>
+  {{if eq .Agent "verifier"}}<td class="n meta" colspan="6">checks the others' findings</td>{{else if eq .Agent "followup"}}<td class="n meta" colspan="6">checks whether earlier findings were fixed</td>{{else}}<td class="n">{{.Found}}</td>
+  <td class="n">{{.Posted}}</td><td class="n">{{.Wrong}}{{if .Posted}} <span class="meta">({{pct .Right}} right)</span>{{end}}</td>
+  <td class="n">{{if .Checked}}{{.Fixed}} of {{.Checked}} <span class="meta">({{pct .FixedShare}})</span>{{else}}–{{end}}</td><td class="n">{{.Discarded}}</td><td class="n">{{if eq .Agent "design"}}–{{else}}{{.Rejected}}{{end}}</td>{{end}}
+  <td class="n">{{money .CostUSD}}</td><td class="n">{{if .Posted}}{{money .CostPerPosted}}{{else}}–{{end}}</td></tr>{{end}}</table>
+<div class="footer">Posted is what the bot and you posted; "right" is the share you haven't marked wrong since (mark a posted finding
+  wrong on its review page). Fixed counts the posted findings a later re-review found fixed, of those it checked. Design concerns skip the verifier. Findings still waiting count in "found" only.</div>
+
+<h2>What became of findings, by score</h2>
+<table><tr class="head"><td>certainty · severity</td><td class="n">bot posted</td><td class="n">you posted</td><td class="n">you discarded</td></tr>
+{{range .Decisions}}<tr><td>{{.Label}}</td><td class="n">{{.BotPosted}}</td><td class="n">{{.Posted}}</td><td class="n">{{.Discarded}}</td></tr>{{end}}</table>
+<div class="footer">Findings scored since {{.Since.Local.Format "Jan 2 15:04"}}, when certainty and severity started being rated apart.
+  If you post most of a range that waits for you, the rule could post it; if you discard most of one the bot posts, tighten it.</div>
+
+<h2>Spend by PR size</h2>
+<table><tr class="head"><td>tier</td><td class="n">reviews</td><td class="n">spend</td><td class="n">per review</td></tr>
+{{range .Tiers}}<tr><td>{{.Name}}</td><td class="n">{{.Count}}</td><td class="n">{{money .CostUSD}}</td><td class="n">{{money .Average}}</td></tr>{{end}}</table>
+
+<h2>Spend by model</h2>
+<table><tr class="head"><td>model</td><td class="n">runs</td><td class="n">spend</td><td class="n">per run</td></tr>
+{{range .Models}}<tr><td>{{.Name}}</td><td class="n">{{.Count}}</td><td class="n">{{money .CostUSD}}</td><td class="n">{{money .Average}}</td></tr>{{end}}</table>
+
+<h2>Repos · top 10 by reviews</h2>
+<table><tr class="head"><td>repo</td><td class="n">reviews</td><td class="n">findings posted</td><td class="n">spend</td></tr>
+{{range .Repos}}<tr><td>{{.Name}}</td><td class="n">{{.Count}}</td><td class="n">{{.Posted}}</td><td class="n">{{money .CostUSD}}</td></tr>{{end}}</table>
+{{template "foot"}}{{end}}
+
+{{define "history"}}{{template "head" (page "History · personal-review-bot" 0)}}
+<h1>History</h1>
+<form class="filters" method="get" action="/history">
+  <select name="repo" aria-label="Repo"><option value="">all repos</option>{{range .Repos}}<option value="{{.}}"{{if eq . $.F.Repo}} selected{{end}}>{{repoName .}}</option>{{end}}</select>
+  <select name="author" aria-label="Author"><option value="">all authors</option>{{range .Authors}}<option value="{{.}}"{{if eq . $.F.Author}} selected{{end}}>@{{.}}</option>{{end}}</select>
+  <select name="status" aria-label="Status"><option value="">any status</option>{{range .Statuses}}<option value="{{index . 0}}"{{if eq (index . 0) $.F.Status}} selected{{end}}>{{index . 1}}</option>{{end}}</select>
+  <button class="quiet small">Filter</button>{{if or .F.Repo .F.Author .F.Status}}<a href="/history" class="meta">clear</a>{{end}}
+</form>
+<div class="meta">{{.Total}} review(s){{if gt .Pages 1}} · page {{.Page}} of {{.Pages}}{{end}}</div>
+{{if .Reviews}}{{template "review-rows" .Reviews}}{{else}}<div class="empty">No reviews match.</div>{{end}}
+<div class="pager"><span>{{with .Newer}}<a href="{{.}}">← Newer</a>{{end}}</span><span>{{with .Older}}<a href="{{.}}">Older →</a>{{end}}</span></div>
+
+<h2>Ignored PRs</h2>
+{{range .Ignored}}<div class="card"><a href="{{timeline .Repo .Number}}"><span class="title">{{.Title}}</span></a>
+  <div class="meta">{{.Repo}}#{{.Number}} · by @{{.Author}} ·
+  <form class="inline" method="post" action="/unignore"><input type="hidden" name="csrf" value="{{$.Token}}">
+    <input type="hidden" name="repo" value="{{.Repo}}"><input type="hidden" name="number" value="{{.Number}}">
+    <input type="hidden" name="back" value="/history"><button class="quiet small">Un-ignore</button></form></div></div>
+{{else}}<div class="empty">No ignored PRs. "Ignore this PR from now on" on a review adds one.</div>{{end}}
+<div class="footer">An un-ignored PR is reviewed again on its next re-request or new commits.</div>
+{{template "foot"}}{{end}}
+
+{{define "timeline"}}{{template "head" (page .Title 0)}}
+<h1><a href="{{.Latest.URL}}" target="_blank" rel="noopener">{{.Latest.Title}}</a></h1>
+<div class="meta">{{.Latest.Repo}}#{{.Latest.Number}} · by <b>@{{.Latest.Author}}</b> · {{len .Entries}} review(s) · {{money .Cost}}</div>
+{{if .Ignored}}<div class="msg">You ignore this PR, so the bot skips it.
+  <form class="inline" method="post" action="/unignore"><input type="hidden" name="csrf" value="{{.Token}}">
+    <input type="hidden" name="repo" value="{{.Latest.Repo}}"><input type="hidden" name="number" value="{{.Latest.Number}}">
+    <input type="hidden" name="back" value="{{timeline .Latest.Repo .Latest.Number}}"><button class="quiet small">Un-ignore</button></form></div>{{end}}
+<h2>Every review, newest first</h2>
+{{range .Entries}}{{$r := .R}}<div class="card">
+  <div><a href="/r/{{.R.ID}}"><b>{{.R.CreatedAt.Local.Format "Jan 2 15:04"}}</b></a>{{if and (ne .R.Tier "") (not .R.DryRun)}} · {{ordinal .R.Iteration}} iteration{{end}} · {{source .R.Source}} · <code>{{short .R.HeadSHA}}</code>
+    {{if .R.Tier}} · {{.R.Tier}} · {{.R.Models}}{{end}} · {{money .R.CostUSD}}{{if .R.DryRun}} · 🧪 dry run{{end}}</div>
+  <div class="meta">{{status .R}}{{if .R.Decision}} · {{.R.Decision}}{{end}}</div>
+  {{if .Findings}}<table>{{range .Findings}}<tr><td class="fate meta">{{if and (eq .Status "pending") (ne $r.Status "awaiting_you")}}⏸ never decided{{else}}{{fate .}}{{end}}</td><td>{{.Title}}<div class="meta">{{.Agent}}{{if .Path}} · {{.Path}}:{{.Line}}{{end}}</div></td>
+    <td class="n"><span class="sev-{{.Severity}}">{{.Severity}}</span>{{if .Confidence}} · {{template "confidence" .Confidence}}{{end}}</td></tr>{{end}}</table>{{end}}
+</div>{{end}}
+{{template "foot"}}{{end}}

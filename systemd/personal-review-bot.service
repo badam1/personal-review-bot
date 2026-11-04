@@ -1,0 +1,16 @@
+# personal-review-bot daemon: polls GitHub, runs reviews, serves http://localhost:12346. A systemd user service,
+# installed by install.sh, which fills in __HOME__ and __PATH__ (the PATH you installed from).
+# Log: journalctl --user -u personal-review-bot
+[Unit]
+Description=personal-review-bot: reviews the GitHub PRs requested from you
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=__HOME__/.local/bin/personal-review-bot daemon
+Environment="PATH=__PATH__"
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

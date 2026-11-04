@@ -1,0 +1,26 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional:
+    name: Conventional Commits title
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check the title
+        shell: bash
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # The title becomes the squash commit on main: type(optional scope)!: summary
+          pattern='^(feat|fix|docs|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: [^ ].*$'
+          if [[ ! "$TITLE" =~ $pattern ]]; then
+            echo "::error::PR title must follow Conventional Commits, e.g. 'feat: configurable reviewers' or 'fix(web): retry button'. Got: $TITLE"
+            exit 1
+          fi

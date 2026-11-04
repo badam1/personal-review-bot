@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Format, vet & test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting (gofmt)
+        shell: bash
+        run: |
+          files="$(gofmt -l .)"
+          if [[ -n "$files" ]]; then
+            echo "gofmt needs to be run on:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test ./...
+
+  shellcheck:
+    name: Shellcheck (install.sh)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Shellcheck
+        run: shellcheck install.sh
