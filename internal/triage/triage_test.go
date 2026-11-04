@@ -1,11 +1,16 @@
 package triage
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
+	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/gh"
 )
+
+var builtin = agents.Builtin().Reviewers
 
 func files(paths ...string) []gh.File {
 	var fs []gh.File
@@ -32,7 +37,7 @@ func TestMake(t *testing.T) {
 		{"huge", 2000, files("web/src/app.tsx"), "large", "opus", "opus", false, false},
 	}
 	for _, c := range cases {
-		p := Make(gh.PR{Additions: c.lines}, c.files)
+		p := Make(gh.PR{Additions: c.lines}, c.files, builtin)
 		if p.Tier != c.tier || p.AgentModel != c.model || p.VerifierModel != c.verifier {
 			t.Errorf("%s: got %s %s→%s, want %s %s→%s", c.name, p.Tier, p.AgentModel, p.VerifierModel, c.tier, c.model, c.verifier)
 		}
@@ -67,7 +72,7 @@ func TestDesign(t *testing.T) {
 		{"word adr in a code path", 20, files("internal/address/adress.go"), false},
 	}
 	for _, c := range cases {
-		if got := Make(gh.PR{Additions: c.lines}, c.files).Design; got != c.want {
+		if got := Make(gh.PR{Additions: c.lines}, c.files, builtin).Design; got != c.want {
 			t.Errorf("%s: design = %v, want %v", c.name, got, c.want)
 		}
 	}
@@ -87,7 +92,7 @@ func TestDesignModel(t *testing.T) {
 		{"huge", 2000, files("web/src/app.tsx"), "fable"},
 	}
 	for _, c := range cases {
-		if got := Make(gh.PR{Additions: c.lines}, c.files).DesignModel; got != c.want {
+		if got := Make(gh.PR{Additions: c.lines}, c.files, builtin).DesignModel; got != c.want {
 			t.Errorf("%s: design model = %s, want %s", c.name, got, c.want)
 		}
 	}
@@ -95,9 +100,9 @@ func TestDesignModel(t *testing.T) {
 
 // As the plan's limits fill up, reviews get cheaper; the verifier never drops below Sonnet.
 func TestWithin(t *testing.T) {
-	large := Make(gh.PR{Additions: 2000}, files("web/src/app.tsx"))   // opus → opus, design on fable
-	medium := Make(gh.PR{Additions: 300}, files("internal/api/x.go")) // sonnet → opus, design on opus
-	small := Make(gh.PR{Additions: 40}, files("cmd/main.go"))         // haiku → sonnet
+	large := Make(gh.PR{Additions: 2000}, files("web/src/app.tsx"), builtin)   // opus → opus, design on fable
+	medium := Make(gh.PR{Additions: 300}, files("internal/api/x.go"), builtin) // sonnet → opus, design on opus
+	small := Make(gh.PR{Additions: 40}, files("cmd/main.go"), builtin)         // haiku → sonnet
 
 	if p := large.Within(0.74, "week", 0.75, 0.90); p.Models() != "opus → opus" || p.Effort != "" || p.Saving != "" {
 		t.Errorf("below the save line nothing changes: %s, effort %q", p.Models(), p.Effort)
@@ -120,11 +125,56 @@ func TestWithin(t *testing.T) {
 
 // The follow-up check runs on Sonnet, and is left out only near the usage limit.
 func TestFollowupPlan(t *testing.T) {
-	p := Make(gh.PR{Additions: 300}, files("internal/api/x.go"))
+	p := Make(gh.PR{Additions: 300}, files("internal/api/x.go"), builtin)
 	if !p.Followup || p.FollowupModel != "sonnet" {
 		t.Errorf("plan = %+v", p)
 	}
 	if !p.Within(0.80, "week", 0.75, 0.90).Followup || p.Within(0.95, "week", 0.75, 0.90).Followup {
 		t.Error("the follow-up stays when saving and goes near the limit")
+	}
+}
+
+// Reviewers run on the PRs their paths and docs settings cover, and a pinned model steps down with the usage limits.
+func TestReviewerSelection(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, text string) {
+		_ = os.MkdirAll(filepath.Join(dir, "agents"), 0o755)
+		if err := os.WriteFile(filepath.Join(dir, "agents", name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("security.md", "---\nmodel: opus\n---\n")
+	write("cost.md", "---\narea: cloud cost\npaths: \\.tf$\nmodel: claude-opus-5-5\n---\nCost.")
+	write("docs.md", "---\narea: documentation\ndocs: true\n---\nTypos and broken links.")
+	k, err := agents.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code := Make(gh.PR{Additions: 40}, files("cmd/main.go"), k.Reviewers)
+	if !slices.Equal(code.Agents, []string{"logic", "security", "integration", "docs"}) {
+		t.Errorf("code PR runs %v", code.Agents)
+	}
+	if code.ModelFor("security") != "opus" || code.ModelFor("logic") != "haiku" {
+		t.Errorf("models: security %s, logic %s", code.ModelFor("security"), code.ModelFor("logic"))
+	}
+	tf := Make(gh.PR{Additions: 40}, files("main.tf"), k.Reviewers)
+	if !slices.Contains(tf.Agents, "cost") || !slices.Contains(tf.Agents, "infra") ||
+		!slices.Contains(tf.Reasons, "paths for infra, cost") {
+		t.Errorf("terraform PR runs %v, reasons %v", tf.Agents, tf.Reasons)
+	}
+	if docs := Make(gh.PR{Additions: 10}, files("README.md"), k.Reviewers); !slices.Equal(docs.Agents, []string{"logic", "docs"}) {
+		t.Errorf("docs-only PR runs %v", docs.Agents)
+	}
+
+	saving := tf.Within(0.80, "week", 0.75, 0.90)
+	if saving.ModelFor("security") != "sonnet" || saving.ModelFor("cost") != "claude-opus-5-5" {
+		t.Errorf("saving: security %s, cost %s", saving.ModelFor("security"), saving.ModelFor("cost"))
+	}
+	if tf.ModelFor("security") != "opus" {
+		t.Error("Within must not change the plan it was called on")
+	}
+	if cheapest := tf.Within(0.95, "week", 0.75, 0.90); cheapest.ModelFor("security") != "haiku" || cheapest.ModelFor("cost") != "haiku" {
+		t.Errorf("cheapest: security %s, cost %s", cheapest.ModelFor("security"), cheapest.ModelFor("cost"))
 	}
 }

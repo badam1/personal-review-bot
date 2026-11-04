@@ -4,14 +4,20 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
+	"text/tabwriter"
 
+	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/daemon"
 	"github.com/badam1/personal-review-bot/internal/gh"
@@ -30,6 +36,8 @@ const usage = `personal-review-bot: reviews PRs where your review is requested d
                                    review one PR now; --dry-run posts nothing and opens nothing
   personal-review-bot queue <PR-URL>        hand a PR to the running daemon
   personal-review-bot page                  serve only the confirmation page (no polling, no reviews)
+  personal-review-bot agents                the reviewers and prompts reviews run with, and where each comes from
+  personal-review-bot agents export <dir>   write the built-in reviewers, prompts and an example context.md to <dir>
 `
 
 func main() {
@@ -55,6 +63,8 @@ func main() {
 		err = queue(cfg, args)
 	case "page":
 		err = page(ctx, cfg)
+	case "agents":
+		err = agentsCmd(cfg, args, os.Stdout)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
@@ -161,5 +171,67 @@ func queue(cfg config.Config, args []string) error {
 		return err
 	}
 	fmt.Printf("queued as review %d; the daemon picks it up within a few seconds\n", id)
+	return nil
+}
+
+// agentsCmd shows the reviewers and prompts a review would run with (checking the config directory's files on the
+// way), or exports the built-in ones to copy from.
+func agentsCmd(cfg config.Config, args []string, w io.Writer) error {
+	switch {
+	case len(args) == 2 && args[0] == "export":
+		wrote, err := agents.Export(args[1])
+		for _, path := range wrote {
+			fmt.Fprintln(w, "wrote", path)
+		}
+		if err != nil {
+			return err
+		}
+		if len(wrote) == 0 {
+			fmt.Fprintln(w, "nothing written: every file is already there")
+		}
+		fmt.Fprintf(w, "Copy the files you want to change into %s, in the same folders.\n", cfg.ConfigDir)
+		return nil
+	case len(args) > 0:
+		return fmt.Errorf("usage: personal-review-bot agents [export <dir>]")
+	}
+	k, err := agents.Load(cfg.ConfigDir)
+	if err != nil {
+		return err
+	}
+	rel := func(source string) string {
+		if r, err := filepath.Rel(cfg.ConfigDir, source); err == nil && !strings.HasPrefix(r, "..") {
+			return r
+		}
+		return source
+	}
+	fmt.Fprintf(w, "Config directory: %s\n\nReviewers\n", cfg.ConfigDir)
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for _, r := range k.Reviewers {
+		runs := "every PR"
+		if r.Paths != nil {
+			runs = "paths " + r.Paths.String()
+			if len(runs) > 48 {
+				runs = runs[:47] + "…"
+			}
+		}
+		if r.Docs {
+			runs += ", docs-only too"
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", r.Name, r.Area, runs, cmp.Or(r.Model, "tier's model"), rel(r.Source))
+	}
+	_ = tw.Flush()
+	for _, r := range k.Disabled {
+		fmt.Fprintf(w, "  switched off: %s (%s)\n", r.Name, rel(r.Source))
+	}
+	fmt.Fprintln(w, "\nPrompts")
+	for _, name := range agents.Prompts {
+		fmt.Fprintf(tw, "  %s\t%s\n", name, rel(k.Sources[name]))
+	}
+	_ = tw.Flush()
+	if k.Context != "" {
+		fmt.Fprintf(w, "\nContext: %s (%d lines), added to every prompt\n", rel(k.Sources["context"]), strings.Count(k.Context, "\n")+1)
+	} else {
+		fmt.Fprintln(w, "\nContext: none (add context.md to tell every prompt about your organisation)")
+	}
 	return nil
 }
