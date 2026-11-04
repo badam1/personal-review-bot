@@ -6,12 +6,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
+	"github.com/badam1/personal-review-bot/internal/update"
 	"github.com/badam1/personal-review-bot/internal/version"
 	"github.com/badam1/personal-review-bot/internal/web"
 )
@@ -33,6 +35,15 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if err := st.ResetRunning(); err != nil {
 		return err
 	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	upd := newUpdater(d, client, exe)
+	update.SetState(st, "") // a start ends whatever update was under way
+	if cfg.UpdateCheck {
+		go upd.loop(ctx)
+	}
 	if st.Meta("seeded") == "" {
 		if err := seed(d); err != nil {
 			return fmt.Errorf("first run: %w", err)
@@ -40,12 +51,12 @@ func Run(ctx context.Context, cfg config.Config) error {
 	}
 
 	go func() {
-		if err := web.Serve(ctx, d); err != nil {
+		if err := web.Serve(ctx, d, upd.Start); err != nil {
 			log.Printf("confirmation page stopped: %v", err)
 		}
 	}()
 	for i := 0; i < cfg.MaxParallel; i++ {
-		go worker(ctx, d)
+		go worker(ctx, d, upd)
 	}
 
 	tick := time.NewTicker(cfg.PollInterval)
@@ -56,6 +67,13 @@ func Run(ctx context.Context, cfg config.Config) error {
 		case <-ctx.Done():
 			log.Printf("personal-review-bot stopping")
 			return nil
+		case <-upd.drain:
+			if upd.waitIdle(ctx) != nil {
+				log.Printf("personal-review-bot stopping")
+				return nil
+			}
+			log.Printf("personal-review-bot restarting into the update")
+			return ErrRestart
 		case <-tick.C:
 		}
 	}
@@ -156,13 +174,17 @@ func reviewReason(pr gh.PR, last *store.Review) string {
 	return ""
 }
 
-func worker(ctx context.Context, d pipeline.Deps) {
-	for ctx.Err() == nil {
+// worker runs queued reviews until ctx ends or an update is installed. It counts a review as running from before it
+// claims one, so the restart after an update can't slip in between the claim and the review.
+func worker(ctx context.Context, d pipeline.Deps, upd *updater) {
+	for ctx.Err() == nil && !upd.draining() {
+		upd.running.Add(1)
 		r, err := d.Store.ClaimNext()
 		if err != nil {
 			log.Printf("queue: %v", err)
 		}
 		if r == nil {
+			upd.running.Add(-1)
 			select {
 			case <-ctx.Done():
 				return
@@ -173,5 +195,6 @@ func worker(ctx context.Context, d pipeline.Deps) {
 		if err := pipeline.Run(ctx, d, r.ID); err != nil {
 			log.Printf("%s#%d: %v", r.Repo, r.Number, err)
 		}
+		upd.running.Add(-1)
 	}
 }

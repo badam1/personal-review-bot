@@ -26,6 +26,8 @@ type Config struct {
 	SkipDrafts   bool
 	MaxAge       time.Duration // don't review PRs automatically that have had no activity for this long (0 = no limit)
 	Watermark    string        // footer on every comment the bot posts, followed by the finding's confidence
+	UpdateCheck  bool          // look for new releases every 6 hours, to offer them on the page and in the TUI
+	UpdateRepo   string        // the GitHub repo releases come from
 	ConfigDir    string        // config.env
 	StateDir     string        // SQLite database
 	CacheDir     string        // repo clones and per-review worktrees
@@ -53,6 +55,8 @@ func Load() Config {
 		SkipDrafts:   s.str("SKIP_DRAFTS", "1") == "1",
 		MaxAge:       time.Duration(s.int("MAX_AGE_DAYS", 14)) * 24 * time.Hour,
 		Watermark:    s.str("WATERMARK", "🤖 personal-review-bot"),
+		UpdateCheck:  s.str("UPDATE_CHECK", "1") == "1",
+		UpdateRepo:   s.str("UPDATE_REPO", "badam1/personal-review-bot"),
 		ConfigDir:    dir,
 		StateDir:     s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
 		CacheDir:     s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),

@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -16,6 +17,8 @@ import (
 	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
+	"github.com/badam1/personal-review-bot/internal/update"
+	"github.com/badam1/personal-review-bot/internal/version"
 	"github.com/badam1/personal-review-bot/internal/web"
 )
 
@@ -36,6 +39,8 @@ type snapshot struct {
 	lastPoll       time.Time
 	usage          agents.Usage
 	hasUsage       bool
+	update         update.Release // a newer release ("" Version: none)
+	updateState    string         // what an update under way is doing
 	err            error
 }
 
@@ -47,6 +52,8 @@ func load(st *store.Store) snapshot {
 	}
 	s.lastPoll, _ = time.Parse(time.RFC3339, st.Meta("last_poll"))
 	s.usage, s.hasUsage = pipeline.LoadUsage(st)
+	s.update, _ = update.Available(update.Load(st), version.String())
+	s.updateState = update.State(st)
 	return s
 }
 
@@ -61,6 +68,9 @@ type model struct {
 
 type tickMsg struct{}
 
+// updateMsg is what the daemon said to an update request.
+type updateMsg string
+
 func tick() tea.Cmd { return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return tickMsg{} }) }
 
 func (m model) Init() tea.Cmd { return tick() }
@@ -70,6 +80,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.snap = load(m.st)
 		return m, tick()
+	case updateMsg:
+		m.msg = string(msg)
+		m.snap = load(m.st)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case tea.KeyMsg:
@@ -93,6 +106,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if r, ok := m.selected(); ok {
 				m.msg = openURL(r.URL, "the PR on GitHub")
 			}
+		case "u":
+			if m.snap.update.Version == "" {
+				m.msg = "already up to date (" + version.String() + ")"
+				break
+			}
+			m.msg = "asking the daemon to update to " + m.snap.update.Version + "…"
+			return m, func() tea.Msg { return updateMsg(requestUpdate(m.cfg, m.st)) }
 		case "r":
 			if r, ok := m.selected(); ok {
 				m.msg = queue(m.st, r)
@@ -108,6 +128,18 @@ func (m model) selected() (store.Review, bool) {
 		return m.snap.recent[m.cursor], true
 	}
 	return store.Review{}, false
+}
+
+// requestUpdate asks the daemon to install the newest release and says what came of it.
+func requestUpdate(cfg config.Config, st *store.Store) string {
+	msg, err := update.Request(cfg, st)
+	switch {
+	case errors.Is(err, update.ErrNoDaemon):
+		return "the daemon isn't running: run `personal-review-bot update` to update the binary"
+	case err != nil:
+		return "update: " + err.Error()
+	}
+	return msg
 }
 
 // queue asks the daemon to (re)review the selected PR.
@@ -146,6 +178,32 @@ func usageLine(cfg config.Config, u agents.Usage, now time.Time) string {
 	return dim.Render(line) + "\n"
 }
 
+// updateLine says that a newer release is out, or what an update under way is doing ("" when neither).
+func updateLine(s snapshot, interactive bool) string {
+	busy := s.updateState != "" && !strings.Contains(s.updateState, "failed")
+	line := ""
+	if s.updateState != "" {
+		line = "update: " + s.updateState
+	}
+	if s.update.Version != "" && !busy {
+		how := "u to update"
+		if !interactive {
+			how = "personal-review-bot update"
+		}
+		if line != "" {
+			line += " · "
+		}
+		line += fmt.Sprintf("%s is available (running %s) · %s", s.update.Version, version.String(), how)
+	}
+	switch {
+	case line == "":
+		return ""
+	case strings.Contains(line, "failed"):
+		return badStyle.Render(line) + "\n"
+	}
+	return needStyle.Render(line) + "\n"
+}
+
 func render(cfg config.Config, s snapshot, cursor int, msg string, interactive bool, width int) string {
 	var b strings.Builder
 	daemon := badStyle.Render("● daemon not running")
@@ -157,6 +215,7 @@ func render(cfg config.Config, s snapshot, cursor int, msg string, interactive b
 	if s.hasUsage {
 		b.WriteString(usageLine(cfg, s.usage, time.Now()))
 	}
+	b.WriteString(updateLine(s, interactive))
 	b.WriteString("\n")
 	if s.err != nil {
 		fmt.Fprintf(&b, "%s\n\n", badStyle.Render("database: "+s.err.Error()))
@@ -216,7 +275,7 @@ func render(cfg config.Config, s snapshot, cursor int, msg string, interactive b
 		b.WriteString(dim.Render("  no reviews yet") + "\n")
 	}
 	if interactive {
-		b.WriteString("\n" + dim.Render("↑/↓ select · enter review page · o open PR · r review again · q quit"))
+		b.WriteString("\n" + dim.Render("↑/↓ select · enter review page · o open PR · r review again · u update · q quit"))
 		if msg != "" {
 			b.WriteString("   " + okStyle.Render(msg))
 		}
