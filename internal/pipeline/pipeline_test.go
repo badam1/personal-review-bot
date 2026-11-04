@@ -9,6 +9,7 @@ import (
 
 	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/store"
 	"github.com/badam1/personal-review-bot/internal/triage"
 )
@@ -193,5 +194,96 @@ func TestByModel(t *testing.T) {
 		Pinned: map[string]string{"security": "sonnet"}}
 	if got := byModel(p); got != "logic, go-tests (haiku), security (sonnet)" {
 		t.Errorf("byModel = %q", got)
+	}
+}
+
+// A finding's thread is the one its own posted comment started: by the owner, signed, on its path, with its text.
+func TestMatchThread(t *testing.T) {
+	f := store.Finding{Agent: "logic", Path: "a.go", Line: 7, Inline: true, Comment: "The retry loop\nswallows the error."}
+	signed := func(author, body string) gh.ThreadComment {
+		return gh.ThreadComment{Author: author, Body: body + "\n\n<sub>🤖 acme-bot · 91%</sub>"}
+	}
+	threads := []gh.Thread{
+		{ID: "other-path", Path: "b.go", Comments: []gh.ThreadComment{signed("octocat", "The retry loop swallows the error.")}},
+		{ID: "someone-else", Path: "a.go", Comments: []gh.ThreadComment{signed("dev", "The retry loop swallows the error.")}},
+		{ID: "unsigned", Path: "a.go", Comments: []gh.ThreadComment{{Author: "octocat", Body: "The retry loop swallows the error."}}},
+		{ID: "other-text", Path: "a.go", Comments: []gh.ThreadComment{signed("octocat", "Off by one.")}},
+		{ID: "it", Path: "a.go", Comments: []gh.ThreadComment{signed("octocat", "The retry loop  swallows\nthe error."),
+			{Author: "dev", Body: "fixing"}, {Author: "octocat", Body: "thanks"}}},
+	}
+	got, ok := MatchThread(f, threads, "octocat", "🤖 acme-bot")
+	if !ok || got.ID != "it" {
+		t.Fatalf("matched %q, %v; want the thread its comment started", got.ID, ok)
+	}
+	if a, ok := Answer(got, "octocat"); !ok || a.Body != "fixing" {
+		t.Errorf("answer = %+v, %v; want the latest reply by someone else", a, ok)
+	}
+	if _, ok := Answer(threads[0], "octocat"); ok {
+		t.Error("a thread with only the owner's comment has no answer")
+	}
+	for _, other := range []store.Finding{{Agent: "design", Comment: f.Comment, Path: "a.go", Inline: true},
+		{Agent: "logic", Comment: f.Comment, Path: "a.go", Inline: false}} {
+		if _, ok := MatchThread(other, threads, "octocat", "🤖 acme-bot"); ok {
+			t.Errorf("%+v has no thread: it went in a review body", other)
+		}
+	}
+}
+
+func TestReminderText(t *testing.T) {
+	cases := []struct {
+		f    store.Finding
+		want string
+	}{
+		{store.Finding{Followup: store.FollowOpen, FollowupNote: "a.go:9 still returns nil."}, "Still open at `abcdef1`: a.go:9 still returns nil."},
+		{store.Finding{Followup: store.FollowPartly, FollowupNote: "d.go is left."}, "Only partly fixed at `abcdef1`: d.go is left."},
+		{store.Finding{Followup: store.FollowOpen}, "Still open at `abcdef1`."},
+	}
+	for _, c := range cases {
+		if got := ReminderText(c.f, "abcdef1234"); got != c.want {
+			t.Errorf("ReminderText = %q, want %q", got, c.want)
+		}
+	}
+	for status, want := range map[string]bool{store.FollowOpen: true, store.FollowPartly: true, store.FollowFixed: false,
+		store.FollowMoot: false, store.FollowDeclined: false, "": false} {
+		if got := Remindable(store.Finding{Followup: status}); got != want {
+			t.Errorf("Remindable(%q) = %v", status, got)
+		}
+	}
+	if Remindable(store.Finding{Followup: store.FollowOpen, Wrong: true}) {
+		t.Error("a finding marked wrong is never reminded of")
+	}
+}
+
+// Reminders with a thread become replies (reopening resolved threads); the rest are listed in the review body.
+func TestReminderParts(t *testing.T) {
+	cfg := config.Config{Watermark: "🤖 acme-bot"}
+	open, resolved := gh.Thread{ID: "T1"}, gh.Thread{ID: "T3", Resolved: true}
+	section, replies := reminderParts(cfg, []Reminder{
+		{Finding: store.Finding{Title: "Retry loop"}, Text: " Still open. ", Thread: &open},
+		{Finding: store.Finding{Title: "Port"}, Text: "Partly.", Thread: &resolved},
+		{Finding: store.Finding{Title: "Second release path", PostedURL: "https://x/r1"}, Text: "Still open."},
+		{Finding: store.Finding{Title: "Log level", Path: "e.go", Line: 7}, Text: "Unchanged."},
+	})
+	if len(replies) != 2 || replies[0] != (gh.Reply{ThreadID: "T1", Body: "Still open.\n\n<sub>🤖 acme-bot · reminder</sub>"}) ||
+		!replies[1].Reopen || replies[0].Reopen {
+		t.Errorf("replies = %+v", replies)
+	}
+	want := "**Still open from earlier reviews** (2 with a reply in their thread)\n\n" +
+		"- **Second release path**: Still open. ([earlier review](https://x/r1))\n" +
+		"- **Log level** (`e.go:7`): Unchanged.\n\n<sub>🤖 acme-bot · reminder</sub>"
+	if len(section) != 1 || section[0] != want {
+		t.Errorf("section = %q\nwant      %q", section, want)
+	}
+	if section, replies := reminderParts(cfg, nil); section != nil || replies != nil {
+		t.Error("no reminders, nothing to add")
+	}
+}
+
+// Re-reviews are told which findings you already reminded the author of.
+func TestFormatPriorReminded(t *testing.T) {
+	got := formatPrior([]store.Finding{{Agent: "logic", Path: "a.go", Line: 3, Title: "t", Status: store.Posted,
+		Followup: store.FollowOpen, RemindedSHA: "abcdef1234"}}, "@octocat")
+	if !strings.Contains(got, "last follow-up: still open; @octocat reminded the author at abcdef1") {
+		t.Errorf("prior = %q", got)
 	}
 }

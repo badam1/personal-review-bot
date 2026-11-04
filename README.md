@@ -96,6 +96,11 @@ The page is <http://localhost:12346>:
   approve. On a re-review, "Earlier findings · 3 fixed · 1 still open" with the follow-up's evidence (approving while
   a high one is still open asks once more). A posted finding that turned out wrong can be marked wrong: the stats
   count it and re-reviews of the PR are told.
+- **Reminders**: on a re-review, every earlier finding that is still open or only partly fixed can be reminded of,
+  with a text you can edit ("Still open at `abc1234`: …"). The ones nobody answered start ticked; where the author
+  replied, the reply is shown and you decide. Ticked reminders go out with the review you post, as one notification:
+  a reply in the finding's thread (reopening it if it was resolved), or, for design concerns and findings outside
+  the diff, a list in the review body. A reminded finding isn't ticked again until the author pushes.
 - **A PR's timeline** (`/pr/owner/repo/N`): every review of it, what started each, and what became of each finding.
 - **History** (`/history`): every review, filtered by repo, author or status; ignored PRs, with "Un-ignore".
 - **Stats** (`/stats`): spend, findings and their fate per reviewer, model, PR size and repo, spend per day, and the

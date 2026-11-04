@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
 	"github.com/badam1/personal-review-bot/internal/update"
@@ -33,7 +34,12 @@ func newSite(t *testing.T) *site {
 	t.Cleanup(func() { st.Close() })
 	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf, Cfg: config.Config{Threshold: 80, AutoSeverity: "high"}},
 		token: "secret", hosts: []string{"localhost:12346"}, origins: []string{"http://localhost:12346"},
-		head: func(string, int) (string, error) { return "aaa", nil }}
+		head:    func(string, int) (string, error) { return "aaa", nil },
+		threads: func(string, int) ([]gh.Thread, error) { return nil, nil }, login: "octocat",
+		send: func(*store.Review, string, []store.Finding, []pipeline.Reminder) (string, error) {
+			t.Fatal("nothing may be sent to GitHub unless the test says so")
+			return "", nil
+		}}
 	return &site{t: t, st: st, h: s.guard(s.routes()), srv: s}
 }
 
@@ -489,5 +495,104 @@ func TestCheckForUpdates(t *testing.T) {
 	}
 	if fake.starts != 0 {
 		t.Error("checking must not install")
+	}
+}
+
+// Still-open earlier findings can be reminded of: unanswered ones start ticked, a reply or a reminder at this commit
+// unticks one, a resolved thread is reopened, and the ticked ones go out with the review you post.
+func TestReminders(t *testing.T) {
+	s := newSite(t)
+	s.srv.d.Cfg.Watermark = "🤖 acme-bot"
+	first := s.review(30, store.Done, "bot posted 4")
+	add := func(title, agent, path string, inline bool, followup, note string) int64 {
+		id, _ := s.st.AddFinding(&store.Finding{ReviewID: first, Agent: agent, Severity: "high", Path: path, Line: 7,
+			Title: title, Comment: "The " + title + " is wrong.", Status: store.Candidate})
+		_ = s.st.UpdateFinding(&store.Finding{ID: id, Line: 7, Comment: "The " + title + " is wrong.", Status: store.Posted,
+			Inline: inline, PostedURL: "https://github.com/acme/infra/pull/30#pullrequestreview-1"})
+		_ = s.st.SetFollowup(id, followup, note, first)
+		return id
+	}
+	quiet := add("retry loop", "logic", "a.go", true, store.FollowOpen, "a.go:9 still returns nil.")
+	answered := add("timeout", "logic", "b.go", true, store.FollowOpen, "b.go:7 unchanged.")
+	resolved := add("port", "integration", "c.go", true, store.FollowPartly, "c.go:7 fixed, d.go:3 not.")
+	design := add("second release path", "design", "", false, store.FollowOpen, "")
+	reminded := add("log level", "logic", "e.go", true, store.FollowOpen, "e.go:7 unchanged.")
+	_ = add("nil map", "logic", "f.go", true, store.FollowFixed, "Fixed in bbb.")
+	_ = s.st.SetReminded(reminded, "aaa")
+
+	thread := func(id, path, finding string, resolved bool, replies ...gh.ThreadComment) gh.Thread {
+		first := gh.ThreadComment{Author: "octocat", Body: "The " + finding + " is wrong.\n\n<sub>🤖 acme-bot · 91%</sub>"}
+		return gh.Thread{ID: id, Path: path, Resolved: resolved, Comments: append([]gh.ThreadComment{first}, replies...)}
+	}
+	s.srv.threads = func(string, int) ([]gh.Thread, error) {
+		return []gh.Thread{
+			thread("T1", "a.go", "retry loop", false),
+			thread("T2", "b.go", "timeout", false, gh.ThreadComment{Author: "dev", Body: "Doing it in a follow-up PR."}),
+			thread("T3", "c.go", "port", true),
+			thread("T5", "e.go", "log level", false),
+			{ID: "T9", Path: "a.go", Comments: []gh.ThreadComment{{Author: "dev", Body: "The retry loop is wrong."}}},
+		}, nil
+	}
+	again := s.review(30, store.AwaitingYou, "no issues: approve?, 4 earlier still open")
+
+	_, page := s.get(fmt.Sprintf("/r/%d", again))
+	ticked := func(id int64) bool { return strings.Contains(page, fmt.Sprintf(`name="rm_%d" checked`, id)) }
+	if !ticked(quiet) || ticked(answered) || !ticked(resolved) || !ticked(design) || ticked(reminded) {
+		t.Errorf("ticked: quiet %v, answered %v, resolved %v, design %v, reminded %v (want true false true true false)",
+			ticked(quiet), ticked(answered), ticked(resolved), ticked(design), ticked(reminded))
+	}
+	want(t, page, `<form id="decide"`, "Still open at `aaa`: a.go:9 still returns nil.", "Only partly fixed at `aaa`:",
+		"Last reply: @dev: Doing it in a follow-up PR.", "resolved: reminding reopens it", "in the review body",
+		"you reminded the author at aaa", "Nothing new found, but 5 earlier finding(s) are still open", `value="post"`)
+	if strings.Contains(page, fmt.Sprintf(`name="rm_%d"`, quiet+5)) {
+		t.Error("a fixed finding can't be reminded of")
+	}
+
+	var sent []pipeline.Reminder
+	s.srv.send = func(_ *store.Review, event string, fs []store.Finding, rms []pipeline.Reminder) (string, error) {
+		if event != "COMMENT" || len(fs) != 0 {
+			t.Errorf("sent %s with %d findings", event, len(fs))
+		}
+		sent = rms
+		return "https://github.com/acme/infra/pull/30#pullrequestreview-2", nil
+	}
+	back := fmt.Sprintf("/r/%d", again)
+	s.post(back, url.Values{"action": {"post"}, fmt.Sprintf("rm_%d", quiet): {"on"}, fmt.Sprintf("rt_%d", quiet): {"Please fix the retry."},
+		fmt.Sprintf("rm_%d", resolved): {"on"}, fmt.Sprintf("rm_%d", design): {"on"}, fmt.Sprintf("rt_%d", design): {""}})
+	if len(sent) != 3 {
+		t.Fatalf("sent %d reminders, want 3", len(sent))
+	}
+	byID := map[int64]pipeline.Reminder{}
+	for _, rm := range sent {
+		byID[rm.Finding.ID] = rm
+	}
+	if rm := byID[quiet]; rm.Text != "Please fix the retry." || rm.Thread == nil || rm.Thread.ID != "T1" {
+		t.Errorf("quiet: %+v", rm)
+	}
+	if rm := byID[resolved]; rm.Thread == nil || rm.Thread.ID != "T3" || !rm.Thread.Resolved {
+		t.Errorf("resolved: %+v", rm)
+	}
+	if rm := byID[design]; rm.Thread != nil || rm.Text != "Still open at `aaa`." {
+		t.Errorf("design: %+v (an emptied text falls back to the default)", rm)
+	}
+	r, _ := s.st.Get(again)
+	if r.Status != store.Done || r.Decision != "you reminded of 3 still open" {
+		t.Errorf("review: %s, %q", r.Status, r.Decision)
+	}
+	earlier, _ := s.st.EarlierPosted("acme/infra", 30, again)
+	for _, f := range earlier {
+		if want := f.ID == quiet || f.ID == resolved || f.ID == design || f.ID == reminded; (f.RemindedSHA == "aaa") != want {
+			t.Errorf("finding %d (%s) reminded at %q", f.ID, f.Title, f.RemindedSHA)
+		}
+	}
+}
+
+// Posting needs a finding or a reminder ticked.
+func TestPostNothing(t *testing.T) {
+	s := newSite(t)
+	id := s.review(31, store.AwaitingYou, "no issues: approve?")
+	rec := s.post(fmt.Sprintf("/r/%d", id), url.Values{"action": {"post"}})
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "finding+or+reminder") {
+		t.Errorf("redirect = %q", loc)
 	}
 }

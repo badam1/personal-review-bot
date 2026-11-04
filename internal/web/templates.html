@@ -66,6 +66,7 @@
   select { font: inherit; font-size: .9rem; background: var(--mantle); color: var(--text); border: 1px solid var(--s1); border-radius: 8px; padding: 6px 8px; }
   .pager { display:flex; justify-content: space-between; margin-top: 12px; }
   .fate { white-space: nowrap; width: 190px; }
+  .remind { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--s0); }
   .running { margin-top: 6px; font-size: .92rem; }
   .running .spin { display: inline-block; width: 1.1em; color: var(--peach); }
   .running .verb { font-weight: 600; color: var(--peach); }
@@ -166,11 +167,20 @@
   is incomplete{{if .Incomplete}} and can't be approved until a re-review completes{{end}}: {{.R.Error}}{{end}}</div>{{end}}
 
 {{if .Earlier}}<h2>Earlier findings · {{.EarlierSummary}}</h2>
-{{range .Earlier}}<div class="card"><div><span class="pill">{{followup .Finding}}</span> <span class="title">{{.Title}}</span>{{if .Wrong}} <span class="tag">marked wrong</span>{{end}}</div>
+{{range .Earlier}}{{$f := .}}<div class="card"><div><span class="pill">{{followup .Finding}}</span> <span class="title">{{.Title}}</span>{{if .Wrong}} <span class="tag">marked wrong</span>{{end}}</div>
   <div class="meta">{{.Agent}} · <span class="sev-{{.Severity}}">{{.Severity}}</span>{{if .Path}} · <span class="where">{{.Path}}:{{.Line}}</span>{{end}}
     · {{fate .Finding}}{{if .PostedURL}} · <a href="{{.PostedURL}}" target="_blank" rel="noopener">the comment</a>{{end}}</div>
   {{with .FollowupNote}}<p>{{.}}</p>{{end}}
-  {{if and .FollowupReview (ne .FollowupReview $.R.ID)}}<div class="footer">Checked by <a href="/r/{{.FollowupReview}}">another review</a>.</div>{{end}}</div>{{end}}
+  {{if and .FollowupReview (ne .FollowupReview $.R.ID)}}<div class="footer">Checked by <a href="/r/{{.FollowupReview}}">another review</a>.</div>{{end}}
+  {{with .Remind}}<div class="remind">
+    <label class="head"><input type="checkbox" form="decide" name="rm_{{$f.ID}}"{{if .Ticked}} checked{{end}}><span>Remind the author
+      {{if .Thread}}with a reply in its thread{{if .Resolved}} <span class="meta">(resolved: reminding reopens it)</span>{{end}}{{else}}in the review body{{end}}</span></label>
+    {{with .Answer}}<div class="meta">Last reply: {{.}}</div>{{end}}
+    {{with .Reminded}}<div class="meta">{{.}}</div>{{end}}
+    <textarea form="decide" name="rt_{{$f.ID}}" aria-label="Reminder for {{$f.Title}}">{{.Text}}</textarea>
+  </div>{{end}}</div>{{end}}
+{{with .ThreadsErr}}<div class="msg">Couldn't read the PR's review threads, so reminders go in the review body: {{.}}</div>{{end}}
+{{if .Reminders}}<div class="footer">Ticked reminders go out with the review you post below, as one notification. Unanswered ones start ticked.</div>{{end}}
 {{if .OpenHigh}}<div class="msg">{{.OpenHigh}} high-severity finding(s) posted earlier are still open. Approving asks once more.</div>{{end}}
 {{end}}
 
@@ -181,7 +191,7 @@
   <td class="meta">{{.Turns}} turns · {{dur .Duration}} · {{money .CostUSD}}{{if .Denials}}<br><span class="sev-high">{{.Denials}} tool call(s) refused</span>{{end}}</td></tr>{{end}}</table>{{end}}
 
 {{if eq .R.Status "awaiting_you"}}
-<form method="post" action="/r/{{.R.ID}}">
+<form id="decide" method="post" action="/r/{{.R.ID}}">
   <input type="hidden" name="csrf" value="{{.Token}}">
   {{if .Confirm}}<input type="hidden" name="anyway" value="1">{{end}}
   {{if .DesignPending}}
@@ -203,6 +213,9 @@
     <div class="footer">Ticked findings are posted with the {{.Watermark}} footer and their confidence. You can edit the text first.</div>
   {{else if .Incomplete}}
     <h2>Result</h2><div class="empty">The reviewers that ran found nothing, but not all of them ran. Re-review it.</div>
+  {{else if and (not .Auto) (not .DesignPending) .Reminders}}
+    <h2>Result</h2><div class="empty">Nothing new found, but {{.Reminders}} earlier finding(s) are still open. Remind the
+      author (Earlier findings, above), or approve anyway.</div>
   {{else if and (not .Auto) (not .DesignPending)}}
     <h2>Result</h2><div class="empty">No issues found. Approve this PR?</div>
   {{end}}

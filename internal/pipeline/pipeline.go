@@ -306,7 +306,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 			posted = fmt.Sprintf("dry run: would post %d", len(auto))
 		} else {
 			stage("posting %d comment(s)", len(auto))
-			url, err := Post(d, r, "COMMENT", auto)
+			url, err := Post(d, r, "COMMENT", auto, nil)
 			if err != nil {
 				return fail(fmt.Errorf("post review: %w", err))
 			}
@@ -492,10 +492,70 @@ func saveUsage(st *store.Store, u agents.Usage) {
 	}
 }
 
-// Post submits findings as one review. Every comment carries the watermark and its confidence; findings whose
-// line is not in the diff go into the review body instead of inline.
-func Post(d Deps, r *store.Review, event string, fs []store.Finding) (string, error) {
+// Reminder tells the author that a finding posted on an earlier review is still open. Thread is the finding's review
+// thread when it was posted inline and is still there; the reminder is then a reply in it, else a line in the body.
+type Reminder struct {
+	Finding store.Finding
+	Text    string
+	Thread  *gh.Thread
+}
+
+// Remindable reports whether a posted earlier finding can be reminded of: the last follow-up found it still open, or
+// only partly fixed, and you haven't marked it wrong.
+func Remindable(f store.Finding) bool {
+	return !f.Wrong && (f.Followup == store.FollowOpen || f.Followup == store.FollowPartly)
+}
+
+// ReminderText is what a reminder says unless you change it: where the PR is now and the follow-up's evidence.
+func ReminderText(f store.Finding, head string) string {
+	what := "Still open"
+	if f.Followup == store.FollowPartly {
+		what = "Only partly fixed"
+	}
+	if note := strings.TrimSpace(f.FollowupNote); note != "" {
+		return fmt.Sprintf("%s at `%.7s`: %s", what, head, note)
+	}
+	return fmt.Sprintf("%s at `%.7s`.", what, head)
+}
+
+// MatchThread finds the review thread a posted inline finding started: its first comment is owner's, carries the
+// watermark, is on the finding's path and starts with the finding's text.
+func MatchThread(f store.Finding, threads []gh.Thread, owner, watermark string) (gh.Thread, bool) {
+	if !f.Inline || f.Agent == agents.DesignAgent {
+		return gh.Thread{}, false
+	}
+	words := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	want := words(f.Comment)
+	for _, t := range threads {
+		if t.Path != f.Path || len(t.Comments) == 0 {
+			continue
+		}
+		first := t.Comments[0]
+		if first.Author == owner && strings.Contains(first.Body, watermark) && want != "" &&
+			strings.HasPrefix(words(first.Body), want) {
+			return t, true
+		}
+	}
+	return gh.Thread{}, false
+}
+
+// Answer is the latest comment in the thread by anyone but owner (false if nobody else wrote in it).
+func Answer(t gh.Thread, owner string) (gh.ThreadComment, bool) {
+	for i := len(t.Comments) - 1; i >= 0; i-- {
+		if t.Comments[i].Author != owner {
+			return t.Comments[i], true
+		}
+	}
+	return gh.ThreadComment{}, false
+}
+
+// Post submits findings and reminders as one review. Every comment carries the watermark and its confidence;
+// findings whose line is not in the diff go into the review body instead of inline. A reminder is a reply in its
+// finding's thread (reopening it when it was resolved), or, without one, a line in the review body.
+func Post(d Deps, r *store.Review, event string, fs []store.Finding, reminders []Reminder) (string, error) {
 	body, comments := reviewBody(d.Cfg, fs)
+	section, replies := reminderParts(d.Cfg, reminders)
+	body = append(section, body...)
 	// The approval text is said once per PR: a re-approval after new commits goes without it.
 	if event == "APPROVE" && d.Cfg.ApproveText != "" {
 		said, err := d.GH.ApprovedWith(r.Repo, r.Number, d.Cfg.ApproveText)
@@ -506,7 +566,39 @@ func Post(d Deps, r *store.Review, event string, fs []store.Finding) (string, er
 			body = append([]string{d.Cfg.ApproveText}, body...)
 		}
 	}
-	return d.GH.PostReview(r.Repo, r.Number, r.HeadSHA, event, strings.Join(body, "\n\n"), comments)
+	return d.GH.PostReviewWithReplies(r.Repo, r.Number, r.HeadSHA, event, strings.Join(body, "\n\n"), comments, replies)
+}
+
+// reminderParts lays the reminders out: replies in their threads, and a section for the review body that lists the
+// ones without a thread, or says where the replies are.
+func reminderParts(cfg config.Config, reminders []Reminder) ([]string, []gh.Reply) {
+	var replies []gh.Reply
+	var lines []string
+	for _, rm := range reminders {
+		text := strings.TrimSpace(rm.Text)
+		if rm.Thread != nil {
+			replies = append(replies, gh.Reply{ThreadID: rm.Thread.ID, Body: text + "\n\n" + cfg.ReminderFooter(),
+				Reopen: rm.Thread.Resolved})
+			continue
+		}
+		where := ""
+		if f := rm.Finding; f.Path != "" {
+			where = fmt.Sprintf(" (`%s:%d`)", f.Path, f.Line)
+		}
+		link := ""
+		if rm.Finding.PostedURL != "" {
+			link = fmt.Sprintf(" ([earlier review](%s))", rm.Finding.PostedURL)
+		}
+		lines = append(lines, fmt.Sprintf("- **%s**%s: %s%s", rm.Finding.Title, where, text, link))
+	}
+	if len(lines) == 0 && len(replies) == 0 {
+		return nil, nil
+	}
+	head := "**Still open from earlier reviews**"
+	if len(replies) > 0 {
+		head += fmt.Sprintf(" (%d with a reply in their thread)", len(replies))
+	}
+	return []string{strings.Join(append([]string{head, ""}, lines...), "\n") + "\n\n" + cfg.ReminderFooter()}, replies
 }
 
 // reviewBody lays the findings out as a review: design concerns first (they're about the whole PR), then findings
@@ -560,6 +652,9 @@ func formatPrior(fs []store.Finding, owner string) string {
 		}
 		if label := followupLabels[f.Followup]; label != "" {
 			fate += "; last follow-up: " + label
+		}
+		if f.RemindedSHA != "" {
+			fate += fmt.Sprintf("; %s reminded the author at %.7s", owner, f.RemindedSHA)
 		}
 		if f.Agent == agents.DesignAgent {
 			fmt.Fprintf(&b, "- [%s] design concern: %s\n", fate, f.Title)
