@@ -32,7 +32,7 @@ Darwin)
     sleep 0.2
   done
   launchctl bootstrap "gui/$(id -u)" "$plist"
-  log="~/Library/Logs/personal-review-bot.log"
+  log="$HOME/Library/Logs/personal-review-bot.log"
   ;;
 Linux)
   unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/personal-review-bot.service"
