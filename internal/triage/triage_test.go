@@ -33,7 +33,7 @@ func TestMake(t *testing.T) {
 		{"small code", 40, files("cmd/main.go"), "small", "haiku", "sonnet", false, false},
 		{"medium code", 300, files("internal/api/handler.go"), "medium", "sonnet", "opus", false, false},
 		{"small but risky", 30, files("terragrunt/prod/iam/policy.hcl"), "medium", "sonnet", "opus", true, false},
-		{"risky and bigger", 200, files("flux/clusters/gke-prod/app.yaml"), "large", "opus", "opus", true, false},
+		{"risky and bigger", 200, files("deploy/k8s/production/app.yaml"), "large", "opus", "opus", true, false},
 		{"huge", 2000, files("web/src/app.tsx"), "large", "opus", "opus", false, false},
 	}
 	for _, c := range cases {
@@ -88,7 +88,7 @@ func TestDesignModel(t *testing.T) {
 	}{
 		{"medium code", 300, files("internal/api/handler.go"), "opus"},
 		{"small ADR", 60, files("ADR/ADR-014-something.md"), "opus"},
-		{"risky and bigger", 200, files("flux/clusters/gke-prod/app.yaml"), "fable"},
+		{"risky and bigger", 200, files("deploy/k8s/production/app.yaml"), "fable"},
 		{"huge", 2000, files("web/src/app.tsx"), "fable"},
 	}
 	for _, c := range cases {
