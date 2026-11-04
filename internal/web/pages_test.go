@@ -78,7 +78,7 @@ func TestIndexLive(t *testing.T) {
 	s.review(2, store.AwaitingYou, "no issues: approve?")
 	s.review(3, store.Running, "")
 	_, page := s.get("/")
-	want(t, page, "<title>(2) personal-review-bot</title>", `<meta http-equiv="refresh" content="60">`, "Running now",
+	want(t, page, `<h1 class="brand"><img src="/icon.svg" alt="">personal-review-bot</h1>`, "<title>(2) personal-review-bot</title>", `<meta http-equiv="refresh" content="60">`, "Running now",
 		`href="/pr/acme/infra/3"`, ">infra#3<", `href="/history"`, "All reviews →")
 	if strings.Contains(page, ">acme/infra#") {
 		t.Error("lists should show the repo without its owner")
