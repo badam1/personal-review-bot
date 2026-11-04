@@ -26,7 +26,7 @@ type Config struct {
 	SkipDrafts   bool
 	MaxAge       time.Duration // don't review PRs automatically that have had no activity for this long (0 = no limit)
 	Watermark    string        // footer on every comment the bot posts, followed by the finding's confidence
-	UpdateCheck  bool          // look for new releases every 6 hours, to offer them on the page and in the TUI
+	UpdateCheck  bool          // look for new releases every hour, to offer them on the page and in the TUI
 	UpdateRepo   string        // the GitHub repo releases come from
 	ConfigDir    string        // config.env
 	StateDir     string        // SQLite database

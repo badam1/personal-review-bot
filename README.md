@@ -103,10 +103,11 @@ The page is <http://localhost:12346>:
 
 ## Updating
 
-The daemon looks for a new release when it starts and every 6 hours. When there is one, the page and the TUI say so,
-with a link to its notes; nothing is installed until you ask:
+The daemon looks for a new release when it starts and every hour; **Check for updates** on the main page looks right
+away. When there is one, the page and the TUI say so, with a link to its notes; nothing is installed until you ask:
 
-- the **Update and restart** button on the page, `u` in the TUI, or `personal-review-bot update`;
+- the **Update and restart** button on the page, `u` in the TUI, or `personal-review-bot update` (the last two look
+  for the newest release themselves);
 - it downloads the release's binary for your OS and CPU, checks it against the release's checksums and its GitHub
   build attestation (built by this repo's release workflow, checked with `gh attestation verify`), and puts it in
   place of the installed binary;
@@ -152,7 +153,7 @@ Restart the service after changing it (`./install.sh`).
 | `SKIP_DRAFTS` | `1` |
 | `MAX_AGE_DAYS` | `14`: PRs with no activity (commits, comments, reviews, edits) for longer are skipped automatically; a skipped PR is reviewed once it sees activity again, and `r` in the TUI reviews it anyway; `0` = no limit |
 | `ADDR` | `127.0.0.1:12346`: the local page |
-| `UPDATE_CHECK` | `1`: look for new releases every 6 hours; `0` = only when you run `personal-review-bot update` |
+| `UPDATE_CHECK` | `1`: look for new releases every hour; `0` = only when you ask (Check for updates, `u`, `personal-review-bot update`) |
 | `UPDATE_REPO` | `badam1/personal-review-bot`: where releases come from, for a fork that publishes its own (its release workflow must attest the binaries the same way) |
 | `STATE_DIR` | `~/.local/state/personal-review-bot` (`$XDG_STATE_HOME`): the SQLite database |
 | `CACHE_DIR` | `~/.cache/personal-review-bot` (`$XDG_CACHE_HOME`): repo clones and review checkouts |
