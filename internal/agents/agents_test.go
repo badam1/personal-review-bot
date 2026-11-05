@@ -2,6 +2,7 @@ package agents
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -153,5 +154,17 @@ func TestFollowupPrompt(t *testing.T) {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("follow-up prompt is missing %q", want)
 		}
+	}
+}
+
+// Every run leaves out what the PR's checkout could configure: its settings (hooks run shell commands), its CLAUDE.md
+// and its MCP servers.
+func TestBaseArgsIgnoreTheCheckout(t *testing.T) {
+	i := slices.Index(baseArgs, "--setting-sources")
+	if i < 0 || i+1 >= len(baseArgs) || baseArgs[i+1] != "user" {
+		t.Errorf("baseArgs %v: want --setting-sources user", baseArgs)
+	}
+	if !slices.Contains(baseArgs, "--strict-mcp-config") {
+		t.Errorf("baseArgs %v: want --strict-mcp-config", baseArgs)
 	}
 }

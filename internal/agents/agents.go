@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 )
@@ -322,12 +323,18 @@ type result struct {
 	Denials          []json.RawMessage `json:"permission_denials"`
 }
 
+// baseArgs go with every run. The PR's checkout is the working directory and its author controls it, so only your own
+// user settings apply: --setting-sources user leaves out the checkout's .claude/settings.json (hooks there would run
+// shell commands on this machine) and its CLAUDE.md (instructions there would steer the reviewers), and
+// --strict-mcp-config its .mcp.json.
+var baseArgs = []string{"-p", "--output-format", "stream-json", "--verbose", "--setting-sources", "user",
+	"--strict-mcp-config",
+	"--no-session-persistence"} // no transcripts: they'd clutter ~/.claude and mix with your own sessions
+
 // claude runs `claude -p` with the prompt on stdin (diffs can exceed the argv limit) and streams its events, which,
 // unlike the plain JSON output, carry the plan's rate-limit usage.
 func claude(ctx context.Context, dir, prompt string, args ...string) (*result, *Usage, error) {
-	args = append([]string{"-p", "--output-format", "stream-json", "--verbose", "--strict-mcp-config",
-		"--no-session-persistence"}, // no transcripts: they'd clutter ~/.claude and mix with your own sessions
-		args...)
+	args = append(slices.Clone(baseArgs), args...)
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "PERSONAL_REVIEW_BOT_AGENT=1")
