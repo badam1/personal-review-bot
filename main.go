@@ -52,6 +52,10 @@ const usage = `personal-review-bot: reviews PRs where your review is requested d
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, "personal-review-bot:", err)
+		os.Exit(2)
+	}
 	cmd, args := "tui", os.Args[1:]
 	if len(args) > 0 {
 		cmd, args = args[0], args[1:]

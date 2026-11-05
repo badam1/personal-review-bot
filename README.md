@@ -162,7 +162,7 @@ Restart the service after changing it (`./install.sh`).
 
 | Name | Default |
 |---|---|
-| `ORG` | empty: review requests from any org. One org, or several comma-separated (`acme,umbrella`), to only review PRs in those. Reviewers search one org for related repos: the PR's own when it is one you set, the single org you set for a PR queued from outside it, otherwise the PR repo's owner |
+| `ORG` | empty: review requests from any org. One org, or several separated by commas or spaces (`acme,umbrella`), to only review PRs in those; a value that isn't an organisation name is refused at startup rather than searched for. Reviewers search one org for related repos: the PR's own when it is one you set, the single org you set for a PR queued from outside it, otherwise the PR repo's owner |
 | `THRESHOLD` | `80`: auto-post a confirmed finding at or above this certainty |
 | `AUTO_POST` | `low,medium`: the severities posted without asking, once confirmed at `THRESHOLD`. High ones wait for you; `high` alone posts only those, `low,medium,high` everything, empty nothing. A misspelt word is left out. The stats page's "What became of findings, by score" table shows whether the rule fits. (The older `AUTO_SEVERITY`, "this severity or higher", still works when `AUTO_POST` isn't set.) |
 | `SHOW_LABELS` | `risk/,auto-risk/`: the PR labels shown in the lists' Risk column and beside the size on a review, by prefix (comma-separated; empty shows none). Coloured by the level they end in: `/high`, `/medium`, `/low` |

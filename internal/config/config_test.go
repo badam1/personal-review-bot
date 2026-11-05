@@ -134,12 +134,40 @@ func TestOrgsSetting(t *testing.T) {
 		{"one org", "acme", []string{"acme"}, "acme"},
 		{"several orgs", "acme,umbrella", []string{"acme", "umbrella"}, "acme, umbrella"},
 		{"spaces and empty parts", " acme , , umbrella ", []string{"acme", "umbrella"}, "acme, umbrella"},
+		{"spaces instead of commas", "acme umbrella", []string{"acme", "umbrella"}, "acme, umbrella"},
+		{"the same org twice, in two cases", "acme,ACME", []string{"acme"}, "acme"},
 	}
 	for _, c := range cases {
 		t.Setenv("PERSONAL_REVIEW_BOT_ORG", c.org)
 		got := Load()
 		if !slices.Equal(got.Orgs, c.want) || got.OrgsLabel() != c.label {
 			t.Errorf("%s: got orgs %q (label %q), want %q (%q)", c.name, got.Orgs, got.OrgsLabel(), c.want, c.label)
+		}
+	}
+}
+
+// ORG decides whose PRs are reviewed, so a value that isn't an organisation name stops the command instead of
+// going into the search as a qualifier of its own.
+func TestValidate(t *testing.T) {
+	t.Setenv("PERSONAL_REVIEW_BOT_CONFIG_DIR", t.TempDir())
+	cases := []struct {
+		name, org string
+		ok        bool
+	}{
+		{"unset", "", true},
+		{"one org", "acme", true},
+		{"several orgs", "acme,umbrella-two", true},
+		{"digits and hyphens", "acme-2,3m", true},
+		{"a qualifier smuggled in", "acme is:draft", false},
+		{"a repo qualifier, which widens the search", "acme repo:someone/private", false},
+		{"a leading hyphen", "-acme", false},
+		{"a slash", "acme/api", false},
+		{"too long", strings.Repeat("a", 40), false},
+	}
+	for _, c := range cases {
+		t.Setenv("PERSONAL_REVIEW_BOT_ORG", c.org)
+		if err := Load().Validate(); (err == nil) != c.ok {
+			t.Errorf("%s: ORG=%q gave %v, want ok=%v", c.name, c.org, err, c.ok)
 		}
 	}
 }

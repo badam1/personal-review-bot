@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type Config struct {
@@ -44,7 +46,7 @@ func Load() Config {
 	}
 	s := settings(readEnvFile(filepath.Join(dir, "config.env")))
 	return Config{
-		Orgs:         list(s.str("ORG", "")),
+		Orgs:         orgs(s),
 		PollInterval: time.Duration(s.int("POLL_SECONDS", 120)) * time.Second,
 		Threshold:    s.int("THRESHOLD", 80),
 		AutoPost:     autoPost(s),
@@ -67,6 +69,41 @@ func Load() Config {
 }
 
 func (c Config) DBPath() string { return filepath.Join(c.StateDir, "reviews.db") }
+
+// orgName matches a GitHub organisation login: letters and digits, single hyphens between them, 39 at most.
+// Anything else would become a second qualifier in the search (a space starts one), so Validate refuses it.
+var orgName = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}$`)
+
+// orgs reads ORG: one org or several, separated by commas or spaces. A space is as likely as a comma to be typed
+// between two names, and taking it would otherwise leave "acme umbrella" as one value, which reads as the org acme
+// plus a free-text search for "umbrella". Duplicates, in any case, collapse.
+func orgs(s settings) []string {
+	var out []string
+	for _, o := range strings.FieldsFunc(s.str("ORG", ""), func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+		if !slices.ContainsFunc(out, func(h string) bool { return strings.EqualFold(h, o) }) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// Validate reports a setting that would make the bot review the wrong PRs rather than simply not work, so the
+// command can stop instead of carrying on with it. ORG is the one that matters: it decides whose PRs are reviewed,
+// and a value that is not an organisation name ends up as another qualifier in the GitHub search, which can widen
+// what the bot picks up (a "repo:" of its own) or narrow it to nothing, neither of them visibly.
+func (c Config) Validate() error {
+	var bad []string
+	for _, o := range c.Orgs {
+		if !orgName.MatchString(o) {
+			bad = append(bad, strconv.Quote(o))
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("ORG: %s is not a GitHub organisation name; separate several with commas, e.g. ORG=acme,umbrella",
+			strings.Join(bad, ", "))
+	}
+	return nil
+}
 
 // OrgsLabel names the orgs being reviewed, for the log line: "acme", "acme, umbrella", or "any" when ORG is unset.
 func (c Config) OrgsLabel() string {
