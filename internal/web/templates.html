@@ -136,7 +136,7 @@
 
   /* Tables */
   .tbl-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--s0); background: var(--mantle); }
-  .tbl { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 14px; }
+  .tbl { width: 100%; min-width: 960px; border-collapse: collapse; font-size: 14px; }
   .tbl th { padding: 12px 16px; text-align: left; color: var(--sub); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
   .tbl td { padding: 12px 16px; border-top: 1px solid var(--s0); vertical-align: top; }
   .tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -148,6 +148,10 @@
   .labels { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: middle; }
   .size.small { color: var(--green); } .size.medium { color: var(--yellow); } .size.large { color: var(--peach); } .size.deep { color: var(--mauve); }
   .outcome { display: flex; align-items: center; gap: 8px; } .outcome b { font-weight: 600; white-space: nowrap; }
+  /* In a table the outcome and its note stack, the outcome on the row's first line like the other cells */
+  .ocell { display: flex; flex-direction: column; gap: 2px; } .ocell .ohead { display: flex; align-items: center; gap: 8px; }
+  .ocell .ohead b { font-weight: 600; white-space: nowrap; } .ocell .sub { padding-left: 16px; font-size: 13px; }
+  .lstack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 
   /* A review */
   .crumbs { font-size: 13px; color: var(--sub); }
@@ -309,15 +313,15 @@
 {{define "steps"}}<ol class="steps" aria-label="Progress" data-steps-for="{{.ID}}">{{range reviewSteps .}}<li class="{{.State}}"><span class="bar"></span><span>{{.Label}}</span></li>{{end}}</ol>{{end}}
 
 {{define "review-table"}}<div class="tbl-wrap"><table class="tbl">
-  <thead><tr><th scope="col">When</th><th scope="col">PR</th><th scope="col">Size</th><th scope="col" class="n">Cost</th><th scope="col">Outcome</th></tr></thead>
+  <thead><tr><th scope="col">When</th><th scope="col">PR</th><th scope="col">Size</th><th scope="col">Risk</th><th scope="col" class="n">Cost</th><th scope="col">Outcome</th></tr></thead>
   <tbody>{{range .}}{{$o := outcome .}}<tr>
     <td class="when">{{ago .CreatedAt}}</td>
     <td><div class="prcell"><a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
       <span class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a> · @{{.Author}}{{with iteration .}} · {{.}}{{end}}</span></div></td>
-    <td>{{if .Tier}}<span class="size {{sizeKind .Tier}}">{{.Tier}}</span>{{else if .Deep}}<span class="size deep">deep</span>{{else}}<span class="size">—</span>{{end}}{{if .DryRun}} <span class="tag">dry run</span>{{end}}
-      {{template "labels" .Labels}}</td>
+    <td>{{if .Tier}}<span class="size {{sizeKind .Tier}}">{{.Tier}}</span>{{else if .Deep}}<span class="size deep">deep</span>{{else}}<span class="size">—</span>{{end}}{{if .DryRun}} <span class="tag">dry run</span>{{end}}</td>
+    <td>{{with .Labels}}<div class="lstack">{{range .}}<span class="plabel {{labelKind .}}">{{.}}</span>{{end}}</div>{{else}}<span class="sub">—</span>{{end}}</td>
     <td class="n">{{if .CostUSD}}{{money .CostUSD}}{{else}}—{{end}}</td>
-    <td><div class="outcome"><span class="dot {{$o.Kind}}"></span><b>{{$o.Text}}</b><span class="sub">{{outcomeNote .}}</span></div></td>
+    <td><div class="ocell"><span class="ohead"><span class="dot {{$o.Kind}}"></span><b>{{$o.Text}}</b></span>{{with outcomeNote .}}<span class="sub">{{.}}</span>{{end}}</div></td>
   </tr>{{end}}</tbody>
 </table></div>{{end}}
 

@@ -236,3 +236,30 @@ func TestFollowups(t *testing.T) {
 		t.Errorf("logic = %+v", rows[0])
 	}
 }
+
+// Approvals recorded as "you approved" read "approved by you" once the database opens; other decisions stay.
+func TestOpenRewordsApprovals(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reviews.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]int64{}
+	for _, d := range []string{"you approved", "dry run: you approved (nothing sent to GitHub)", "you posted 2 and approved", "you posted 1"} {
+		id, _ := s.Insert(&Review{Repo: "o/r", Number: 1, Status: Running})
+		_ = s.Finish(id, Done, d, "", "")
+		ids[d] = id
+	}
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for old, want := range map[string]string{"you approved": "approved by you",
+		"dry run: you approved (nothing sent to GitHub)": "dry run: approved by you (nothing sent to GitHub)",
+		"you posted 2 and approved":                      "you posted 2 and approved", "you posted 1": "you posted 1"} {
+		if r, _ := s.Get(ids[old]); r.Decision != want {
+			t.Errorf("%q became %q, want %q", old, r.Decision, want)
+		}
+	}
+}
