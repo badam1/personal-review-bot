@@ -44,7 +44,8 @@ func Prepare(ctx context.Context, cacheDir, repo string, number int, sha string)
 	defer l.Unlock()
 
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
-		if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
+		// The clones hold private source, so the cache is the user's own to read.
+		if err := os.MkdirAll(filepath.Dir(repoDir), 0o700); err != nil {
 			return nil, err
 		}
 		if err := git(ctx, "", "clone", "--quiet", "--filter=blob:none", "--no-checkout",
