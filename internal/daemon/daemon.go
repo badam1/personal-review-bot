@@ -40,7 +40,9 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	upd := newUpdater(d, client, exe)
-	update.SetState(st, "") // a start ends whatever update was under way
+	if done, ok := update.Started(st, version.String()); ok { // a start ends whatever update was under way
+		log.Printf("updated from %s to %s", done.From, done.To)
+	}
 	if cfg.UpdateCheck {
 		go upd.loop(ctx)
 	}
@@ -72,7 +74,9 @@ func Run(ctx context.Context, cfg config.Config) error {
 				log.Printf("personal-review-bot stopping")
 				return nil
 			}
-			log.Printf("personal-review-bot restarting into the update")
+			log.Printf("personal-review-bot restarting into %s", upd.version())
+			update.SetState(st, "restarting into "+upd.version())
+			update.Restarting(st, version.String())
 			return ErrRestart
 		case <-tick.C:
 		}

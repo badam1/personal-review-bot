@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -35,8 +36,12 @@ func TestUpdateLine(t *testing.T) {
 		{snapshot{update: newer}, true, "v9.9.9 is available (running ", ""},
 		{snapshot{update: newer}, true, "u to update", "personal-review-bot update"},
 		{snapshot{update: newer}, false, "personal-review-bot update", "u to update"},
-		{snapshot{update: newer, updateState: "installing v9.9.9"}, true, "update: installing v9.9.9", "is available"},
-		{snapshot{update: newer, updateState: "updating to v9.9.9 failed: no attestation"}, true, "failed: no attestation · v9.9.9 is available", ""},
+		{snapshot{update: newer, updateState: "installing v9.9.9"}, true, "updating: installing v9.9.9", "is available"},
+		{snapshot{update: newer, updateState: "updating to v9.9.9 failed: no attestation"}, true, "update: updating to v9.9.9 failed: no attestation\nv9.9.9 is available", ""},
+		{snapshot{daemonVersion: "v9.9.9", updated: &update.Done{From: "v9.9.8", To: "v9.9.9", At: time.Now().Add(-3 * time.Minute)}},
+			false, "✓ updated to v9.9.9 (from v9.9.8), 3m0s ago", "restart it"},
+		{snapshot{daemonVersion: "v9.9.9"}, true, "the daemon runs v9.9.9, this TUI " + version.String() + ": restart it", ""},
+		{snapshot{daemonVersion: version.String()}, true, "", ""},
 	}
 	for _, c := range cases {
 		got := updateLine(c.s, c.interactive)

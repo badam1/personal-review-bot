@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/gh"
@@ -150,12 +151,17 @@ func TestInstall(t *testing.T) {
 	exe := setup()
 	src := fakeGitHub{"a": good, "c": []byte(hex.EncodeToString(sum[:]) + "  ./" + name + "\n")}
 	var verified string
+	var steps []string
 	err := Install(context.Background(), src, "o/r", rel, exe, func(_ context.Context, archive, repo string) error {
 		verified = filepath.Base(archive) + " from " + repo
 		return nil
-	})
+	}, func(s string) { steps = append(steps, s) })
 	if err != nil || content(exe) != "NEW" || verified != name+" from o/r" {
 		t.Fatalf("install: err %v, binary %q, verified %q", err, content(exe), verified)
+	}
+	if want := []string{"downloading v0.1.0-beta.3 (0.0 MB)", "checking v0.1.0-beta.3's checksum and build attestation",
+		"installing v0.1.0-beta.3"}; strings.Join(steps, "|") != strings.Join(want, "|") {
+		t.Errorf("steps = %q", steps)
 	}
 	if info, _ := os.Stat(exe); info.Mode().Perm()&0o100 == 0 {
 		t.Error("the new binary isn't executable")
@@ -182,7 +188,7 @@ func TestInstall(t *testing.T) {
 	}
 	for what, f := range failures {
 		exe := setup()
-		err := Install(context.Background(), f.src, "o/r", rel, exe, f.verify)
+		err := Install(context.Background(), f.src, "o/r", rel, exe, f.verify, nil)
 		if err == nil || !strings.Contains(err.Error(), f.want) || content(exe) != "OLD" {
 			t.Errorf("%s: err %v, binary %q; want an error about %q and the old binary", what, err, content(exe), f.want)
 		}
@@ -210,8 +216,44 @@ func TestRequest(t *testing.T) {
 	if msg, err := Request(cfg, st); err != nil || msg != "Updating to v9: it restarts soon." {
 		t.Errorf("Request = %q, %v", msg, err)
 	}
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/", http.StatusSeeOther) // started: the page follows it without a message
+	}))
+	defer plain.Close()
+	if msg, err := Request(config.Config{WebAddr: strings.TrimPrefix(plain.URL, "http://")}, st); err != nil || msg != "Update started." {
+		t.Errorf("a redirect without a message: %q, %v", msg, err)
+	}
 	srv.Close()
 	if _, err := Request(cfg, st); !errors.Is(err, ErrNoDaemon) {
 		t.Errorf("nothing listening: %v, want ErrNoDaemon", err)
+	}
+}
+
+// A restart after an update is recorded as done, with what it went from and to, and shown for an hour.
+func TestStarted(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	SetState(st, "restarting into v0.2.0")
+	if _, ok := Started(st, "v0.1.0"); ok || DaemonVersion(st) != "v0.1.0" || State(st) != "" {
+		t.Error("a plain start records its version, clears the state and is no update")
+	}
+	Restarting(st, "v0.1.0")
+	d, ok := Started(st, "v0.2.0")
+	if !ok || d.From != "v0.1.0" || d.To != "v0.2.0" || DaemonVersion(st) != "v0.2.0" {
+		t.Fatalf("Started = %+v, %v", d, ok)
+	}
+	if got, ok := LastDone(st, time.Now()); !ok || got.To != "v0.2.0" {
+		t.Errorf("LastDone = %+v, %v", got, ok)
+	}
+	if _, ok := LastDone(st, time.Now().Add(61*time.Minute)); ok {
+		t.Error("after an hour it's old news")
+	}
+	for state, busy := range map[string]bool{"": false, "downloading v0.2.0 (6.2 MB)": true, "updating to v0.2.0 failed: x": false} {
+		if Busy(state) != busy {
+			t.Errorf("Busy(%q) = %v", state, !busy)
+		}
 	}
 }

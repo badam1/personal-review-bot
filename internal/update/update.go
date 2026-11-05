@@ -99,14 +99,18 @@ func Attested(ctx context.Context, archive, repo string) error {
 
 // Install downloads rel's archive, checks its checksum and attestation, and puts its binary in place of exe. The new
 // binary is written next to exe and renamed over it, so exe is either the old binary or the whole new one; a process
-// running the old one carries on until it restarts.
-func Install(ctx context.Context, src Source, repo string, rel Release, exe string, verify Verifier) error {
+// running the old one carries on until it restarts. step, if not nil, hears each step as it starts.
+func Install(ctx context.Context, src Source, repo string, rel Release, exe string, verify Verifier, step func(string)) error {
+	if step == nil {
+		step = func(string) {}
+	}
 	tmp, err := os.MkdirTemp("", "personal-review-bot-update-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
 
+	step(fmt.Sprintf("downloading %s (%.1f MB)", rel.Version, float64(rel.Archive.Size)/1e6))
 	var sums strings.Builder
 	if err := src.Download(rel.Checksums.URL, &sums); err != nil {
 		return fmt.Errorf("checksums: %w", err)
@@ -128,12 +132,14 @@ func Install(ctx context.Context, src Source, repo string, rel Release, exe stri
 	if err != nil {
 		return fmt.Errorf("download %s: %w", rel.Archive.Name, err)
 	}
+	step(fmt.Sprintf("checking %s's checksum and build attestation", rel.Version))
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		return fmt.Errorf("%s: checksum %s, want %s", rel.Archive.Name, got, want)
 	}
 	if err := verify(ctx, archive, repo); err != nil {
 		return err
 	}
+	step("installing " + rel.Version)
 
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
@@ -217,6 +223,48 @@ func Load(st *store.Store) Check {
 	_ = json.Unmarshal([]byte(st.Meta("update_check")), &c)
 	return c
 }
+
+// Done is the last update that finished, which the page and the TUI mention for a while.
+type Done struct {
+	From string    `json:"from"`
+	To   string    `json:"to"`
+	At   time.Time `json:"at"`
+}
+
+// Restarting records, just before the daemon restarts into an update, the version it is leaving.
+func Restarting(st *store.Store, from string) { _ = st.SetMeta("update_from", from) }
+
+// Started is called when the daemon starts: it records the version it runs, for the TUI to compare with its own, and,
+// after an update's restart, the update as done. It returns that update (false when this start wasn't one).
+func Started(st *store.Store, current string) (Done, bool) {
+	_ = st.SetMeta("daemon_version", current)
+	SetState(st, "")
+	from := st.Meta("update_from")
+	if from == "" {
+		return Done{}, false
+	}
+	_ = st.SetMeta("update_from", "")
+	d := Done{From: from, To: current, At: time.Now()}
+	if js, err := json.Marshal(d); err == nil {
+		_ = st.SetMeta("update_done", string(js))
+	}
+	return d, true
+}
+
+// LastDone returns the last finished update if it was within the last hour.
+func LastDone(st *store.Store, now time.Time) (Done, bool) {
+	var d Done
+	if json.Unmarshal([]byte(st.Meta("update_done")), &d) != nil || now.Sub(d.At) > time.Hour {
+		return Done{}, false
+	}
+	return d, true
+}
+
+// DaemonVersion is the version the daemon last started as ("" before one did).
+func DaemonVersion(st *store.Store) string { return st.Meta("daemon_version") }
+
+// Busy reports whether a state is an update under way (not empty, not a failure).
+func Busy(state string) bool { return state != "" && !strings.Contains(state, "failed") }
 
 // State is what an update in progress is doing, e.g. "downloading v0.1.0-beta.3" ("" = none).
 func State(st *store.Store) string { return st.Meta("update_state") }
@@ -359,6 +407,7 @@ func Request(cfg config.Config, st *store.Store) (string, error) {
 		if msg := loc.Query().Get("msg"); msg != "" {
 			return msg, nil
 		}
+		return "Update started.", nil // the page follows it from here, without a message
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
 	return "", fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(body)))

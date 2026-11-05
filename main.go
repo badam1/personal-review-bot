@@ -18,6 +18,7 @@ import (
 	"strings"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/config"
@@ -298,7 +299,7 @@ func updateCmd(ctx context.Context, cfg config.Config, args []string) error {
 	switch {
 	case err == nil:
 		fmt.Println(msg)
-		return nil
+		return followUpdate(ctx, st, rel)
 	case !errors.Is(err, update.ErrNoDaemon):
 		return err
 	}
@@ -307,9 +308,38 @@ func updateCmd(ctx context.Context, cfg config.Config, args []string) error {
 		return err
 	}
 	fmt.Printf("no daemon running: installing %s in %s\n", rel.Version, exe)
-	if err := update.Install(ctx, client, cfg.UpdateRepo, rel, exe, update.Attested); err != nil {
+	step := func(s string) { fmt.Println("  " + s) }
+	if err := update.Install(ctx, client, cfg.UpdateRepo, rel, exe, update.Attested, step); err != nil {
 		return err
 	}
-	fmt.Printf("updated to %s (%s)\n", rel.Version, rel.URL)
+	fmt.Printf("✓ updated to %s (%s)\n", rel.Version, rel.URL)
+	return nil
+}
+
+// followUpdate prints the daemon's update as it goes, until the daemon runs rel, the update fails, or 15 minutes pass
+// (it may be waiting for long reviews; it restarts on its own).
+func followUpdate(ctx context.Context, st *store.Store, rel update.Release) error {
+	deadline := time.Now().Add(15 * time.Minute)
+	last := ""
+	for time.Now().Before(deadline) {
+		if update.DaemonVersion(st) == rel.Version {
+			fmt.Printf("✓ updated: the daemon runs %s (%s)\n", rel.Version, rel.URL)
+			return nil
+		}
+		state := update.State(st)
+		if state != last && state != "" {
+			fmt.Println("  " + state)
+			last = state
+		}
+		if strings.Contains(state, "failed") {
+			return errors.New(state)
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	fmt.Println("still going after 15 minutes; the daemon restarts on its own once its running reviews finish")
 	return nil
 }
