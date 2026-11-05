@@ -453,7 +453,8 @@ var readOnly = []string{"--permission-mode", "default",
 	"--allowedTools", "Read", "Grep", "Glob",
 	"Bash(gh search code *)", "Bash(gh api *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)",
 	"--disallowedTools",
-	"Bash(gh api *-X*)", "Bash(gh api *--method*)",
+	"Bash(gh api *-X *)", "Bash(gh api *-XPOST*)", "Bash(gh api *-XPUT*)", "Bash(gh api *-XPATCH*)",
+	"Bash(gh api *-XDELETE*)", "Bash(gh api *--method*)",
 	"Bash(gh api *-f *)", "Bash(gh api *-F *)",
 	"Bash(gh api *--field*)", "Bash(gh api *--raw-field*)", "Bash(gh api *--input*)"}
 
