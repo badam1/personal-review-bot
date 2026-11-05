@@ -60,8 +60,8 @@ git checkout "$(git describe --tags --abbrev=0)"  # the latest release; stay on 
 ```
 
 To update, use the page's button, `u` in the TUI or `personal-review-bot update` (see [Updating](#updating)).
-`personal-review-bot version` says which one runs. The project is in beta (0.x): a minor release may change settings
-or file formats, and its notes say how.
+`personal-review-bot version` says which one runs. Until 1.0, a minor release (0.x.0) may change settings or file
+formats, and its notes say what to change.
 
 [Releases](https://github.com/badam1/personal-review-bot/releases) also have prebuilt binaries for macOS and Linux
 (arm64 and amd64), with checksums and build attestations, to run `personal-review-bot` without Go. Check where one
