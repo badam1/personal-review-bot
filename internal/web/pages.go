@@ -292,6 +292,7 @@ type timelinePage struct {
 	Cost    float64
 	Ignored bool
 	Token   string
+	Nav     string // the section it sits under, the same as its latest review's
 }
 
 // timeline shows every review of one PR: what started it, what it found and what became of each finding.
@@ -312,7 +313,7 @@ func (s *server) timeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := timelinePage{Latest: reviews[0], Title: reviews[0].Title + " · personal-review-bot", Ignored: s.d.Store.IsIgnored(repo, n),
-		Token: s.token}
+		Token: s.token, Nav: home(reviews[0], false)}
 	for _, rev := range reviews {
 		fs, err := s.d.Store.Findings(rev.ID)
 		if err != nil {

@@ -112,6 +112,12 @@ func TestReviewCode(t *testing.T) {
 	running := s.review(5, store.Running, "")
 	_, page = s.get(fmt.Sprintf("/r/%d", running))
 	want(t, page, `<meta http-equiv="refresh" content="15; url=?">`)
+
+	// A review that still needs you, and its PR's timeline, sit under Reviews.
+	_, page = s.get(fmt.Sprintf("/r/%d", id))
+	want(t, page, `<a href="/" aria-current="page">Reviews</a>`, `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Reviews</a>`)
+	_, page = s.get("/pr/acme/infra/4")
+	want(t, page, `<a href="/" aria-current="page">Reviews</a>`, `<span class="mono" aria-current="page">acme/infra#4</span>`)
 }
 
 // A posted finding can be marked wrong and unmarked; one that wasn't posted can't.
@@ -123,10 +129,11 @@ func TestMarkWrong(t *testing.T) {
 	_ = s.st.UpdateFinding(&store.Finding{ID: posted, Line: 1, Comment: "c", Confidence: 92, Status: store.AutoPosted})
 	dropped, _ := s.st.AddFinding(&store.Finding{ReviewID: id, Agent: "logic", Severity: "low", Path: "a.go", Line: 2,
 		Title: "Nit", Comment: "c", Status: store.Candidate})
-	_ = s.st.UpdateFinding(&store.Finding{ID: dropped, Line: 2, Comment: "c", Status: store.Discarded})
+	_ = s.st.UpdateFinding(&store.Finding{ID: dropped, Line: 2, Comment: "c", Confidence: 55, Status: store.Discarded})
 
 	_, page := s.get(fmt.Sprintf("/r/%d", id))
-	want(t, page, fmt.Sprintf(`action="/f/%d/wrong"`, posted), "Mark as wrong")
+	want(t, page, fmt.Sprintf(`action="/f/%d/wrong"`, posted), "Mark as wrong", `<span><b class="cert hi">92%</b> · logic</span>`,
+		`<span><b class="cert lo">55%</b> · logic</span>`, `<div class="acts">`)
 	if strings.Contains(page, fmt.Sprintf(`action="/f/%d/wrong"`, dropped)) {
 		t.Error("a dropped finding can't be marked wrong")
 	}
@@ -195,8 +202,13 @@ func TestTimeline(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status %d", code)
 	}
-	want(t, page, "3 review(s)", "Wildcard action", "you posted · marked wrong", `security · <span class="where">iam.tf:3</span>`,
+	want(t, page, "3 reviews", "Wildcard action", "you posted · marked wrong", `security · <span class="where">iam.tf:3</span>`,
 		"<b>Needs you</b>", "never decided")
+	// Once its latest review is over, the PR and its finished reviews sit under History, wherever you came from.
+	want(t, page, `<a href="/history" aria-current="page">History</a>`, `<nav class="crumbs" aria-label="Breadcrumb"><a href="/history">History</a>`)
+	_, page = s.get(fmt.Sprintf("/r/%d", first))
+	want(t, page, `<a href="/history" aria-current="page">History</a>`, `<a href="/history">History</a> <span aria-hidden="true">/</span> <a class="mono" href="/pr/acme/infra/9"`,
+		`<span aria-current="page">`)
 	if code, _ := s.get("/pr/acme/infra/404"); code != http.StatusNotFound {
 		t.Errorf("unknown PR: %d", code)
 	}
@@ -622,7 +634,7 @@ func TestDeepReview(t *testing.T) {
 
 	done := s.review(41, store.Done, "you approved")
 	_, page = s.get(fmt.Sprintf("/r/%d", done))
-	want(t, page, `name="action" value="deep"`)
+	want(t, page, `name="action" value="deep"`, `title="Review the PR again at its latest commit">Re-review</button>`)
 	s.post(fmt.Sprintf("/r/%d", done), url.Values{"action": {"rereview"}})
 	if r, _ := s.st.Latest("acme/infra", 41); r.Deep {
 		t.Error("a plain re-review must not be deep")

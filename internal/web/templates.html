@@ -175,18 +175,21 @@
   .code i { display: inline-block; width: 3em; text-align: right; margin-right: 1em; } .code b { margin-right: .6em; }
   .code .add { background: rgba(166, 227, 161, .07); } .code .add b { color: var(--green); }
   .code .tgt { background: rgba(137, 180, 250, .16); } .code .tgt i { color: var(--blue); }
-  .mini { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 14px 18px; font-size: 14px; }
+  .mini { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 18px; font-size: 14px; }
+  .mini .what { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .mini .head { display: flex; align-items: baseline; gap: 10px; } .mini .head .ttl { font-weight: 600; }
+  .mini .acts { margin-left: auto; display: flex; align-items: center; gap: 12px; white-space: nowrap; }
   details.card { padding: 14px 18px; color: var(--sub); font-size: 14px; } details.card > summary { cursor: pointer; font-weight: 600; }
   details.card[open] > summary { margin-bottom: 10px; } details.card .mini { padding: 10px 0; border-top: 1px solid var(--s0); }
   .decision { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-color: var(--s1); }
   .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .grid2 .btn { white-space: normal; text-align: center; line-height: 1.25; padding: 6px 10px; }
   .facts { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; padding: 18px; font-size: 13px; }
   .facts dt { color: var(--sub); } .facts dd { margin: 0; }
   .agents { display: flex; flex-direction: column; padding: 8px 0; }
   .agents .lbl { padding: 8px 18px; }
   .arow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 18px; border-top: 1px solid var(--s0); font-size: 13px; }
   .arow b { font-weight: 600; } .arow .r { text-align: right; color: var(--sub); } .arow .ok { color: var(--green); } .arow .bad { color: var(--red); }
-  .arow .wide { grid-column: 1 / -1; }
 
   /* Stats and history */
   .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -311,6 +314,9 @@
   <button class="btn tiny" name="wrong" value="0">Undo</button>{{else}}<button class="btn tiny" name="wrong" value="1"
   title="It was posted, but it was wrong: the stats count it, and re-reviews of this PR are told">Mark as wrong</button>{{end}}</form>{{end}}
 
+{{define "mini-what"}}<div class="what"><div class="head"><span class="sev {{.Severity}}">{{.Severity}}</span><span class="ttl" title="{{.Comment}}">{{.Title}}</span></div>
+  <div class="meta">{{template "where" .}}<span>{{if .Confidence}}<b class="cert {{certKind .Confidence}}">{{.Confidence}}%</b> · {{end}}{{.Agent}}</span></div></div>{{end}}
+
 {{define "finding-meta"}}{{template "where" .}}<span class="sev {{.Severity}}">{{.Severity}}</span>
   {{if .Confidence}}<span><b class="cert {{certKind .Confidence}}">{{.Confidence}}%</b> {{if eq .Agent "design"}}sure{{else}}certain{{end}}</span>{{end}}
   <span>{{.Agent}}</span>{{if eq .Agent "design"}}<span>goes in the review body</span>{{else if not .Inline}}<span>goes in the review body (line not in diff)</span>{{end}}{{end}}
@@ -377,9 +383,12 @@
 </main>
 {{template "foot"}}{{end}}
 
-{{define "review"}}{{template "head" (page .Title .Refresh "reviews")}}
+{{define "crumb-root"}}{{if eq . "history"}}<a href="/history">History</a>{{else}}<a href="/">Reviews</a>{{end}} <span aria-hidden="true">/</span>{{end}}
+
+{{define "review"}}{{template "head" (page .Title .Refresh .Nav)}}
 <main class="page wide">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Reviews</a> <span aria-hidden="true">/</span> <a class="mono" href="{{timeline .R.Repo .R.Number}}">{{.R.Repo}}#{{.R.Number}}</a></nav>
+  <nav class="crumbs" aria-label="Breadcrumb">{{template "crumb-root" .Nav}} <a class="mono" href="{{timeline .R.Repo .R.Number}}"
+    title="Every review of this PR">{{.R.Repo}}#{{.R.Number}}</a> <span aria-hidden="true">/</span> <span aria-current="page">{{.R.CreatedAt.Local.Format "Jan 2 15:04"}}</span></nav>
   <div class="prhead">
     <h1><a href="{{.R.URL}}" target="_blank" rel="noopener">{{.R.Title}}</a></h1>
     <div class="meta">{{$o := outcome .R}}<span class="badge {{$o.Kind}}">{{$o.Text}}</span>
@@ -459,22 +468,21 @@
 
       {{if .Auto}}<section class="sect tight" aria-labelledby="auto">
         <h2 id="auto" class="h2">Posted automatically</h2>
-        {{range .Auto}}<div class="card mini"><span class="sev {{.Severity}}">{{.Severity}}</span><span class="ttl" title="{{.Comment}}">{{.Title}}</span>{{template "where" .}}
-          <span class="sub">{{.Confidence}}% · {{.Agent}}</span><span class="grow"></span>
-          {{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">View on GitHub</a>{{end}}
-          {{if eq .Status "auto_posted"}}{{template "wrong" (wrongForm . $.Token)}}{{else}}<span class="tag">would post</span>{{end}}</div>{{end}}
+        {{range .Auto}}<div class="card mini">{{template "mini-what" .}}
+          <div class="acts">{{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">View on GitHub</a>{{end}}
+            {{if eq .Status "auto_posted"}}{{template "wrong" (wrongForm . $.Token)}}{{else}}<span class="tag">would post</span>{{end}}</div></div>{{end}}
         <p class="fine">Confirmed, {{.Threshold}}%+ certain and of {{.AutoSeverity}} severity or higher.</p>
       </section>{{end}}
 
       {{if .Old}}<section class="sect tight" aria-labelledby="old">
         <h2 id="old" class="h2">Your decisions</h2>
-        {{range .Old}}<div class="card mini"><span class="sev {{.Severity}}">{{.Severity}}</span><span class="ttl" title="{{.Comment}}">{{.Title}}</span>{{template "where" .}}
-          <span class="sub">{{fate .Finding}}</span><span class="grow"></span>
-          {{if eq .Status "posted"}}{{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">View on GitHub</a>{{end}}{{template "wrong" (wrongForm . $.Token)}}{{end}}</div>{{end}}
+        {{range .Old}}<div class="card mini">{{template "mini-what" .}}
+          <div class="acts"><span class="sub">{{fate .Finding}}</span>
+            {{if eq .Status "posted"}}{{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">View on GitHub</a>{{end}}{{template "wrong" (wrongForm . $.Token)}}{{end}}</div></div>{{end}}
       </section>{{end}}
 
       {{if .Rejected}}<details class="card"><summary>{{plural (len .Rejected) "finding" "findings"}} the verifier rejected</summary>
-        {{range .Rejected}}<div class="mini"><span class="sev {{.Severity}}">{{.Severity}}</span><span class="ttl" title="{{.Comment}}">{{.Title}}</span>{{template "where" .}}<span class="sub">{{.Agent}}</span></div>{{end}}
+        {{range .Rejected}}<div class="mini">{{template "mini-what" .}}</div>{{end}}
       </details>{{end}}
     </div>
 
@@ -499,7 +507,7 @@
         <span class="lbl">{{if .R.Decision}}Decision{{else}}Review{{end}}</span>
         {{with .R.Decision}}<p>{{.}}</p>{{end}}
         {{if and (ne .R.Status "queued") (ne .R.Status "running") (not .Newer)}}<form method="post" action="/r/{{.R.ID}}"><input type="hidden" name="csrf" value="{{.Token}}">
-          <div class="grid2">{{if eq .R.Status "failed"}}<button class="btn primary" name="action" value="rereview">Retry</button>{{else}}<button class="btn" name="action" value="rereview">Re-review latest commit</button>{{end}}
+          <div class="grid2">{{if eq .R.Status "failed"}}<button class="btn primary" name="action" value="rereview">Retry</button>{{else}}<button class="btn" name="action" value="rereview" title="Review the PR again at its latest commit">Re-review</button>{{end}}
             <button class="btn deep" name="action" value="deep" title="Review it again at its latest commit as if it were large: Opus reviewers and verifier, the design review and the follow-up check, without the usage savings">Deep review</button></div></form>
         {{else if .Newer}}<p class="fine">A newer review of this PR exists.</p>{{else}}<p class="fine">It's being reviewed now.</p>{{end}}
       </div>{{end}}
@@ -514,11 +522,10 @@
 
       {{if .Runs}}<div class="card agents">
         <span class="lbl">Reviewers</span>
-        {{range .Runs}}<div class="arow" title="{{if .Checked}}{{.Checked}}{{else}}{{.Error}}{{end}}">
+        {{range .Runs}}<div class="arow" title="{{if .Checked}}{{.Checked}}{{else}}{{.Error}}{{end}}{{if .Denials}}{{if or .Checked .Error}}&#10;&#10;{{end}}{{plural .Denials "tool call" "tool calls"}} outside its read-only tools (read, search, git log/show/diff/blame, gh api) were blocked; it carried on with those.{{end}}">
           <span><b>{{.Agent}}</b> <span class="sub">· {{.Model}}</span></span><span class="r">{{money .CostUSD}}</span>
           <span class="{{if .Error}}bad{{else if and (eq .Agent "design") (not .Findings)}}ok{{end}}">{{if .Error}}failed{{else if eq .Agent "verifier"}}{{.Findings}} verdict(s){{else if eq .Agent "followup"}}{{.Findings}} earlier finding(s) checked{{else if eq .Agent "design"}}{{if .Findings}}{{.Findings}} concern(s){{else}}no concerns{{end}}{{else if .Findings}}{{.Findings}} finding(s){{else}}nothing found{{end}}</span>
           <span class="r">{{dur .Duration}} · {{.Turns}} turns</span>
-          {{if .Denials}}<span class="bad wide">{{.Denials}} tool call(s) refused</span>{{end}}
         </div>{{end}}
       </div>{{end}}
     </aside>
@@ -626,11 +633,14 @@
 </main>
 {{template "foot"}}{{end}}
 
-{{define "timeline"}}{{template "head" (page .Title 0 "history")}}
+{{define "timeline"}}{{template "head" (page .Title 0 .Nav)}}
 <main class="page">
-  <div class="prhead">
-    <h1><a href="{{.Latest.URL}}" target="_blank" rel="noopener">{{.Latest.Title}}</a></h1>
-    <div class="meta"><span class="mono">{{.Latest.Repo}}#{{.Latest.Number}}</span><span>by <b>@{{.Latest.Author}}</b></span><span>{{len .Entries}} review(s)</span><span>{{money .Cost}}</span></div>
+  <div class="sect">
+    <nav class="crumbs" aria-label="Breadcrumb">{{template "crumb-root" .Nav}} <span class="mono" aria-current="page">{{.Latest.Repo}}#{{.Latest.Number}}</span></nav>
+    <div class="prhead">
+      <h1><a href="{{.Latest.URL}}" target="_blank" rel="noopener">{{.Latest.Title}}</a></h1>
+      <div class="meta"><span>by <b>@{{.Latest.Author}}</b></span><span>{{plural (len .Entries) "review" "reviews"}}</span><span>{{money .Cost}}</span></div>
+    </div>
   </div>
   {{if .Ignored}}<div class="callout warn">You ignore this PR, so the bot skips it.
     <form class="inline" method="post" action="/unignore"><input type="hidden" name="csrf" value="{{.Token}}">

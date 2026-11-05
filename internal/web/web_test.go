@@ -166,7 +166,7 @@ func TestIncompleteReview(t *testing.T) {
 	s.review(rec, req)
 	page := rec.Body.String()
 	for _, want := range []string{`value="approve" disabled`, `class="btn primary big" form="decide" name="action" value="rereview"`,
-		"can't be approved", "nothing found", "Traced every caller of promote()", "2 tool call(s) refused", "failed"} {
+		"can't be approved", "nothing found", "Traced every caller of promote()", "2 tool calls outside its read-only tools", "failed"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page is missing %q", want)
 		}

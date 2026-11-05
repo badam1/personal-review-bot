@@ -67,3 +67,20 @@ func TestWaitingBadges(t *testing.T) {
 		t.Errorf("nothing new = %q", got)
 	}
 }
+
+// A review sits under Reviews while it still needs something, under History once it's over.
+func TestHome(t *testing.T) {
+	for _, tc := range []struct {
+		status  string
+		retried bool
+		want    string
+	}{
+		{store.AwaitingYou, false, "reviews"}, {store.Queued, false, "reviews"}, {store.Running, false, "reviews"},
+		{store.Failed, false, "reviews"}, {store.Failed, true, "history"}, {store.Done, false, "history"},
+		{store.Ignored, false, "history"},
+	} {
+		if got := home(store.Review{Status: tc.status}, tc.retried); got != tc.want {
+			t.Errorf("%s (retried %v): %s, want %s", tc.status, tc.retried, got, tc.want)
+		}
+	}
+}
