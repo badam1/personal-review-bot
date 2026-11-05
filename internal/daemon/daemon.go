@@ -29,8 +29,12 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	d := pipeline.Deps{Cfg: cfg, Store: st, GH: client, Log: log.Printf}
-	log.Printf("personal-review-bot %s started for @%s (org %q, every %s, auto-post ≥ %d%% and %s+, page %s)",
-		version.String(), client.Login, cfg.Org, cfg.PollInterval, cfg.Threshold, cfg.AutoSeverity, cfg.WebURL())
+	auto := cfg.AutoPostSeverities()
+	if auto == "" {
+		auto = "no severity"
+	}
+	log.Printf("personal-review-bot %s started for @%s (org %q, every %s, auto-post ≥ %d%% for %s, page %s)",
+		version.String(), client.Login, cfg.Org, cfg.PollInterval, cfg.Threshold, auto, cfg.WebURL())
 
 	if err := st.ResetRunning(); err != nil {
 		return err

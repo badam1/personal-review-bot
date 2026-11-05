@@ -3,22 +3,23 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestAutoPosts(t *testing.T) {
-	c := Config{Threshold: 80, AutoSeverity: "medium"}
+	c := Config{Threshold: 80, AutoPost: []string{"low", "medium"}}
 	cases := []struct {
 		verdict   string
 		certainty int
 		severity  string
 		want      bool
 	}{
-		{"confirmed", 90, "high", true},
+		{"confirmed", 90, "low", true},
 		{"confirmed", 80, "medium", true},
-		{"confirmed", 95, "low", false},      // real but minor: you decide
-		{"confirmed", 79, "high", false},     // not certain enough
-		{"plausible", 95, "high", false},     // not verified
+		{"confirmed", 95, "high", false},     // serious: you look first
+		{"confirmed", 79, "medium", false},   // not certain enough
+		{"plausible", 95, "low", false},      // not verified
 		{"confirmed", 95, "critical", false}, // unknown severity never posts
 	}
 	for _, tc := range cases {
@@ -26,9 +27,56 @@ func TestAutoPosts(t *testing.T) {
 			t.Errorf("AutoPosts(%s, %d, %s) = %v, want %v", tc.verdict, tc.certainty, tc.severity, got, tc.want)
 		}
 	}
-	if got := severity("hihg"); got != "high" {
-		t.Errorf("a misspelt severity must tighten the rule, got %q", got)
+	if got, held := c.AutoPostSeverities(), c.HeldSeverities(); got != "low or medium" || held != "high" {
+		t.Errorf("posted %q, held %q", got, held)
 	}
+	if got := (Config{AutoPost: severities}).AutoPostSeverities(); got != "low, medium or high" {
+		t.Errorf("all = %q", got)
+	}
+}
+
+// AUTO_POST lists the severities posted without asking; misspelt words drop out. Without it, the older AUTO_SEVERITY
+// still means that severity or higher, and with neither, low and medium post.
+func TestAutoPostSetting(t *testing.T) {
+	t.Setenv("PERSONAL_REVIEW_BOT_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		autoPost, autoSeverity *string
+		want                   string
+	}{
+		{nil, nil, "low medium"},
+		{ptr("high"), nil, "high"},
+		{ptr("Medium, low"), nil, "low medium"},
+		{ptr("low,hihg"), nil, "low"},
+		{ptr(""), nil, ""},
+		{ptr("none"), nil, ""},
+		{nil, ptr("medium"), "medium high"},
+		{nil, ptr("hihg"), "high"},
+		{ptr("low"), ptr("high"), "low"},
+	} {
+		set := func(name string, v *string) {
+			if v == nil {
+				os.Unsetenv("PERSONAL_REVIEW_BOT_" + name)
+				return
+			}
+			t.Setenv("PERSONAL_REVIEW_BOT_"+name, *v)
+		}
+		t.Setenv("PERSONAL_REVIEW_BOT_AUTO_POST", "") // registers both for cleanup before unsetting
+		t.Setenv("PERSONAL_REVIEW_BOT_AUTO_SEVERITY", "")
+		set("AUTO_POST", tc.autoPost)
+		set("AUTO_SEVERITY", tc.autoSeverity)
+		if got := strings.Join(Load().AutoPost, " "); got != tc.want {
+			t.Errorf("AUTO_POST %v, AUTO_SEVERITY %v: got %q, want %q", deref(tc.autoPost), deref(tc.autoSeverity), got, tc.want)
+		}
+	}
+}
+
+func ptr(s string) *string { return &s }
+
+func deref(s *string) any {
+	if s == nil {
+		return "unset"
+	}
+	return *s
 }
 
 // config.env fills in what the environment doesn't set; the environment wins, so a one-off run can override it.

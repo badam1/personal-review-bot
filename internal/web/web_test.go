@@ -193,11 +193,12 @@ func TestIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	s := &server{d: pipeline.Deps{Store: st, Cfg: config.Config{Threshold: 80, AutoSeverity: "medium"}}}
+	s := &server{d: pipeline.Deps{Store: st, Cfg: config.Config{Threshold: 80, AutoPost: []string{"low", "medium"}}}}
 	rec := httptest.NewRecorder()
 	s.index(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	page := rec.Body.String()
-	for _, want := range []string{`href="/stats"`, "80% certainty or more", "medium severity or higher", "Needs you", ">Recent</h2>", "Nothing waiting for you."} {
+	for _, want := range []string{`href="/stats"`, "80% certainty or more and of low or medium severity post on their own",
+		"findings of high severity, design concerns and every approval wait", "Needs you", ">Recent</h2>", "Nothing waiting for you."} {
 		if !strings.Contains(page, want) {
 			t.Errorf("index is missing %q", want)
 		}
@@ -223,7 +224,7 @@ func TestStats(t *testing.T) {
 	_ = st.UpdateFinding(&store.Finding{ID: fid, Comment: "c", Confidence: 90, Verdict: "confirmed", Status: store.AutoPosted})
 	_ = st.Finish(id, store.Done, "posted 1, you approved", "", "")
 
-	s := &server{d: pipeline.Deps{Store: st, Cfg: config.Config{Threshold: 80, AutoSeverity: "high", SaveAt: 75, MinAt: 90}}}
+	s := &server{d: pipeline.Deps{Store: st, Cfg: config.Config{Threshold: 80, AutoPost: []string{"low", "medium"}, SaveAt: 75, MinAt: 90}}}
 	rec := httptest.NewRecorder()
 	s.stats(rec, httptest.NewRequest(http.MethodGet, "/stats", nil))
 	if rec.Code != http.StatusOK {

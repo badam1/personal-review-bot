@@ -327,7 +327,7 @@
   <div class="pagehead">
     <div class="intro">
       <h1>Reviews</h1>
-      <p class="lede">PRs where your review is requested directly. Confirmed findings at {{.Threshold}}% certainty or more and of {{.AutoSeverity}} severity or higher post on their own; everything else, and every approval, waits for you here.</p>
+      <p class="lede">PRs where your review is requested directly. {{if .AutoPost}}Confirmed findings at {{.Threshold}}% certainty or more and of {{.AutoPost}} severity post on their own; {{with .Held}}findings of {{.}} severity, {{end}}design concerns and every approval wait for you here.{{else}}Nothing posts on its own: every finding and every approval waits for you here.{{end}}</p>
     </div>
     <a class="spend" href="/stats"><span>Spent today <b>{{money .SpentToday}}</b></span><span>7 days <b>{{money .SpentWeek}}</b></span></a>
   </div>
@@ -471,7 +471,7 @@
         {{range .Auto}}<div class="card mini">{{template "mini-what" .}}
           <div class="acts">{{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">View on GitHub</a>{{end}}
             {{if eq .Status "auto_posted"}}{{template "wrong" (wrongForm . $.Token)}}{{else}}<span class="tag">would post</span>{{end}}</div></div>{{end}}
-        <p class="fine">Confirmed, {{.Threshold}}%+ certain and of {{.AutoSeverity}} severity or higher.</p>
+        <p class="fine">The verifier confirmed these at a certainty and severity that post on their own (AUTO_POST, THRESHOLD).</p>
       </section>{{end}}
 
       {{if .Old}}<section class="sect tight" aria-labelledby="old">
@@ -537,7 +537,7 @@
 {{define "stats"}}{{template "head" (page "Stats · personal-review-bot" 0 "stats")}}
 <main class="page">
   <div class="pagehead"><div class="intro"><h1>Stats</h1>
-    <p class="lede">Dry runs left out. Findings the verifier confirms at {{.Threshold}}%+ certainty and {{.AutoSeverity}} severity or higher are posted automatically; the rest wait for you.</p>
+    <p class="lede">Dry runs left out. {{if .AutoPost}}Findings the verifier confirms at {{.Threshold}}%+ certainty and of {{.AutoPost}} severity are posted automatically; the rest wait for you.{{else}}No finding is posted automatically: they all wait for you.{{end}}</p>
     {{if .HasUsage}}<p class="lede">Plan usage: <b>{{pct .FiveHour}}</b> of the 5-hour limit (resets {{.FiveHourResets.Local.Format "15:04"}}) ·
       <b>{{pct .WeekUsage}}</b> of the week (resets {{.WeekResets.Local.Format "Mon 15:04"}}), read {{ago .UsageSeen}}.
       Reviews get cheaper from {{.SaveAt}}% and cheapest from {{.MinAt}}%.</p>{{end}}</div></div>
