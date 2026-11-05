@@ -119,9 +119,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "u": // the daemon looks for the newest release itself, so this works right after a release too
 			m.msg = "asking the daemon for the newest release…"
 			return m, func() tea.Msg { return updateMsg(requestUpdate(m.cfg, m.st)) }
-		case "r":
+		case "r", "d":
 			if r, ok := m.selected(); ok {
-				m.msg = queue(m.st, r)
+				m.msg = queue(m.st, r, msg.String() == "d")
 				m.snap = load(m.st)
 			}
 		}
@@ -148,14 +148,17 @@ func requestUpdate(cfg config.Config, st *store.Store) string {
 	return msg
 }
 
-// queue asks the daemon to (re)review the selected PR.
-func queue(st *store.Store, r store.Review) string {
+// queue asks the daemon to (re)review the selected PR; deep reviews it as if it were large (Opus, the design review).
+func queue(st *store.Store, r store.Review, deep bool) string {
 	if r.Status == store.Queued || r.Status == store.Running {
 		return "already in progress"
 	}
 	if _, err := st.Insert(&store.Review{Repo: r.Repo, Number: r.Number, URL: r.URL, Title: r.Title, Author: r.Author,
-		HeadSHA: r.HeadSHA, Status: store.Queued, Source: "manual"}); err != nil {
+		HeadSHA: r.HeadSHA, Status: store.Queued, Source: "manual", Deep: deep}); err != nil {
 		return "queue failed: " + err.Error()
+	}
+	if deep {
+		return fmt.Sprintf("queued a deep review of %s#%d", r.Repo, r.Number)
 	}
 	return fmt.Sprintf("queued %s#%d", r.Repo, r.Number)
 }
@@ -294,6 +297,8 @@ func render(cfg config.Config, s snapshot, cursor int, msg string, interactive b
 		switch {
 		case r.DryRun:
 			dry = "🧪"
+		case r.Deep:
+			dry = "🔬"
 		case r.Source == "re-request" || r.Source == "new commits":
 			dry = "🔁"
 		}
@@ -313,7 +318,7 @@ func render(cfg config.Config, s snapshot, cursor int, msg string, interactive b
 		b.WriteString(dim.Render("  no reviews yet") + "\n")
 	}
 	if interactive {
-		b.WriteString("\n" + dim.Render("↑/↓ select · enter review page · o open PR · r review again · u update · q quit"))
+		b.WriteString("\n" + dim.Render("↑/↓ select · enter review page · o open PR · r review again · d deep review · u update · q quit"))
 		b.WriteString("\n" + dim.Render(fmt.Sprintf("personal-review-bot %s · bugs and ideas: github.com/%s/issues",
 			version.String(), cfg.UpdateRepo)))
 		if msg != "" {

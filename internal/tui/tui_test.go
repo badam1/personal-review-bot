@@ -104,3 +104,24 @@ func TestCosts(t *testing.T) {
 		}
 	}
 }
+
+// d in the TUI queues a deep review, and the list marks deep reviews.
+func TestQueueDeep(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/reviews.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	r := store.Review{Repo: "acme/api", Number: 7, Title: "Fix login", Status: store.Done}
+	if msg := queue(st, r, true); msg != "queued a deep review of acme/api#7" {
+		t.Errorf("queue = %q", msg)
+	}
+	latest, _ := st.Latest("acme/api", 7)
+	if !latest.Deep || latest.Source != "manual" {
+		t.Errorf("queued %+v", latest)
+	}
+	screen := render(config.Config{}, snapshot{recent: []store.Review{*latest}}, -1, "", false, 160, 0)
+	if !strings.Contains(screen, "🔬") {
+		t.Errorf("deep reviews are marked:\n%s", screen)
+	}
+}

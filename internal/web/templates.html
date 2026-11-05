@@ -153,7 +153,7 @@
 <h1><a href="{{.R.URL}}" target="_blank" rel="noopener">{{.R.Title}}</a></h1>
 <div class="meta"><a href="{{timeline .R.Repo .R.Number}}">{{.R.Repo}}#{{.R.Number}}</a> · opened by <b>@{{.R.Author}}</b> · +{{.R.Additions}} −{{.R.Deletions}} in {{.R.Files}} files</div>
 <div class="meta" style="margin-top:6px"><span class="pill">{{status .R}}</span>{{with iteration .R}} <span class="pill">{{.}}</span>{{end}}
-  {{if .R.Tier}}<span class="pill">{{.R.Tier}} · {{.R.Models}}</span>{{end}} <span class="pill">{{money .R.CostUSD}}</span>
+  {{if .R.Tier}}<span class="pill">{{.R.Tier}} · {{.R.Models}}</span>{{else if .R.Deep}}<span class="pill">🔬 deep review</span>{{end}} <span class="pill">{{money .R.CostUSD}}</span>
   {{if .R.DryRun}}<span class="pill">🧪 dry run: nothing goes to GitHub</span>{{end}}</div>
 {{if .R.Reasons}}<div class="meta" style="margin-top:6px">Why {{.R.Tier}}: {{.R.Reasons}}</div>{{end}}
 {{if or (eq .R.Status "queued") (eq .R.Status "running")}}{{template "running-line" .R}}<script src="/running.js" defer></script>{{end}}
@@ -227,6 +227,7 @@
     <button class="approve" name="action" value="post_approve"{{if $noApprove}} disabled{{end}}>Post selected &amp; approve</button>{{end}}
     <button class="approve" name="action" value="approve"{{if $noApprove}} disabled{{end}}>Approve{{if .Selectable}} without comments{{end}}</button>
     {{if not $noApprove}}<button class="quiet" name="action" value="rereview">Re-review</button>{{end}}
+    <button class="quiet" name="action" value="deep" title="Review it again at its latest commit as if it were large: Opus reviewers and verifier, the design review and the follow-up check, without the usage savings">Deep review</button>
     <button class="quiet" name="action" value="skip">Skip: do nothing</button>
     <button class="quiet" name="action" value="ignore">Ignore this PR from now on</button>
   </div>
@@ -237,7 +238,8 @@
   {{if .R.Decision}}<h2>Decision</h2><div class="card">{{.R.Decision}}</div>{{end}}
   {{if and (ne .R.Status "queued") (ne .R.Status "running") (not .Newer)}}
   <form method="post" action="/r/{{.R.ID}}"><input type="hidden" name="csrf" value="{{.Token}}">
-    <div class="actions">{{if eq .R.Status "failed"}}<button class="primary" name="action" value="rereview">Retry</button>{{else}}<button class="quiet" name="action" value="rereview">Re-review latest commit</button>{{end}}</div></form>{{end}}
+    <div class="actions">{{if eq .R.Status "failed"}}<button class="primary" name="action" value="rereview">Retry</button>{{else}}<button class="quiet" name="action" value="rereview">Re-review latest commit</button>{{end}}
+      <button class="quiet" name="action" value="deep" title="Review it again at its latest commit as if it were large: Opus reviewers and verifier, the design review and the follow-up check, without the usage savings">Deep review</button></div></form>{{end}}
 {{end}}
 
 {{if .Auto}}<h2>Posted automatically · confirmed, {{.Threshold}}%+ certain, {{.AutoSeverity}} severity or higher</h2>

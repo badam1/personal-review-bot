@@ -457,8 +457,8 @@ func (s *server) act(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := fmt.Sprintf("/r/%d", rev.ID)
-	if r.FormValue("action") == "rereview" {
-		s.rereview(w, r, rev)
+	if a := r.FormValue("action"); a == "rereview" || a == "deep" {
+		s.rereview(w, r, rev, a == "deep")
 		return
 	}
 	if rev.Status != store.AwaitingYou {
@@ -637,10 +637,10 @@ func (s *server) tickedReminders(r *http.Request, rev *store.Review) []pipeline.
 	return out
 }
 
-// rereview queues the PR again at its latest commit. The review it replaces stays as it is until the new one
-// finishes, so nothing is lost if the re-review fails.
-func (s *server) rereview(w http.ResponseWriter, r *http.Request, rev *store.Review) {
-	id, queued, err := s.requeue(rev)
+// rereview queues the PR again at its latest commit, as a deep review if you asked for one. The review it replaces
+// stays as it is until the new one finishes, so nothing is lost if the re-review fails.
+func (s *server) rereview(w http.ResponseWriter, r *http.Request, rev *store.Review, deep bool) {
+	id, queued, err := s.requeue(rev, deep)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -653,9 +653,9 @@ func (s *server) rereview(w http.ResponseWriter, r *http.Request, rev *store.Rev
 }
 
 // requeue queues a new review of rev's PR and returns its id, or the id of the review already queued or running (and
-// false). A retry of a failed review keeps its source, so it runs the way the loop meant it to (a design review only
-// where the first attempt would have had one); any other re-review is yours.
-func (s *server) requeue(rev *store.Review) (int64, bool, error) {
+// false). A retry of a failed review keeps its source and depth, so it runs the way it was meant to (a design review
+// only where the first attempt would have had one); any other re-review is yours, deep if you ask.
+func (s *server) requeue(rev *store.Review, deep bool) (int64, bool, error) {
 	latest, err := s.d.Store.Latest(rev.Repo, rev.Number)
 	if err != nil {
 		return 0, false, err
@@ -665,10 +665,13 @@ func (s *server) requeue(rev *store.Review) (int64, bool, error) {
 	}
 	source, what := "manual", "re-review"
 	if rev.Status == store.Failed {
-		source, what = rev.Source, "retry"
+		source, what, deep = rev.Source, "retry", deep || rev.Deep
+	}
+	if deep {
+		what = "deep " + what
 	}
 	id, err := s.d.Store.Insert(&store.Review{Repo: rev.Repo, Number: rev.Number, URL: rev.URL, Title: rev.Title,
-		Author: rev.Author, HeadSHA: rev.HeadSHA, Status: store.Queued, Source: source, DryRun: rev.DryRun})
+		Author: rev.Author, HeadSHA: rev.HeadSHA, Status: store.Queued, Source: source, DryRun: rev.DryRun, Deep: deep})
 	if err != nil {
 		return 0, false, err
 	}

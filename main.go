@@ -36,9 +36,11 @@ const usage = `personal-review-bot: reviews PRs where your review is requested d
   personal-review-bot                       terminal UI: what's running and the last 10 reviews
   personal-review-bot status                the same, printed once
   personal-review-bot daemon                run the bot (launchd runs this)
-  personal-review-bot review [--dry-run] <PR-URL>
-                                   review one PR now; --dry-run posts nothing and opens nothing
-  personal-review-bot queue <PR-URL>        hand a PR to the running daemon
+  personal-review-bot review [--dry-run] [--deep] <PR-URL>
+                                   review one PR now; --dry-run posts nothing and opens nothing;
+                                   --deep reviews it as if it were large (Opus, the design review)
+  personal-review-bot queue [--deep] <PR-URL>
+                                            hand a PR to the running daemon
   personal-review-bot page                  serve only the confirmation page (no polling, no reviews)
   personal-review-bot agents                the reviewers and prompts reviews run with, and where each comes from
   personal-review-bot agents export <dir>   write the built-in reviewers, prompts and an example context.md to <dir>
@@ -89,7 +91,7 @@ func main() {
 }
 
 // newReview records a PR in the store with the given status.
-func newReview(st *store.Store, client *gh.Client, url, status string, dry bool) (int64, error) {
+func newReview(st *store.Store, client *gh.Client, url, status string, dry, deep bool) (int64, error) {
 	repo, num, err := gh.ParseURL(url)
 	if err != nil {
 		return 0, err
@@ -99,15 +101,16 @@ func newReview(st *store.Store, client *gh.Client, url, status string, dry bool)
 		return 0, err
 	}
 	return st.Insert(&store.Review{Repo: repo, Number: num, URL: pr.URL, Title: pr.Title, Author: pr.Author,
-		HeadSHA: pr.HeadSHA, Status: status, Source: "manual", DryRun: dry})
+		HeadSHA: pr.HeadSHA, Status: status, Source: "manual", DryRun: dry, Deep: deep})
 }
 
 func review(ctx context.Context, cfg config.Config, args []string) error {
 	fs := flag.NewFlagSet("review", flag.ExitOnError)
 	dry := fs.Bool("dry-run", false, "post nothing, open nothing")
+	deep := fs.Bool("deep", false, "review it as if it were large: Opus, the design review, no usage savings")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: personal-review-bot review [--dry-run] <PR-URL>")
+		return fmt.Errorf("usage: personal-review-bot review [--dry-run] [--deep] <PR-URL>")
 	}
 	st, err := store.Open(cfg.DBPath())
 	if err != nil {
@@ -118,7 +121,7 @@ func review(ctx context.Context, cfg config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	id, err := newReview(st, client, fs.Arg(0), store.Running, *dry)
+	id, err := newReview(st, client, fs.Arg(0), store.Running, *dry, *deep)
 	if err != nil {
 		return err
 	}
@@ -165,8 +168,11 @@ func page(ctx context.Context, cfg config.Config) error {
 }
 
 func queue(cfg config.Config, args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: personal-review-bot queue <PR-URL>")
+	fs := flag.NewFlagSet("queue", flag.ExitOnError)
+	deep := fs.Bool("deep", false, "review it as if it were large: Opus, the design review, no usage savings")
+	_ = fs.Parse(args)
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: personal-review-bot queue [--deep] <PR-URL>")
 	}
 	st, err := store.Open(cfg.DBPath())
 	if err != nil {
@@ -177,7 +183,7 @@ func queue(cfg config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	id, err := newReview(st, client, args[0], store.Queued, false)
+	id, err := newReview(st, client, fs.Arg(0), store.Queued, false, *deep)
 	if err != nil {
 		return err
 	}

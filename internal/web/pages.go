@@ -370,7 +370,7 @@ func (s *server) retry(w http.ResponseWriter, r *http.Request) {
 		if revs[i].Status != store.Failed {
 			continue
 		}
-		if _, _, err := s.requeue(&revs[i]); err != nil {
+		if _, _, err := s.requeue(&revs[i], false); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
