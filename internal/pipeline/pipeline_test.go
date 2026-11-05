@@ -287,3 +287,27 @@ func TestFormatPriorReminded(t *testing.T) {
 		t.Errorf("prior = %q", got)
 	}
 }
+
+// Reviewers search one org for the repos a PR affects: its own when that one is configured, so a PR is read
+// against the org it belongs to rather than whichever org happens to be first.
+func TestRelatedOrg(t *testing.T) {
+	cases := []struct {
+		name string
+		orgs []string
+		repo string
+		want string
+	}{
+		{"no org configured", nil, "acme/api", "acme"},
+		{"one org, PR inside it", []string{"acme"}, "acme/api", "acme"},
+		{"one org, PR queued from outside it", []string{"acme"}, "umbrella/api", "acme"},
+		{"several orgs, PR in the first", []string{"acme", "umbrella"}, "acme/api", "acme"},
+		{"several orgs, PR in the second", []string{"acme", "umbrella"}, "umbrella/api", "umbrella"},
+		{"several orgs, PR outside them all", []string{"acme", "umbrella"}, "initech/api", "initech"},
+		{"org written in a different case", []string{"Acme"}, "acme/api", "acme"},
+	}
+	for _, c := range cases {
+		if got := relatedOrg(c.orgs, c.repo); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}

@@ -96,8 +96,8 @@ not a setting
 	t.Setenv("PERSONAL_REVIEW_BOT_CONFIG_DIR", dir)
 	t.Setenv("PERSONAL_REVIEW_BOT_THRESHOLD", "85")
 	c := Load()
-	if c.Org != "acme" || c.Threshold != 85 || c.Watermark != "🤖 acme-bot" || c.ApproveText != "" || c.ConfigDir != dir {
-		t.Errorf("got org %q, threshold %d, watermark %q, approve text %q, config dir %q", c.Org, c.Threshold, c.Watermark,
+	if !slices.Equal(c.Orgs, []string{"acme"}) || c.Threshold != 85 || c.Watermark != "🤖 acme-bot" || c.ApproveText != "" || c.ConfigDir != dir {
+		t.Errorf("got orgs %q, threshold %d, watermark %q, approve text %q, config dir %q", c.Orgs, c.Threshold, c.Watermark,
 			c.ApproveText, c.ConfigDir)
 	}
 	if c.PollInterval.Seconds() != 120 {
@@ -119,5 +119,27 @@ func TestShownLabels(t *testing.T) {
 	t.Setenv("PERSONAL_REVIEW_BOT_SHOW_LABELS", "")
 	if got := Load().Shown(labels); got != nil {
 		t.Errorf("empty shows none: %q", got)
+	}
+}
+
+// ORG takes one org or several, comma-separated; blank parts drop out and OrgsLabel names what is watched.
+func TestOrgsSetting(t *testing.T) {
+	t.Setenv("PERSONAL_REVIEW_BOT_CONFIG_DIR", t.TempDir())
+	cases := []struct {
+		name, org string
+		want      []string
+		label     string
+	}{
+		{"unset", "", nil, "any"},
+		{"one org", "acme", []string{"acme"}, "acme"},
+		{"several orgs", "acme,umbrella", []string{"acme", "umbrella"}, "acme, umbrella"},
+		{"spaces and empty parts", " acme , , umbrella ", []string{"acme", "umbrella"}, "acme, umbrella"},
+	}
+	for _, c := range cases {
+		t.Setenv("PERSONAL_REVIEW_BOT_ORG", c.org)
+		got := Load()
+		if !slices.Equal(got.Orgs, c.want) || got.OrgsLabel() != c.label {
+			t.Errorf("%s: got orgs %q (label %q), want %q (%q)", c.name, got.Orgs, got.OrgsLabel(), c.want, c.label)
+		}
 	}
 }

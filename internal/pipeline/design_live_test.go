@@ -60,7 +60,7 @@ func TestDesignLive(t *testing.T) {
 	model := cmp.Or(os.Getenv("PERSONAL_REVIEW_BOT_LIVE_MODEL"), triage.Make(pr, files, agents.Builtin().Reviewers).DesignModel)
 	in := agents.Input{Repo: repo, Number: n, Title: pr.Title, Author: pr.Author, Body: pr.Body, Base: pr.BaseRef,
 		Head: pr.HeadRef, Diff: diff, Dir: ws.Dir, HeadSHA: pr.HeadSHA, Conversation: conv, Owner: c.Login,
-		Org: relatedOrg("", repo)}
+		Org: relatedOrg(nil, repo)}
 	concerns, run, err := agents.Builtin().Design(ctx, model, in, 20*time.Minute)
 	if err != nil {
 		t.Fatal(err)

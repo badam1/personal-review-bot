@@ -98,12 +98,19 @@ func ParseURL(u string) (string, int, error) {
 	return m[1], n, nil
 }
 
-// RequestedFromMe lists open PRs where a review is requested from the logged-in user directly — not via a team.
-func (c *Client) RequestedFromMe(org string) ([]PR, error) {
-	q := "is:pr is:open archived:false user-review-requested:" + c.Login
-	if org != "" {
+// requestedQuery is the search RequestedFromMe runs. GitHub ORs a qualifier that is repeated, so several orgs
+// come out as "org:acme org:umbrella": a PR in either one. Kept apart from the call so it can be tested.
+func requestedQuery(login string, orgs []string) string {
+	q := "is:pr is:open archived:false user-review-requested:" + login
+	for _, org := range orgs {
 		q += " org:" + org
 	}
+	return q
+}
+
+// RequestedFromMe lists open PRs where a review is requested from the logged-in user directly — not via a team.
+// With orgs set, only PRs in those orgs.
+func (c *Client) RequestedFromMe(orgs []string) ([]PR, error) {
 	const query = `query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ... on PullRequest {
 	  url number title isDraft createdAt updatedAt headRefOid additions deletions changedFiles author { login } repository { nameWithOwner }
 	  timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 20) { nodes { ... on ReviewRequestedEvent {
@@ -134,7 +141,7 @@ func (c *Client) RequestedFromMe(org string) ([]PR, error) {
 			} `json:"nodes"`
 		} `json:"search"`
 	}
-	if err := c.gql.Do(query, map[string]interface{}{"q": q}, &resp); err != nil {
+	if err := c.gql.Do(query, map[string]interface{}{"q": requestedQuery(c.Login, orgs)}, &resp); err != nil {
 		return nil, err
 	}
 	var out []PR

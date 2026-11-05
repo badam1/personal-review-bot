@@ -33,8 +33,8 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if auto == "" {
 		auto = "no severity"
 	}
-	log.Printf("personal-review-bot %s started for @%s (org %q, every %s, auto-post ≥ %d%% for %s, page %s)",
-		version.String(), client.Login, cfg.Org, cfg.PollInterval, cfg.Threshold, auto, cfg.WebURL())
+	log.Printf("personal-review-bot %s started for @%s (orgs %s, every %s, auto-post ≥ %d%% for %s, page %s)",
+		version.String(), client.Login, cfg.OrgsLabel(), cfg.PollInterval, cfg.Threshold, auto, cfg.WebURL())
 
 	if err := st.ResetRunning(); err != nil {
 		return err
@@ -90,7 +90,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 // seed records the requests that were already open when the bot first started as skipped, so it doesn't fire off
 // a burst of reviews; they can be queued from the TUI.
 func seed(d pipeline.Deps) error {
-	prs, err := d.GH.RequestedFromMe(d.Cfg.Org)
+	prs, err := d.GH.RequestedFromMe(d.Cfg.Orgs)
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func seed(d pipeline.Deps) error {
 }
 
 func poll(d pipeline.Deps) {
-	prs, err := d.GH.RequestedFromMe(d.Cfg.Org)
+	prs, err := d.GH.RequestedFromMe(d.Cfg.Orgs)
 	if err != nil {
 		log.Printf("poll: %v", err)
 		return

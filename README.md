@@ -143,7 +143,7 @@ service setup, its notes say to run `./install.sh` from it.
 ## How it decides who asked
 
 It polls GitHub every 2 minutes for open PRs with `user-review-requested:<you>`: a direct request, not a team
-request. Set `ORG` to watch one org only.
+request. Set `ORG` to watch one org, or several, only.
 
 ## Settings
 
@@ -153,7 +153,7 @@ it), then falls back to its default. The background service reads the file, so t
 
 ```sh
 # ~/.config/personal-review-bot/config.env
-ORG=my-company
+ORG=my-company,my-other-org
 WATERMARK=🤖 my-review-bot
 AUTO_POST=low
 ```
@@ -162,7 +162,7 @@ Restart the service after changing it (`./install.sh`).
 
 | Name | Default |
 |---|---|
-| `ORG` | empty: review requests from any org. Set it to only review PRs in that GitHub org; reviewers also search it for related repos (otherwise the PR repo's owner) |
+| `ORG` | empty: review requests from any org. One org, or several comma-separated (`acme,umbrella`), to only review PRs in those. Reviewers search one org for related repos: the PR's own when it is one you set, the single org you set for a PR queued from outside it, otherwise the PR repo's owner |
 | `THRESHOLD` | `80`: auto-post a confirmed finding at or above this certainty |
 | `AUTO_POST` | `low,medium`: the severities posted without asking, once confirmed at `THRESHOLD`. High ones wait for you; `high` alone posts only those, `low,medium,high` everything, empty nothing. A misspelt word is left out. The stats page's "What became of findings, by score" table shows whether the rule fits. (The older `AUTO_SEVERITY`, "this severity or higher", still works when `AUTO_POST` isn't set.) |
 | `SHOW_LABELS` | `risk/,auto-risk/`: the PR labels shown in the lists' Risk column and beside the size on a review, by prefix (comma-separated; empty shows none). Coloured by the level they end in: `/high`, `/medium`, `/low` |

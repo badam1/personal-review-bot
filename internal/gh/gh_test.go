@@ -28,3 +28,22 @@ func TestSaidIn(t *testing.T) {
 		}
 	}
 }
+
+// A qualifier GitHub sees twice means either one, so several orgs become several org: terms.
+func TestRequestedQuery(t *testing.T) {
+	const base = "is:pr is:open archived:false user-review-requested:octocat"
+	cases := []struct {
+		name string
+		orgs []string
+		want string
+	}{
+		{"anywhere", nil, base},
+		{"one org", []string{"acme"}, base + " org:acme"},
+		{"several orgs", []string{"acme", "umbrella"}, base + " org:acme org:umbrella"},
+	}
+	for _, c := range cases {
+		if got := requestedQuery("octocat", c.orgs); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}

@@ -14,7 +14,7 @@ import (
 )
 
 type Config struct {
-	Org          string        // only review PRs in this GitHub org ("" = anywhere)
+	Orgs         []string      // only review PRs in these GitHub orgs (empty = anywhere)
 	PollInterval time.Duration // how often to ask GitHub for new review requests
 	Threshold    int           // verified certainty (0-100) at which a confirmed finding is posted without asking
 	AutoPost     []string      // severities posted without asking, from low to high (empty = none)
@@ -44,7 +44,7 @@ func Load() Config {
 	}
 	s := settings(readEnvFile(filepath.Join(dir, "config.env")))
 	return Config{
-		Org:          s.str("ORG", ""),
+		Orgs:         list(s.str("ORG", "")),
 		PollInterval: time.Duration(s.int("POLL_SECONDS", 120)) * time.Second,
 		Threshold:    s.int("THRESHOLD", 80),
 		AutoPost:     autoPost(s),
@@ -67,6 +67,14 @@ func Load() Config {
 }
 
 func (c Config) DBPath() string { return filepath.Join(c.StateDir, "reviews.db") }
+
+// OrgsLabel names the orgs being reviewed, for the log line: "acme", "acme, umbrella", or "any" when ORG is unset.
+func (c Config) OrgsLabel() string {
+	if len(c.Orgs) == 0 {
+		return "any"
+	}
+	return strings.Join(c.Orgs, ", ")
+}
 
 var severities = []string{"low", "medium", "high"}
 
