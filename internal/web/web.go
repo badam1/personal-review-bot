@@ -4,6 +4,7 @@
 package web
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"embed"
@@ -49,6 +50,22 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"source":    source,
 	"wrongForm": wrongForm,
 	"about":     func() About { return about },
+	"header": func() *headerView {
+		if header == nil {
+			return nil
+		}
+		return header()
+	},
+	"outcome":      outcome,
+	"outcomeNote":  outcomeNote,
+	"sizeKind":     sizeKind,
+	"certKind":     certKind,
+	"followupKind": followupKind,
+	"reviewSteps":  reviewSteps,
+	"took":         took,
+	"day":          day,
+	"clip":         func(s string) string { return clipText(s, 90) },
+	"plural":       plural,
 }).ParseFS(files, "templates.html"))
 
 type server struct {
@@ -89,6 +106,7 @@ func Serve(ctx context.Context, d pipeline.Deps, updates Updater) error {
 	for _, h := range s.hosts {
 		s.origins = append(s.origins, "http://"+h)
 	}
+	header = s.headerView
 	srv := &http.Server{Addr: d.Cfg.WebAddr, Handler: s.guard(s.routes()), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -174,6 +192,8 @@ type reviewPage struct {
 	Confirm                      bool          // approving was asked once with OpenHigh > 0: the next click approves anyway
 	Reminders                    int           // earlier findings you can remind the author of
 	ThreadsErr                   string        // the PR's review threads couldn't be read
+	EarlierBadges                []badge       // earlier findings counted by what the follow-up found
+	ReviewsOfPR                  int           // reviews of this PR so far, for the timeline link
 }
 
 // earlierView is a finding posted on an earlier review, with the reminder you can send about it.
@@ -196,7 +216,10 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	active, err2 := s.d.Store.Active()
 	recent, err3 := s.d.Store.Recent(10)
 	failed, err4 := s.d.Store.Failures(time.Now().Add(-retryWindow))
-	if err := errors.Join(err1, err2, err3, err4); err != nil {
+	now := time.Now()
+	today, err5 := s.d.Store.Totals(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()))
+	week, err6 := s.d.Store.Totals(now.AddDate(0, 0, -7))
+	if err := errors.Join(err1, err2, err3, err4, err5, err6); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -205,9 +228,21 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	if len(waiting) > 0 {
 		title = fmt.Sprintf("(%d) personal-review-bot", len(waiting))
 	}
-	s.render(w, "index", map[string]any{"Title": title, "Waiting": waiting, "Active": active, "Recent": recent,
+	cards := make([]waitingCard, len(waiting))
+	for i, rev := range waiting {
+		fs, _ := s.d.Store.Findings(rev.ID)
+		earlier, _ := s.d.Store.EarlierPosted(rev.Repo, rev.Number, rev.ID)
+		cards[i] = waitingCard{rev, waitingBadges(fs, earlier)}
+	}
+	s.render(w, "index", map[string]any{"Title": title, "Waiting": cards, "Active": active, "Recent": recent,
 		"Failed": failed, "Token": s.token, "Threshold": s.d.Cfg.Threshold, "AutoSeverity": s.d.Cfg.AutoSeverity,
-		"Msg": r.URL.Query().Get("msg"), "Update": s.updateView(), "CanUpdate": s.updates != nil})
+		"Msg": r.URL.Query().Get("msg"), "SpentToday": today.CostUSD, "SpentWeek": week.CostUSD})
+}
+
+// waitingCard is a review waiting for you on the main page, with what it holds.
+type waitingCard struct {
+	store.Review
+	Badges []badge
 }
 
 // updateView is what the main page says about updates: a newer release to install, or an update under way.
@@ -252,10 +287,10 @@ func (s *server) startUpdate(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		msg = "Not updated: " + err.Error()
 	case update.Busy(update.State(s.d.Store)):
-		http.Redirect(w, r, "/", http.StatusSeeOther) // the notice follows it from here
+		http.Redirect(w, r, backTo(r), http.StatusSeeOther) // the version menu follows it from here
 		return
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	http.Redirect(w, r, withMsg(backTo(r), msg), http.StatusSeeOther)
 }
 
 // checkUpdate looks for a newer release right away (instead of waiting for the hourly check) and says what it found;
@@ -269,7 +304,24 @@ func (s *server) checkUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg = "Couldn't check: " + err.Error()
 	}
-	http.Redirect(w, r, "/?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	http.Redirect(w, r, withMsg(backTo(r), msg), http.StatusSeeOther)
+}
+
+// backTo is the page an action from the header came from (its path, on this site), else the main page.
+func backTo(r *http.Request) string {
+	if u, err := url.Parse(r.Referer()); err == nil && u.Path != "" {
+		return localPath(u.Path, "/")
+	}
+	return "/"
+}
+
+func withMsg(path, msg string) string { return path + "?msg=" + url.QueryEscape(msg) }
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 type statsPage struct {
@@ -465,6 +517,13 @@ func (s *server) review(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Selectable = len(p.Pending)+len(p.DesignPending)+p.Reminders > 0
 	p.EarlierSummary, p.OpenHigh = summarize(earlier)
+	p.EarlierBadges = earlierBadges(earlier)
+	slices.SortStableFunc(p.Earlier, func(a, b earlierView) int { // the ones you can act on first
+		return cmp.Compare(btoi(b.Remind != nil), btoi(a.Remind != nil))
+	})
+	if all, err := s.d.Store.PRReviews(rev.Repo, rev.Number); err == nil {
+		p.ReviewsOfPR = len(all)
+	}
 	p.Confirm = r.URL.Query().Get("confirm") == "1"
 	s.render(w, "review", p)
 }

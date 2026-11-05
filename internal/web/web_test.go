@@ -165,7 +165,7 @@ func TestIncompleteReview(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.review(rec, req)
 	page := rec.Body.String()
-	for _, want := range []string{`value="approve" disabled`, `class="primary" name="action" value="rereview"`,
+	for _, want := range []string{`value="approve" disabled`, `class="btn primary big" form="decide" name="action" value="rereview"`,
 		"can't be approved", "nothing found", "Traced every caller of promote()", "2 tool call(s) refused", "failed"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page is missing %q", want)
@@ -197,7 +197,7 @@ func TestIndex(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.index(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	page := rec.Body.String()
-	for _, want := range []string{`href="/stats"`, "80% certainty or more", "medium severity or higher", "Needs you", "Last 10"} {
+	for _, want := range []string{`href="/stats"`, "80% certainty or more", "medium severity or higher", "Needs you", ">Recent</h2>", "Nothing waiting for you."} {
 		if !strings.Contains(page, want) {
 			t.Errorf("index is missing %q", want)
 		}
@@ -284,8 +284,8 @@ func TestDesignSection(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.review(rec, req)
 	page := rec.Body.String()
-	for _, want := range []string{"Design concerns · never posted without you", fmt.Sprintf(`name="f_%d"`, fid),
-		"Compared against ADR-0009", "1 concern(s)", `value="post"`, "Approve without comments", `<span class="conf hi">85%</span> · design`} {
+	for _, want := range []string{`Design concerns <span class="count design">1</span>`, "Never posted without you.", fmt.Sprintf(`name="f_%d"`, fid),
+		"Compared against ADR-0009", "1 concern(s)", `value="post"`, "Approve without comments", `<b class="cert hi">85%</b> sure`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page is missing %q", want)
 		}

@@ -1,10 +1,12 @@
-// The "Running now" lines, the way Claude Code shows it is working: a pulsing glyph and a changing verb, the clock and
-// the stage kept live from /active.json, and a reload when a review finishes (or, on the main page, starts) so it moves
-// to where it belongs. Served from this origin; the CSP allows no inline script.
+// The working lines, the way Claude Code shows it is working: a pulsing glyph and a changing verb, the clock, the stage
+// and the steps kept live from /active.json, and a reload when a review finishes (or, on the main page, starts) so it
+// moves to where it belongs. The pill in the bar does the same on every page for whatever is running. Served from this
+// origin; the CSP allows no inline script.
 (() => {
   const rows = [...document.querySelectorAll(".running[data-id]")];
+  const pill = document.querySelector("[data-running-pill]");
   const watchAll = document.querySelector("[data-running-all]") !== null; // the main page also shows new ones
-  if (!rows.length && !watchAll) return;
+  if (!rows.length && !pill && !watchAll) return;
 
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const glyphs = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
@@ -19,6 +21,8 @@
     [/^verifying/, ["Double-checking", "Cross-examining", "Fact-checking", "Scrutinizing", "Second-guessing"]],
     [/^posting/, ["Writing comments", "Polishing", "Wordsmithing"]],
   ];
+  // The step a stage belongs to: the same mapping as reviewStep in view.go.
+  const stepOf = (stage) => /^posting/.test(stage) ? 3 : /^verifying/.test(stage) ? 2 : /^reviewing/.test(stage) ? 1 : 0;
 
   const pick = (list, last) => {
     let v;
@@ -35,23 +39,49 @@
   };
   const el = (row, cls) => row.querySelector("." + cls);
 
-  const state = new Map(rows.map((row) => [row, { verb: "", next: 0 }]));
+  const steps = (id, status, stage) => {
+    const list = document.querySelector(`[data-steps-for="${id}"]`);
+    if (!list) return;
+    const at = status === "running" ? stepOf(stage) : -1;
+    [...list.children].forEach((li, i) => { li.className = i < at ? "done" : i === at ? "now" : "todo"; });
+  };
+
+  const lines = pill ? [...rows, pill] : rows;
+  const state = new Map(lines.map((row) => [row, { verb: "", next: 0 }]));
   let tick = 0;
   const frame = () => {
     const now = Date.now();
     tick++;
-    for (const row of rows) {
+    for (const row of lines) {
       const st = state.get(row);
       if (row.dataset.status !== "running") continue;
       if (!calm) el(row, "spin").textContent = glyphs[tick % glyphs.length];
-      if (tick % 8 === 0 || st.next === 0) {
+      if (row !== pill && (tick % 8 === 0 || st.next === 0)) {
         const started = Number(row.dataset.started);
         if (started) el(row, "elapsed").textContent = clock(now - started);
       }
       if (now >= st.next) {
-        st.verb = verbFor(el(row, "stage").textContent, st.verb);
+        // The pill keeps to the short verbs, so the bar doesn't change width.
+        st.verb = row === pill ? pick(anyStage, st.verb) : verbFor(el(row, "stage").textContent, st.verb);
         el(row, "verb").textContent = st.verb + "…";
         st.next = now + (calm ? 8000 : 2500 + Math.random() * 2000);
+      }
+    }
+  };
+
+  // The pill works while any review runs, else says the queue waits.
+  const showPill = (active) => {
+    if (!pill) return;
+    pill.hidden = active.length === 0;
+    el(pill, "count-n").textContent = String(active.length);
+    const lead = active.find((a) => a.status === "running") || active[0];
+    const status = lead ? lead.status : "";
+    if (pill.dataset.status !== status) {
+      pill.dataset.status = status;
+      state.get(pill).next = 0;
+      if (status !== "running") {
+        el(pill, "spin").textContent = "·";
+        el(pill, "verb").textContent = "Waiting in line…";
       }
     }
   };
@@ -72,6 +102,7 @@
       location.reload();
       return;
     }
+    showPill(active);
     for (const a of active) {
       const row = rows.find((r) => r.dataset.id === String(a.id));
       if (!row) continue;
@@ -81,6 +112,7 @@
       }
       row.dataset.started = String(a.started);
       el(row, "stage").textContent = a.stage;
+      steps(a.id, a.status, a.stage);
     }
   };
 

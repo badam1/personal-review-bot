@@ -90,14 +90,15 @@ personal-review-bot version               # which build this is
 personal-review-bot update [--check]      # install the newest release (--check: only say if there is one)
 ```
 
-The page is <http://localhost:12346>:
+The page is <http://localhost:12346>. The bar on every page shows what is running (the working line, linked to it),
+whether the daemon is watching GitHub, the plan's usage, and the version menu (updates, release notes, report a bug).
 
-- **Reviews** (`/`): what needs you (the tab title counts it), what is running, failed reviews to retry, the last 10.
-  Refreshes every minute.
+- **Reviews** (`/`): what needs you (the tab title counts it), what is running and the step it is on, failed reviews
+  to retry, the last 10, and the spend today and over 7 days. Refreshes every minute.
 - **A review** (`/r/N`): each finding with the code around its line, why the PR got its tier, and what to post or
-  approve. On a re-review, "Earlier findings · 3 fixed · 1 still open" with the follow-up's evidence (approving while
-  a high one is still open asks once more). A posted finding that turned out wrong can be marked wrong: the stats
-  count it and re-reviews of the PR are told.
+  approve, with your decision beside them. On a re-review, the earlier findings counted ("3 fixed", "1 still open")
+  with the follow-up's evidence (approving while a high one is still open asks once more). A posted finding that
+  turned out wrong can be marked wrong: the stats count it and re-reviews of the PR are told.
 - **Deep review**: on any review, the **Deep review** button (or `d` in the TUI, `--deep` for `review` and `queue`)
   reviews the PR again at its latest commit as if it were large: Opus reviewers and verifier, the design review and
   the follow-up check on Opus, at each model's default effort, never the cheaper models or lower effort the usage
@@ -116,11 +117,12 @@ The page is <http://localhost:12346>:
 
 ## Updating
 
-The daemon looks for a new release when it starts and every hour; **Check for updates** on the main page looks right
-away. When there is one, the page and the TUI say so, with a link to its notes; nothing is installed until you ask:
+The daemon looks for a new release when it starts and every hour; **Check for updates** in the version menu (the
+version in the bar) looks right away. When there is one, the version menu and the TUI say so, with the first lines of
+its notes; nothing is installed until you ask:
 
-- the **Update and restart** button on the page, `u` in the TUI, or `personal-review-bot update` (the last two look
-  for the newest release themselves);
+- the **Update and restart** button in the version menu, which then shows each step until it restarts; `u` in the
+  TUI; or `personal-review-bot update` (the last two look for the newest release themselves);
 - it downloads the release's binary for your OS and CPU, checks it against the release's checksums and its GitHub
   build attestation (built by this repo's release workflow, checked with `gh attestation verify`), and puts it in
   place of the installed binary;

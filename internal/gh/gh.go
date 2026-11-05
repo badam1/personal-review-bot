@@ -371,6 +371,7 @@ type Release struct {
 	Draft      bool      `json:"draft"`
 	Prerelease bool      `json:"prerelease"`
 	Published  time.Time `json:"published_at"`
+	Body       string    `json:"body"` // the release notes, Markdown
 	Assets     []Asset   `json:"assets"`
 }
 
