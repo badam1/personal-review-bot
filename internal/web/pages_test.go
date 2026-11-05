@@ -343,8 +343,8 @@ func TestEarlierFindings(t *testing.T) {
 	_, page = s.get(back + "?confirm=1")
 	want(t, page, `<input type="hidden" name="anyway" value="1">`)
 	s.post(back, url.Values{"action": {"approve"}, "anyway": {"1"}})
-	if r, _ := s.st.Get(again); r.Status != store.Done {
-		t.Errorf("the second approve should go through, status %s", r.Status)
+	if r, _ := s.st.Get(again); r.Status != store.Done || r.Decision != "dry run: approved by you (nothing sent to GitHub)" {
+		t.Errorf("the second approve should go through, status %s, decision %q", r.Status, r.Decision)
 	}
 	_, page = s.get("/pr/acme/infra/20")
 	want(t, page, "you posted · fixed", "you posted · still open")
@@ -759,4 +759,7 @@ func TestRiskLabels(t *testing.T) {
 		_, page := s.get(path)
 		want(t, page, `<span class="plabel high">auto-risk/high</span>`)
 	}
+	_, page = s.get("/history")
+	want(t, page, `<th scope="col">Risk</th>`, `<div class="lstack"><span class="plabel high">auto-risk/high</span>`,
+		`<span class="ohead"><span class="dot need"></span><b>Needs you</b></span><span class="sub">no issues: approve?</span>`)
 }

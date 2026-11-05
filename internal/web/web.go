@@ -584,7 +584,7 @@ func (s *server) act(w http.ResponseWriter, r *http.Request) {
 	case "post_approve":
 		event, post, you = "APPROVE", selected, posted(len(selected), len(reminders))+" and approved"
 	case "approve":
-		event, rest, you = "APPROVE", append(rest, selected...), "you approved"
+		event, rest, you = "APPROVE", append(rest, selected...), "approved by you"
 	case "skip":
 		rest, you = append(rest, selected...), "you skipped it"
 	case "ignore":

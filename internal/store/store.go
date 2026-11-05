@@ -199,9 +199,11 @@ func Open(path string) (*Store, error) {
 		}
 	}
 	// The design reviewer was called the approach reviewer at first; its earlier findings and runs follow the name.
+	// An approval was recorded as "you approved" at first; it reads "approved by you" now.
 	if _, err := db.Exec(`UPDATE findings SET agent = 'design' WHERE agent = 'approach';
 	  UPDATE findings SET verdict = 'design' WHERE verdict = 'approach';
-	  UPDATE runs SET agent = 'design' WHERE agent = 'approach';`); err != nil {
+	  UPDATE runs SET agent = 'design' WHERE agent = 'approach';
+	  UPDATE reviews SET decision = replace(decision, 'you approved', 'approved by you') WHERE decision LIKE '%you approved%';`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("init database: %w", err)
 	}
