@@ -182,6 +182,21 @@ func reviewStep(stage string) int {
 	return 0
 }
 
+// home is the section a review's page sits under, in the bar and its breadcrumb: Reviews while it still needs
+// something (it waits for you, is queued or running, or failed and wasn't retried), History once it's over. A PR's
+// timeline sits where its latest review does.
+func home(r store.Review, retried bool) string {
+	switch r.Status {
+	case store.AwaitingYou, store.Queued, store.Running:
+		return "reviews"
+	case store.Failed:
+		if !retried {
+			return "reviews"
+		}
+	}
+	return "history"
+}
+
 // outcome says how a review ended up, for the lists.
 func outcome(r store.Review) badge {
 	d := strings.ToLower(r.Decision)

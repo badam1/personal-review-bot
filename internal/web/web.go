@@ -194,6 +194,7 @@ type reviewPage struct {
 	ThreadsErr                   string        // the PR's review threads couldn't be read
 	EarlierBadges                []badge       // earlier findings counted by what the follow-up found
 	ReviewsOfPR                  int           // reviews of this PR so far, for the timeline link
+	Nav                          string        // the section it sits under: reviews or history
 }
 
 // earlierView is a finding posted on an earlier review, with the reminder you can send about it.
@@ -471,6 +472,7 @@ func (s *server) review(w http.ResponseWriter, r *http.Request) {
 	if latest, err := s.d.Store.Latest(rev.Repo, rev.Number); err == nil && latest != nil && latest.ID != rev.ID {
 		p.Newer = latest
 	}
+	p.Nav = home(*rev, p.Newer != nil)
 	if rev.Status == store.AwaitingYou && !rev.DryRun {
 		p.Stale = s.moved(rev)
 	}
