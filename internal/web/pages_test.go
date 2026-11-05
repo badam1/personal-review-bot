@@ -596,3 +596,37 @@ func TestPostNothing(t *testing.T) {
 		t.Errorf("redirect = %q", loc)
 	}
 }
+
+// Deep review queues the PR again as a deep review, from a review waiting for you or a finished one; a retry of a
+// failed deep review stays deep.
+func TestDeepReview(t *testing.T) {
+	s := newSite(t)
+	waiting := s.review(40, store.AwaitingYou, "2 need you")
+	_, page := s.get(fmt.Sprintf("/r/%d", waiting))
+	want(t, page, `name="action" value="deep"`, ">Deep review</button>")
+	rec := s.post(fmt.Sprintf("/r/%d", waiting), url.Values{"action": {"deep"}})
+	latest, _ := s.st.Latest("acme/infra", 40)
+	if latest.ID == waiting || !latest.Deep || latest.Source != "manual" || latest.Status != store.Queued {
+		t.Fatalf("deep review queued %+v", latest)
+	}
+	if loc := rec.Header().Get("Location"); loc != fmt.Sprintf("/r/%d", latest.ID) {
+		t.Errorf("redirect = %q", loc)
+	}
+	_, page = s.get(fmt.Sprintf("/r/%d", latest.ID))
+	want(t, page, "🔬 deep review")
+
+	done := s.review(41, store.Done, "you approved")
+	_, page = s.get(fmt.Sprintf("/r/%d", done))
+	want(t, page, `name="action" value="deep"`)
+	s.post(fmt.Sprintf("/r/%d", done), url.Values{"action": {"rereview"}})
+	if r, _ := s.st.Latest("acme/infra", 41); r.Deep {
+		t.Error("a plain re-review must not be deep")
+	}
+
+	failed, _ := s.st.Insert(&store.Review{Repo: "acme/infra", Number: 42, Status: store.Running, Source: "manual", Deep: true})
+	_ = s.st.Finish(failed, store.Failed, "failed", "", "fetch PR: 502")
+	s.post(fmt.Sprintf("/r/%d", failed), url.Values{"action": {"rereview"}})
+	if r, _ := s.st.Latest("acme/infra", 42); r.ID == failed || !r.Deep {
+		t.Errorf("retrying a failed deep review: %+v", r)
+	}
+}

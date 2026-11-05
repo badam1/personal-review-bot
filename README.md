@@ -18,6 +18,7 @@ login.
    Haiku call when the last one is over 10 minutes old, since your own use fills the same limits). From 75% of the
    5-hour or weekly limit every model is a step cheaper (Fable → Opus → Sonnet → Haiku) at medium effort; from 90% the
    reviewers run on Haiku at low effort and the design review is left out. The TUI shows the reading.
+   A **deep review** you ask for (below) runs any PR as if it were large, without these savings.
 2. **Reviews in parallel.** Logic, security, integration with other services, plus infra/rollout when infra files
    change; or your own set of reviewers (see [Customize](#customize-the-reviewers-and-prompts)). The reviewers run `claude -p` read-only inside a checkout of the PR head; they can read the other repos of
    the org (with `gh search code` and `gh api`) but can't post anything.
@@ -83,6 +84,7 @@ personal-review-bot                       # terminal UI: what's running and the 
 personal-review-bot status                # same, printed once
 personal-review-bot review --dry-run URL  # try it on any PR: posts nothing, opens nothing
 personal-review-bot queue URL             # hand a PR to the running service
+personal-review-bot queue --deep URL      # … as a deep review: Opus, the design review, whatever its size
 personal-review-bot agents                # the reviewers and prompts reviews run with, and where each comes from
 personal-review-bot version               # which build this is
 personal-review-bot update [--check]      # install the newest release (--check: only say if there is one)
@@ -96,6 +98,12 @@ The page is <http://localhost:12346>:
   approve. On a re-review, "Earlier findings · 3 fixed · 1 still open" with the follow-up's evidence (approving while
   a high one is still open asks once more). A posted finding that turned out wrong can be marked wrong: the stats
   count it and re-reviews of the PR are told.
+- **Deep review**: on any review, the **Deep review** button (or `d` in the TUI, `--deep` for `review` and `queue`)
+  reviews the PR again at its latest commit as if it were large: Opus reviewers and verifier, the design review and
+  the follow-up check on Opus, at each model's default effort, never the cheaper models or lower effort the usage
+  savings switch to. Use it for a small or medium PR that deserves more scrutiny. It shows as tier "deep" (on the
+  stats page too, so its cost stays apart from the sizes), and a retry of a failed deep review stays deep; automatic
+  re-reviews after it are sized as usual.
 - **Reminders**: on a re-review, every earlier finding that is still open or only partly fixed can be reminded of,
   with a text you can edit ("Still open at `abc1234`: …"). The ones nobody answered start ticked; where the author
   replied, the reply is shown and you decide. Ticked reminders go out with the review you post, as one notification:

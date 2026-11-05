@@ -197,10 +197,10 @@ func (s *Store) Models() ([]CostRow, error) {
 	  WHERE r.dry_run = 0 GROUP BY ru.model ORDER BY sum(ru.cost_usd) DESC`)
 }
 
-// Tiers returns reviews and spend per PR size.
+// Tiers returns reviews and spend per PR size, and for deep reviews (whatever the size), which come last.
 func (s *Store) Tiers() ([]CostRow, error) {
 	return s.costRows(`SELECT tier, count(*), 0, sum(cost_usd) FROM reviews WHERE dry_run = 0 AND tier <> ''
-	  GROUP BY tier ORDER BY CASE tier WHEN 'small' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END`)
+	  GROUP BY tier ORDER BY CASE tier WHEN 'small' THEN 0 WHEN 'medium' THEN 1 WHEN 'large' THEN 2 ELSE 3 END`)
 }
 
 // Repos returns the repos with the most reviews: reviews, findings that reached the PR, and spend.

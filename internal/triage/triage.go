@@ -13,7 +13,7 @@ import (
 )
 
 type Plan struct {
-	Tier          string            // small | medium | large
+	Tier          string            // small | medium | large, or deep when you asked for a deep review
 	AgentModel    string            // haiku | sonnet | opus
 	VerifierModel string            // never weaker than sonnet: it decides what gets posted
 	Agents        []string          // the reviewers that run, by name
@@ -40,6 +40,21 @@ func (p Plan) Models() string {
 		return fmt.Sprintf("%s → %s · %s", p.AgentModel, p.VerifierModel, p.Saving)
 	}
 	return fmt.Sprintf("%s → %s", p.AgentModel, p.VerifierModel)
+}
+
+// Deep is the plan for a deep review you asked for, whatever the PR's size: the reviewers and the verifier on Opus,
+// the design review (on Fable when the PR is large anyway, else Opus) and the follow-up check on Opus. Its tier is
+// "deep", so the stats keep its cost apart from the sizes; the usage savings don't apply to it.
+func (p Plan) Deep() Plan {
+	size := p.Tier
+	p.Tier, p.AgentModel, p.VerifierModel, p.Effort, p.Saving = "deep", "opus", "opus", "", ""
+	p.Design, p.Followup, p.FollowupModel = true, true, "opus"
+	p.DesignModel = "opus"
+	if size == "large" {
+		p.DesignModel = "fable"
+	}
+	p.Reasons = append([]string{"deep review, you asked (by size: " + size + ")"}, p.Reasons...)
+	return p
 }
 
 var cheaper = map[string]string{"fable": "opus", "opus": "sonnet", "sonnet": "haiku", "haiku": "haiku"}

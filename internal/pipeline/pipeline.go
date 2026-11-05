@@ -78,7 +78,9 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	if len(plan.Agents) == 0 {
 		return fail(errors.New("no reviewer runs on this PR: none is enabled for these files (see `personal-review-bot agents`)"))
 	}
-	if u, ok := usageNow(ctx, d, stage); ok {
+	if r.Deep {
+		plan = plan.Deep() // you asked for it: no usage savings
+	} else if u, ok := usageNow(ctx, d, stage); ok {
 		used, window := u.Peak(time.Now())
 		plan = plan.Within(used, window, float64(d.Cfg.SaveAt)/100, float64(d.Cfg.MinAt)/100)
 		if plan.Saving != "" {

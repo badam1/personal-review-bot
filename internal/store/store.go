@@ -53,6 +53,7 @@ type Review struct {
 	Files      int
 	Source     string // auto | manual
 	DryRun     bool
+	Deep       bool // you asked for a deep review: Opus and the design review whatever the PR's size
 	Summary    string
 	Decision   string
 	Error      string
@@ -172,6 +173,7 @@ func Open(path string) (*Store, error) {
 	}
 	for _, c := range []struct{ table, column, def string }{
 		{"reviews", "reasons", "TEXT NOT NULL DEFAULT ''"},
+		{"reviews", "deep", "INTEGER NOT NULL DEFAULT 0"},
 		{"findings", "context", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "wrong", "INTEGER NOT NULL DEFAULT 0"},
 		{"findings", "followup", "TEXT NOT NULL DEFAULT ''"},
@@ -243,21 +245,21 @@ func (s *Store) CSRFToken() (string, error) {
 // ── reviews ──────────────────────────────────────────────────────────────────
 
 const reviewCols = `id, repo, number, url, title, author, head_sha, status, stage, tier, models, additions, deletions,
-  files, source, dry_run, summary, decision, error, reasons, cost_usd, created_at, started_at, finished_at,
+  files, source, dry_run, deep, summary, decision, error, reasons, cost_usd, created_at, started_at, finished_at,
   (SELECT count(*) FROM reviews p WHERE p.repo = reviews.repo AND p.number = reviews.number AND p.id < reviews.id
     AND p.tier <> '' AND p.dry_run = 0) + 1`
 
 func scanReview(row interface{ Scan(...any) error }) (*Review, error) {
 	var r Review
-	var dry int
+	var dry, deep int
 	var created, started, finished string
 	err := row.Scan(&r.ID, &r.Repo, &r.Number, &r.URL, &r.Title, &r.Author, &r.HeadSHA, &r.Status, &r.Stage, &r.Tier,
-		&r.Models, &r.Additions, &r.Deletions, &r.Files, &r.Source, &dry, &r.Summary, &r.Decision, &r.Error,
+		&r.Models, &r.Additions, &r.Deletions, &r.Files, &r.Source, &dry, &deep, &r.Summary, &r.Decision, &r.Error,
 		&r.Reasons, &r.CostUSD, &created, &started, &finished, &r.Iteration)
 	if err != nil {
 		return nil, err
 	}
-	r.DryRun = dry == 1
+	r.DryRun, r.Deep = dry == 1, deep == 1
 	r.CreatedAt, r.StartedAt, r.FinishedAt = parseTime(created), parseTime(started), parseTime(finished)
 	return &r, nil
 }
@@ -280,13 +282,16 @@ func (s *Store) queryReviews(where string, args ...any) ([]Review, error) {
 }
 
 func (s *Store) Insert(r *Review) (int64, error) {
-	dry := 0
+	dry, deep := 0, 0
 	if r.DryRun {
 		dry = 1
 	}
+	if r.Deep {
+		deep = 1
+	}
 	res, err := s.db.Exec(`INSERT INTO reviews (repo, number, url, title, author, head_sha, status, source, dry_run,
-	  decision, created_at, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.Repo, r.Number, r.URL, r.Title, r.Author, r.HeadSHA, r.Status, r.Source, dry, r.Decision, now(),
+	  deep, decision, created_at, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Repo, r.Number, r.URL, r.Title, r.Author, r.HeadSHA, r.Status, r.Source, dry, deep, r.Decision, now(),
 		map[bool]string{true: now(), false: ""}[r.Status == Running])
 	if err != nil {
 		return 0, err

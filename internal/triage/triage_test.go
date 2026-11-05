@@ -178,3 +178,19 @@ func TestReviewerSelection(t *testing.T) {
 		t.Errorf("cheapest: security %s, cost %s", cheapest.ModelFor("security"), cheapest.ModelFor("cost"))
 	}
 }
+
+// A deep review runs as large whatever the PR's size: Opus everywhere, the design review and the follow-up check,
+// no savings; it says so, and keeps the size in its reasons.
+func TestDeep(t *testing.T) {
+	small := Make(gh.PR{Additions: 40}, files("cmd/main.go"), builtin).Within(0.95, "5h", 0.75, 0.90).Deep()
+	if small.Tier != "deep" || small.Models() != "opus → opus" || !small.Design || small.DesignModel != "opus" ||
+		!small.Followup || small.FollowupModel != "opus" || small.Effort != "" || small.Saving != "" {
+		t.Errorf("deep small PR: %+v", small)
+	}
+	if small.Reasons[0] != "deep review, you asked (by size: small)" {
+		t.Errorf("reasons = %v", small.Reasons)
+	}
+	if large := Make(gh.PR{Additions: 2000}, files("web/src/app.tsx"), builtin).Deep(); large.DesignModel != "fable" {
+		t.Errorf("a large PR's deep review keeps the design review on Fable, got %s", large.DesignModel)
+	}
+}
