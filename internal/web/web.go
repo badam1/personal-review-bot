@@ -28,7 +28,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/version"
 )
 
-//go:embed templates.html select-all.js running.js update.js icon.svg favicon.png
+//go:embed templates.html select-all.js filter.js running.js update.js icon.svg favicon.png
 var files embed.FS
 
 var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
@@ -64,6 +64,8 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"reviewSteps":  reviewSteps,
 	"took":         took,
 	"day":          day,
+	"ticks":        ticks,
+	"labelKind":    labelKind,
 	"clip":         func(s string) string { return clipText(s, 90) },
 	"plural":       plural,
 }).ParseFS(files, "templates.html"))
@@ -73,9 +75,9 @@ type server struct {
 	token   string
 	hosts   []string
 	origins []string
-	head    func(repo string, number int) (string, error) // the PR's current head commit
-	updates Updater                                       // nil: the page alone, which can't update
-	version string                                        // the running build's version
+	fetch   func(repo string, number int) (gh.PR, error) // the PR as it is now: its head commit and labels
+	updates Updater                                      // nil: the page alone, which can't update
+	version string                                       // the running build's version
 	threads func(repo string, number int) ([]gh.Thread, error)
 	login   string // whose reviews these are: the owner of the bot's earlier comments
 	send    func(rev *store.Review, event string, fs []store.Finding, reminders []pipeline.Reminder) (string, error)
@@ -96,10 +98,7 @@ func Serve(ctx context.Context, d pipeline.Deps, updates Updater) error {
 		return err
 	}
 	about = newAbout(d.Cfg)
-	s := &server{d: d, token: token, hosts: d.Cfg.AllowedHosts(), head: func(repo string, number int) (string, error) {
-		pr, err := d.GH.GetPR(repo, number)
-		return pr.HeadSHA, err
-	}, updates: updates, version: version.String(), threads: d.GH.ReviewThreads, login: d.GH.Login,
+	s := &server{d: d, token: token, hosts: d.Cfg.AllowedHosts(), fetch: d.GH.GetPR, updates: updates, version: version.String(), threads: d.GH.ReviewThreads, login: d.GH.Login,
 		send: func(rev *store.Review, event string, fs []store.Finding, rms []pipeline.Reminder) (string, error) {
 			return pipeline.Post(d, rev, event, fs, rms)
 		}}
@@ -135,7 +134,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /r/{id}", s.act)
 	mux.HandleFunc("GET /active.json", s.active)
 	mux.HandleFunc("GET /update.json", s.updateStatus)
-	for _, name := range []string{"select-all.js", "running.js", "update.js", "icon.svg", "favicon.png"} {
+	for _, name := range []string{"select-all.js", "filter.js", "running.js", "update.js", "icon.svg", "favicon.png"} {
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, files, name) })
 	}
 	return mux
@@ -194,6 +193,7 @@ type reviewPage struct {
 	EarlierBadges                []badge       // earlier findings counted by what the follow-up found
 	ReviewsOfPR                  int           // reviews of this PR so far, for the timeline link
 	Nav                          string        // the section it sits under: reviews or history
+	Tally                        *tally        // what the bots found, once the review is over
 }
 
 // earlierView is a finding posted on an earlier review, with the reminder you can send about it.
@@ -232,7 +232,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	for i, rev := range waiting {
 		fs, _ := s.d.Store.Findings(rev.ID)
 		earlier, _ := s.d.Store.EarlierPosted(rev.Repo, rev.Number, rev.ID)
-		cards[i] = waitingCard{rev, waitingBadges(fs, earlier)}
+		cards[i] = waitingCard{rev, waitingBadges(rev, fs, earlier)}
 	}
 	s.render(w, "index", map[string]any{"Title": title, "Waiting": cards, "Active": active, "Recent": recent,
 		"Failed": failed, "Token": s.token, "Threshold": s.d.Cfg.Threshold, "AutoPost": s.d.Cfg.AutoPostSeverities(),
@@ -479,6 +479,11 @@ func (s *server) review(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Incomplete = rev.Status == store.AwaitingYou && rev.Error != ""
 	p.Runs, _ = s.d.Store.Runs(rev.ID)
+	slices.SortStableFunc(p.Runs, func(a, b store.Run) int { return cmp.Compare(runOrder(a.Agent), runOrder(b.Agent)) })
+	if rev.Status != store.Queued && rev.Status != store.Running && (len(fs) > 0 || len(p.Runs) > 0) {
+		t := tallyFindings(fs)
+		p.Tally = &t
+	}
 	for _, run := range p.Runs {
 		if run.Agent == agents.DesignAgent && run.Error == "" {
 			p.Assessment = run.Checked
@@ -761,12 +766,20 @@ func (s *server) requeue(rev *store.Review, deep bool) (int64, bool, error) {
 
 // moved returns the PR's current head if it is no longer the commit rev reviewed, or "" if it is (or GitHub can't
 // be asked; it will refuse a stale review itself).
+// It also brings the labels up to date, since a labeler may add one after the review started.
 func (s *server) moved(rev *store.Review) string {
-	head, err := s.head(rev.Repo, rev.Number)
-	if err != nil || head == "" || head == rev.HeadSHA {
+	pr, err := s.fetch(rev.Repo, rev.Number)
+	if err != nil {
 		return ""
 	}
-	return head
+	if labels := s.d.Cfg.Shown(pr.Labels); !slices.Equal(labels, rev.Labels) {
+		_ = s.d.Store.SetLabels(rev.ID, labels)
+		rev.Labels = labels
+	}
+	if pr.HeadSHA == "" || pr.HeadSHA == rev.HeadSHA {
+		return ""
+	}
+	return pr.HeadSHA
 }
 
 func (s *server) render(w http.ResponseWriter, name string, data any) {

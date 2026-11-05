@@ -34,6 +34,7 @@ type PR struct {
 	HeadRef   string
 	BaseRef   string
 	Draft     bool
+	Labels    []string
 	Additions int
 	Deletions int
 	Files     int
@@ -263,14 +264,15 @@ func (c *Client) Conversation(repo string, number int, watermark string) (string
 
 func (c *Client) GetPR(repo string, number int) (PR, error) {
 	var p struct {
-		HTMLURL      string                 `json:"html_url"`
-		Title        string                 `json:"title"`
-		Body         string                 `json:"body"`
-		Draft        bool                   `json:"draft"`
-		Additions    int                    `json:"additions"`
-		Deletions    int                    `json:"deletions"`
-		ChangedFiles int                    `json:"changed_files"`
-		User         struct{ Login string } `json:"user"`
+		HTMLURL      string                  `json:"html_url"`
+		Title        string                  `json:"title"`
+		Body         string                  `json:"body"`
+		Draft        bool                    `json:"draft"`
+		Additions    int                     `json:"additions"`
+		Deletions    int                     `json:"deletions"`
+		ChangedFiles int                     `json:"changed_files"`
+		User         struct{ Login string }  `json:"user"`
+		Labels       []struct{ Name string } `json:"labels"`
 		Head         struct {
 			SHA string `json:"sha"`
 			Ref string `json:"ref"`
@@ -282,9 +284,13 @@ func (c *Client) GetPR(repo string, number int) (PR, error) {
 	if err := c.rest.Get(fmt.Sprintf("repos/%s/pulls/%d", repo, number), &p); err != nil {
 		return PR{}, err
 	}
-	return PR{Repo: repo, Number: number, URL: p.HTMLURL, Title: p.Title, Body: p.Body, Author: p.User.Login,
+	pr := PR{Repo: repo, Number: number, URL: p.HTMLURL, Title: p.Title, Body: p.Body, Author: p.User.Login,
 		HeadSHA: p.Head.SHA, HeadRef: p.Head.Ref, BaseRef: p.Base.Ref, Draft: p.Draft, Additions: p.Additions,
-		Deletions: p.Deletions, Files: p.ChangedFiles}, nil
+		Deletions: p.Deletions, Files: p.ChangedFiles}
+	for _, l := range p.Labels {
+		pr.Labels = append(pr.Labels, l.Name)
+	}
+	return pr, nil
 }
 
 // Files returns the changed files with their patches (GitHub caps this at 3000 files).

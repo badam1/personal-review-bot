@@ -1,10 +1,12 @@
 // The review page's decision panel: Select all / Clear all for the findings waiting, and the Post button saying what it
-// posts. The button stays hidden without JavaScript, so the page still works as plain checkboxes.
+// posts. Select all works on the findings the reviewer filter shows; Post counts every ticked one, shown or not. The
+// button stays hidden without JavaScript, so the page still works as plain checkboxes.
 const button = document.getElementById("select-all");
 const post = document.getElementById("post");
 const boxes = [...document.querySelectorAll('input[type=checkbox][name^="f_"]')];
 const reminders = [...document.querySelectorAll('input[type=checkbox][name^="rm_"]')];
-const allTicked = () => boxes.every((b) => b.checked);
+const shown = () => boxes.filter((b) => !b.closest("[hidden]"));
+const allTicked = () => shown().every((b) => b.checked);
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 const sync = () => {
@@ -18,10 +20,11 @@ const sync = () => {
 if (button) {
   button.addEventListener("click", () => {
     const tick = !allTicked();
-    boxes.forEach((b) => { b.checked = tick; });
+    shown().forEach((b) => { b.checked = tick; });
     sync();
   });
   button.hidden = false;
 }
 [...boxes, ...reminders].forEach((b) => b.addEventListener("change", sync));
+document.addEventListener("prb:filter", sync);
 sync();

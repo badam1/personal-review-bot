@@ -52,11 +52,11 @@ var builtinReviewers embed.FS
 var builtinPrompts embed.FS
 
 // Prompts are the templates every review uses; a file of the same name in the config directory's prompts/ replaces one.
-var Prompts = []string{"review", "verify", "design", "followup"}
+var Prompts = []string{"review", "verify", "design", "followup", "summary"}
 
 var (
 	builtinOrder = []string{"logic", "security", "integration", "infra"}
-	reserved     = []string{DesignAgent, FollowupAgent, VerifierAgent} // the pipeline's own runs
+	reserved     = []string{DesignAgent, FollowupAgent, VerifierAgent, SummaryAgent} // the pipeline's own runs
 	validName    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 )
 
@@ -171,7 +171,7 @@ func (k *Kit) Reviewer(name string) (Reviewer, bool) {
 // samplePrompt has every field a prompt template can use, to check a template before a review depends on it.
 var samplePrompt = promptData{Input: Input{Repo: "owner/repo", Number: 1, Title: "t", Author: "a", Body: "b", Base: "main",
 	Head: "h", Diff: "d", HeadSHA: "bbb", PrevSHA: "aaa", Conversation: "c", Prior: "p", Owner: "o", Org: "owner"},
-	Area: "a", Focus: "f", Findings: "[]", Context: "c"}
+	Area: "a", Focus: "f", Findings: "[]", Accounts: "- logic: read a.go", Context: "c"}
 
 // parseReviewer reads a reviewer file: an optional front matter block of `key: value` lines between two `---` lines,
 // then the focus. It starts from base, so a file changes only what it sets. It returns whether the reviewer is enabled.

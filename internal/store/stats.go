@@ -135,8 +135,11 @@ func (s *Store) Reviewers() ([]ReviewerRow, error) {
 	return out, q.Err()
 }
 
-// checker says whether the agent checks other findings (the verifier, the follow-up) rather than finding its own.
-func checker(agent string) bool { return agent == "verifier" || agent == "followup" }
+// checker says whether the agent finds nothing of its own: it checks other findings (the verifier, the follow-up) or
+// summarises the PR.
+func checker(agent string) bool {
+	return agent == "verifier" || agent == "followup" || agent == "summary"
+}
 
 // DaySpend is what the reviews created on one (local) day cost.
 type DaySpend struct {

@@ -32,6 +32,9 @@ login.
    fixed, partly fixed, is still open, no longer applies, or the author declined it, with one line of evidence.
 3. **Verifies.** A separate verifier re-checks every finding against the code, without seeing the reviewer's own
    confidence, and rates two things apart: how certain it is the problem is real, and how severe it is if merged.
+   It also says how confident it is that nothing else stands in the way of approving, from its own check and what
+   each reviewer says it examined; it runs for that when nothing was found too. A Haiku summary (about a cent) says
+   what the PR changes and why, at the top of its page.
 4. **Posts only what's confirmed, ≥ 80% certain and of low or medium severity** as one short COMMENT review. Every
    comment ends with the watermark and the certainty, e.g. `🤖 personal-review-bot · 92%`.
 5. **Asks you about the rest.** High-severity findings (the costly kind to get wrong under your name), design
@@ -162,6 +165,7 @@ Restart the service after changing it (`./install.sh`).
 | `ORG` | empty: review requests from any org. Set it to only review PRs in that GitHub org; reviewers also search it for related repos (otherwise the PR repo's owner) |
 | `THRESHOLD` | `80`: auto-post a confirmed finding at or above this certainty |
 | `AUTO_POST` | `low,medium`: the severities posted without asking, once confirmed at `THRESHOLD`. High ones wait for you; `high` alone posts only those, `low,medium,high` everything, empty nothing. A misspelt word is left out. The stats page's "What became of findings, by score" table shows whether the rule fits. (The older `AUTO_SEVERITY`, "this severity or higher", still works when `AUTO_POST` isn't set.) |
+| `SHOW_LABELS` | `risk/,auto-risk/`: the PR labels shown beside its size, by prefix (comma-separated; empty shows none). Coloured by the level they end in: `/high`, `/medium`, `/low` |
 | `APPROVE_TEXT` | `LGTM :+1:`: said with your first approval of a PR; a re-approval (after new commits dismissed it) goes without it; empty = approve without a comment |
 | `WATERMARK` | `🤖 personal-review-bot`: ends every comment the bot posts, followed by the certainty |
 | `SAVE_AT` | `75`: % of the Claude plan's 5-hour or weekly limit from which reviews use cheaper models at medium effort |
@@ -225,12 +229,14 @@ lifecycle rules. Report only what costs real money, with the cheaper setting.
 
 ### Prompts
 
-`prompts/review.md` (used by every reviewer), `verify.md`, `design.md` and `followup.md` replace the built-in ones.
+`prompts/review.md` (used by every reviewer), `verify.md`, `design.md`, `followup.md` and `summary.md` (the two
+sentences at the top of a review's page) replace the built-in ones.
 They are Go [`text/template`](https://pkg.go.dev/text/template)s with these fields: `.Repo`, `.Number`, `.Title`,
 `.Author`, `.Body`, `.Base`, `.Head`, `.Diff`, `.HeadSHA`, `.PrevSHA` (empty on a first review), `.Conversation`,
 `.Prior` (earlier findings and their fate), `.Owner` (your login), `.Org`, `.Context`, plus `.Area` and `.Focus` in
-the review prompt and `.Findings` (JSON) in the verify and follow-up prompts. Keep each asking for the same answer as
-the built-in one: the JSON shape is enforced, and a run that doesn't match it fails.
+the review prompt, `.Findings` (JSON) in the verify and follow-up prompts, and `.Accounts` (what each reviewer says
+it examined) in the verify prompt. Keep each asking for the same answer as the built-in one: the JSON shape is
+enforced, and a run that doesn't match it fails.
 
 ### Context
 

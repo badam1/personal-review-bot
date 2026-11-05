@@ -100,9 +100,19 @@ func TestOpenAddsColumns(t *testing.T) {
 	if err := s.SetWrong(fid, true); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.SetAbout(id, "Moves the retry into the client."); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetApproval(id, 88, "Every changed file was read."); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetLabels(id, []string{"auto-risk/high", "risk/medium"}); err != nil {
+		t.Fatal(err)
+	}
 	r, _ := s.Get(id)
 	f, _ := s.Finding(fid)
-	if r.Reasons != "docs only" || f.Context != "1\t+\tx" || !f.Wrong {
+	if r.Reasons != "docs only" || f.Context != "1\t+\tx" || !f.Wrong || r.About != "Moves the retry into the client." ||
+		r.Approval != 88 || r.ApprovalReason != "Every changed file was read." || strings.Join(r.Labels, ",") != "auto-risk/high,risk/medium" {
 		t.Errorf("review %+v, finding %+v", r, f)
 	}
 }

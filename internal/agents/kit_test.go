@@ -142,7 +142,7 @@ func TestExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(wrote) != 8 || slices.Contains(wrote, filepath.Join(dir, "prompts/review.md")) {
+	if len(wrote) != 9 || slices.Contains(wrote, filepath.Join(dir, "prompts/review.md")) {
 		t.Errorf("wrote %v; want everything but the existing prompts/review.md", wrote)
 	}
 	if again, _ := Export(dir); len(again) != 0 {

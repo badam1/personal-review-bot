@@ -34,7 +34,7 @@ func newSite(t *testing.T) *site {
 	t.Cleanup(func() { st.Close() })
 	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf, Cfg: config.Config{Threshold: 80, AutoPost: []string{"low", "medium"}}},
 		token: "secret", hosts: []string{"localhost:12346"}, origins: []string{"http://localhost:12346"},
-		head:    func(string, int) (string, error) { return "aaa", nil },
+		fetch:   func(string, int) (gh.PR, error) { return gh.PR{HeadSHA: "aaa"}, nil },
 		threads: func(string, int) ([]gh.Thread, error) { return nil, nil }, login: "octocat",
 		send: func(*store.Review, string, []store.Finding, []pipeline.Reminder) (string, error) {
 			t.Fatal("nothing may be sent to GitHub unless the test says so")
@@ -678,5 +678,85 @@ func TestUpdateProgress(t *testing.T) {
 	want(t, js, `"version":"v0.1.1"`, `"busy":false`)
 	if _, again := update.Started(s.st, "v0.1.1"); again {
 		t.Error("an ordinary restart isn't an update")
+	}
+}
+
+// A review opens with what the PR is about, then what the bots found, the findings, and how it was reviewed: the design
+// review and the verifier first. The reviewer filter shows once more than one reviewer found something.
+func TestReviewOverview(t *testing.T) {
+	s := newSite(t)
+	id := s.review(50, store.AwaitingYou, "2 need you")
+	_ = s.st.SetAbout(id, "Retries a capture that times out, up to `3` times. Captures time out now and then.")
+	_ = s.st.SetApproval(id, 64, "The retry loop was traced, but nobody read `client.go`.")
+	add := func(agent, severity string, confidence int, verdict, status string) {
+		fid, _ := s.st.AddFinding(&store.Finding{ReviewID: id, Agent: agent, Severity: severity, Path: "a.go", Line: 1,
+			Title: agent + " finding", Comment: "c", Status: store.Candidate})
+		_ = s.st.UpdateFinding(&store.Finding{ID: fid, Line: 1, Comment: "c", Confidence: confidence, Verdict: verdict, Status: status})
+	}
+	add("logic", "high", 91, "confirmed", store.Pending)
+	add("security", "low", 85, "confirmed", store.AutoPosted)
+	for _, r := range []store.Run{{Agent: "logic", Model: "opus", Findings: 1, Checked: "Traced `Capture`."},
+		{Agent: "summary", Model: "haiku"}, {Agent: "verifier", Model: "opus", Findings: 2},
+		{Agent: "design", Model: "fable", Checked: "The approach fits."}, {Agent: "security", Model: "sonnet", Findings: 1, Denials: 3}} {
+		r.ReviewID = id
+		_ = s.st.AddRun(&r)
+	}
+
+	_, page := s.get(fmt.Sprintf("/r/%d", id))
+	want(t, page, `<h2 id="about" class="lbl">About this PR</h2>`, "up to <code>3</code> times",
+		`<h2 id="found" class="h2">What the bots found</h2>`, "2 found → 2 confirmed",
+		`title="logic: logic finding">high <b class="cert hi">91%</b></span>`,
+		`<div class="filter" id="filter" hidden>`, `data-agent="security" aria-pressed="false">security 1</button>`,
+		`<script src="/filter.js" defer></script>`, `data-finding data-agent="logic"`, `data-finding data-agent="security"`,
+		`<h2 id="how" class="h2">How it was reviewed</h2>`, "wrote the summary at the top", "Traced <code>Capture</code>.",
+		`title="3 tool calls outside its read-only tools`,
+		`<b class="cert mid">64%</b>`, "confident to approve", "but nobody read <code>client.go</code>.",
+		"Look at it yourself before approving.")
+	order := []string{"About this PR", "What the bots found", "Findings to decide", "How it was reviewed"}
+	for i := 1; i < len(order); i++ {
+		if strings.Index(page, order[i-1]) > strings.Index(page, order[i]) {
+			t.Errorf("%q comes after %q", order[i-1], order[i])
+		}
+	}
+	how := page[strings.Index(page, `id="how"`):]
+	runs := []string{"<b>design</b>", "<b>verifier</b>", "<b>logic</b>", "<b>summary</b>"}
+	for i := 1; i < len(runs); i++ {
+		if strings.Index(how, runs[i-1]) > strings.Index(how, runs[i]) {
+			t.Errorf("%s is listed after %s", runs[i-1], runs[i])
+		}
+	}
+	if strings.Contains(page, `class="card agents"`) {
+		t.Error("the sidebar still lists the reviewers")
+	}
+	rec := httptest.NewRecorder()
+	s.h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://localhost:12346/filter.js", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "prb:filter") {
+		t.Errorf("filter.js: %d", rec.Code)
+	}
+}
+
+// The PR's risk labels show beside its size: on the review, in the lists and on its timeline. Opening a review that
+// waits for you brings them up to date, since a labeler may add one after the review started.
+func TestRiskLabels(t *testing.T) {
+	s := newSite(t)
+	s.srv.d.Cfg.ShowLabels = []string{"risk/", "auto-risk/"}
+	id := s.review(60, store.AwaitingYou, "no issues: approve?")
+	_ = s.st.SetLabels(id, []string{"risk/medium"})
+	s.srv.fetch = func(string, int) (gh.PR, error) {
+		return gh.PR{HeadSHA: "aaa", Labels: []string{"size/m", "risk/medium", "auto-risk/high"}}, nil
+	}
+
+	_, page := s.get(fmt.Sprintf("/r/%d", id))
+	want(t, page, `<span class="plabel high">auto-risk/high</span><span class="plabel medium">risk/medium</span>`,
+		`<dt>Labels</dt>`, `<span class="size medium">medium</span>`)
+	if strings.Contains(page, "size/m") {
+		t.Error("only the configured labels show")
+	}
+	if r, _ := s.st.Get(id); strings.Join(r.Labels, ",") != "auto-risk/high,risk/medium" {
+		t.Errorf("labels not refreshed: %q", r.Labels)
+	}
+	for _, path := range []string{"/", "/history", "/pr/acme/infra/60"} {
+		_, page := s.get(path)
+		want(t, page, `<span class="plabel high">auto-risk/high</span>`)
 	}
 }
