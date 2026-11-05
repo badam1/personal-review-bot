@@ -1,5 +1,6 @@
 // Package agents runs the Claude reviewers and the verifier as headless `claude -p` processes inside the PR
-// checkout. They are read-only: their only tools are Read/Grep/Glob and a few read-only git/gh commands, and their
+// checkout. They are read-only: their only tools are Read/Grep/Glob and a few git/gh commands, with the forms of
+// `gh api` that write denied (see readOnly), and their
 // output is schema-validated JSON. Each run has PERSONAL_REVIEW_BOT_AGENT=1 set, so your own Claude Code hooks can
 // tell these runs apart (for example to block GitHub writes from them as well).
 package agents
@@ -440,10 +441,21 @@ func parseStream(out []byte, now time.Time) (*result, *Usage) {
 }
 
 // readOnly is what reviewers and the verifier may use: the checkout, and a few commands that only read.
+//
+// `gh api` is how a reviewer reads the other repos of the org, but the same command writes: `-X POST` and
+// `--method`, and `-f`/`-F`/`--field`/`--raw-field`/`--input`, which make it a POST on their own, with the
+// whole `repo` scope of your gh login behind them (`gh api graphql -f query='mutation …'` included). The
+// prompt telling a reviewer not to post is not a control: the PR it reads is written by someone else, and the
+// ground rule is that a reviewer cannot change anything even if its input tells it to. So the write forms are
+// denied; a denial beats the allowlist.
 var readOnly = []string{"--permission-mode", "default",
 	"--tools", "Read", "Grep", "Glob", "Bash",
 	"--allowedTools", "Read", "Grep", "Glob",
-	"Bash(gh search code *)", "Bash(gh api *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)"}
+	"Bash(gh search code *)", "Bash(gh api *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)",
+	"--disallowedTools",
+	"Bash(gh api *-X*)", "Bash(gh api *--method*)",
+	"Bash(gh api *-f *)", "Bash(gh api *-F *)",
+	"Bash(gh api *--field*)", "Bash(gh api *--raw-field*)", "Bash(gh api *--input*)"}
 
 // noTools is for a run that needs nothing beyond its prompt.
 var noTools = []string{"--tools", ""}
