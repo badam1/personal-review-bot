@@ -43,6 +43,8 @@ type snapshot struct {
 	spentWeek      float64        // in the last 7 days
 	update         update.Release // a newer release ("" Version: none)
 	updateState    string         // what an update under way is doing
+	daemonVersion  string         // what the daemon last started as
+	updated        *update.Done   // an update that finished within the hour
 	err            error
 }
 
@@ -63,6 +65,10 @@ func load(st *store.Store) snapshot {
 	}
 	s.update, _ = update.Available(update.Load(st), version.String())
 	s.updateState = update.State(st)
+	s.daemonVersion = update.DaemonVersion(st)
+	if d, ok := update.LastDone(st, time.Now()); ok {
+		s.updated = &d
+	}
 	return s
 }
 
@@ -199,28 +205,35 @@ func usageLine(cfg config.Config, u agents.Usage, now time.Time) string {
 
 // updateLine says that a newer release is out, or what an update under way is doing ("" when neither).
 func updateLine(s snapshot, interactive bool) string {
-	busy := s.updateState != "" && !strings.Contains(s.updateState, "failed")
-	line := ""
-	if s.updateState != "" {
-		line = "update: " + s.updateState
+	var lines []string
+	busy := update.Busy(s.updateState)
+	switch {
+	case busy:
+		lines = append(lines, needStyle.Render("updating: "+s.updateState))
+	case s.updateState != "":
+		lines = append(lines, badStyle.Render("update: "+s.updateState))
+	}
+	if d := s.updated; d != nil && d.To == s.daemonVersion && !busy {
+		lines = append(lines, okStyle.Render(fmt.Sprintf("✓ updated to %s (from %s), %s ago", d.To, d.From,
+			time.Since(d.At).Round(time.Minute))))
 	}
 	if s.update.Version != "" && !busy {
 		how := "u to update"
 		if !interactive {
 			how = "personal-review-bot update"
 		}
-		if line != "" {
-			line += " · "
-		}
-		line += fmt.Sprintf("%s is available (running %s) · %s", s.update.Version, version.String(), how)
+		lines = append(lines, needStyle.Render(fmt.Sprintf("%s is available (running %s) · %s", s.update.Version,
+			version.String(), how)))
 	}
-	switch {
-	case line == "":
+	// The TUI is its own process: after the daemon updates, this one still runs the old binary.
+	if interactive && s.daemonVersion != "" && s.daemonVersion != version.String() && !busy {
+		lines = append(lines, needStyle.Render(fmt.Sprintf("the daemon runs %s, this TUI %s: restart it (q, then personal-review-bot)",
+			s.daemonVersion, version.String())))
+	}
+	if len(lines) == 0 {
 		return ""
-	case strings.Contains(line, "failed"):
-		return badStyle.Render(line) + "\n"
 	}
-	return needStyle.Render(line) + "\n"
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // header is the top of the screen: the title and version, whether the daemon runs, the posting rule and the page, the

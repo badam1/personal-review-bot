@@ -28,6 +28,7 @@ type updater struct {
 	exe     string        // the running binary, which an update replaces
 	current func() string // the running version
 	busy    atomic.Bool   // an update is installing or waiting to restart
+	target  atomic.Value  // the version being installed (string)
 	drain   chan struct{} // closed once the new binary is in place
 	running atomic.Int64  // reviews this process has claimed and not finished
 }
@@ -96,9 +97,11 @@ func (u *updater) Start() (string, error) {
 		u.busy.Store(false)
 		return fmt.Sprintf("Already up to date (%s).", u.current()), nil
 	}
-	update.SetState(u.d.Store, "installing "+rel.Version)
+	u.target.Store(rel.Version)
+	update.SetState(u.d.Store, "starting the update to "+rel.Version)
 	go func() {
-		if err := update.Install(context.Background(), u.src, u.d.Cfg.UpdateRepo, rel, u.exe, u.verify); err != nil {
+		step := func(s string) { update.SetState(u.d.Store, s) }
+		if err := update.Install(context.Background(), u.src, u.d.Cfg.UpdateRepo, rel, u.exe, u.verify, step); err != nil {
 			update.SetState(u.d.Store, fmt.Sprintf("updating to %s failed: %v", rel.Version, err))
 			u.d.Log("update to %s failed: %v", rel.Version, err)
 			u.busy.Store(false)
@@ -111,6 +114,12 @@ func (u *updater) Start() (string, error) {
 	return fmt.Sprintf("Updating to %s: it restarts once the running reviews finish.", rel.Version), nil
 }
 
+// version is the release being installed ("" when none).
+func (u *updater) version() string {
+	v, _ := u.target.Load().(string)
+	return v
+}
+
 // draining reports whether workers should stop taking reviews.
 func (u *updater) draining() bool {
 	select {
@@ -121,9 +130,19 @@ func (u *updater) draining() bool {
 	}
 }
 
-// waitIdle returns once no review is running in this process, or ctx ends.
+// waitIdle returns once no review is running in this process, or ctx ends, keeping the update's state current with
+// how many are left.
 func (u *updater) waitIdle(ctx context.Context) error {
-	for u.running.Load() > 0 {
+	last := int64(-1)
+	for n := u.running.Load(); n > 0; n = u.running.Load() {
+		if n != last {
+			reviews := "1 running review finishes"
+			if n > 1 {
+				reviews = fmt.Sprintf("%d running reviews finish", n)
+			}
+			update.SetState(u.d.Store, fmt.Sprintf("%s installed: restarting once %s", u.version(), reviews))
+			last = n
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

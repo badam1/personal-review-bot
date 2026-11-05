@@ -86,7 +86,7 @@ func TestIndexLive(t *testing.T) {
 	s.review(2, store.AwaitingYou, "no issues: approve?")
 	s.review(3, store.Running, "")
 	_, page := s.get("/")
-	want(t, page, `<h1 class="brand"><img src="/icon.svg" alt="">personal-review-bot <span class="ver">`, "<title>(2) personal-review-bot</title>", `<meta http-equiv="refresh" content="60">`, "Running now",
+	want(t, page, `<h1 class="brand"><img src="/icon.svg" alt="">personal-review-bot <span class="ver">`, "<title>(2) personal-review-bot</title>", `<meta http-equiv="refresh" content="60; url=?">`, "Running now",
 		`href="/pr/acme/infra/3"`, ">infra#3<", `href="/history"`, "All reviews →")
 	if strings.Contains(page, ">acme/infra#") {
 		t.Error("lists should show the repo without its owner")
@@ -107,7 +107,7 @@ func TestReviewCode(t *testing.T) {
 
 	running := s.review(5, store.Running, "")
 	_, page = s.get(fmt.Sprintf("/r/%d", running))
-	want(t, page, `<meta http-equiv="refresh" content="15">`)
+	want(t, page, `<meta http-equiv="refresh" content="15; url=?">`)
 }
 
 // A posted finding can be marked wrong and unmarked; one that wasn't posted can't.
@@ -430,9 +430,10 @@ func TestUpdateNotice(t *testing.T) {
 	_, page = s.get(rec.Header().Get("Location"))
 	want(t, page, "Updating to v0.1.0-beta.3: it restarts once the running reviews finish.")
 
-	update.SetState(s.st, "v0.1.0-beta.3 installed: restarting once the running reviews finish")
+	update.SetState(s.st, "v0.1.0-beta.3 installed: restarting once 1 running review finishes")
 	_, page = s.get("/")
-	want(t, page, "<b>Update:</b> v0.1.0-beta.3 installed: restarting")
+	want(t, page, `id="update" data-version="v0.1.0-beta.2" data-busy`, "<b>Updating:</b> <span class=\"update-state\">v0.1.0-beta.3 installed: restarting",
+		`<script src="/update.js" defer>`)
 	if strings.Contains(page, `action="/update"`) {
 		t.Error("no second update while one is under way")
 	}
@@ -628,5 +629,37 @@ func TestDeepReview(t *testing.T) {
 	s.post(fmt.Sprintf("/r/%d", failed), url.Values{"action": {"rereview"}})
 	if r, _ := s.st.Latest("acme/infra", 42); r.ID == failed || !r.Deep {
 		t.Errorf("retrying a failed deep review: %+v", r)
+	}
+}
+
+// While an update runs, the click comes back to a clean main page, whose notice follows /update.json; once the daemon
+// is back on the new version the page says so for an hour.
+func TestUpdateProgress(t *testing.T) {
+	s := newSite(t)
+	s.srv.version = "v0.1.0"
+	busy := &fakeUpdates{start: "Updating to v0.1.1."}
+	s.srv.updates = busy
+	update.SetState(s.st, "downloading v0.1.1 (6.2 MB)")
+	if loc := s.post("/update", url.Values{}).Header().Get("Location"); loc != "/" {
+		t.Errorf("a started update should come back to a clean page, got %q", loc)
+	}
+	_, js := s.get("/update.json")
+	want(t, js, `"version":"v0.1.0"`, `"state":"downloading v0.1.1 (6.2 MB)"`, `"busy":true`)
+
+	// The daemon restarts into v0.1.1.
+	update.Restarting(s.st, "v0.1.0")
+	if d, ok := update.Started(s.st, "v0.1.1"); !ok || d.From != "v0.1.0" || d.To != "v0.1.1" {
+		t.Fatalf("Started = %+v, %v", d, ok)
+	}
+	s.srv.version = "v0.1.1"
+	_, page := s.get("/")
+	want(t, page, "✓ <b>Updated to v0.1.1</b> (from v0.1.0)", `href="https://github.com/badam1/personal-review-bot/releases/tag/v0.1.1"`)
+	if strings.Contains(page, "data-busy") {
+		t.Error("the update is over")
+	}
+	_, js = s.get("/update.json")
+	want(t, js, `"version":"v0.1.1"`, `"busy":false`)
+	if _, again := update.Started(s.st, "v0.1.1"); again {
+		t.Error("an ordinary restart isn't an update")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -26,7 +27,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/version"
 )
 
-//go:embed templates.html select-all.js running.js icon.svg favicon.png
+//go:embed templates.html select-all.js running.js update.js icon.svg favicon.png
 var files embed.FS
 
 var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
@@ -115,7 +116,8 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /r/{id}", s.review)
 	mux.HandleFunc("POST /r/{id}", s.act)
 	mux.HandleFunc("GET /active.json", s.active)
-	for _, name := range []string{"select-all.js", "running.js", "icon.svg", "favicon.png"} {
+	mux.HandleFunc("GET /update.json", s.updateStatus)
+	for _, name := range []string{"select-all.js", "running.js", "update.js", "icon.svg", "favicon.png"} {
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, files, name) })
 	}
 	return mux
@@ -211,20 +213,32 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 // updateView is what the main page says about updates: a newer release to install, or an update under way.
 type updateView struct {
 	Version, URL, Current, State string
-	CanInstall                   bool // the daemon serves the page, so it can install
-	Busy                         bool // an update is installing or waiting to restart
+	CanInstall                   bool         // the daemon serves the page, so it can install
+	Busy                         bool         // an update is installing or waiting to restart
+	Done                         *update.Done // an update that finished within the hour
 }
 
 func (s *server) updateView() *updateView {
 	v := &updateView{Current: s.version, State: update.State(s.d.Store), CanInstall: s.updates != nil}
-	v.Busy = v.State != "" && !strings.Contains(v.State, "failed")
+	v.Busy = update.Busy(v.State)
 	if rel, ok := update.Available(update.Load(s.d.Store), s.version); ok {
 		v.Version, v.URL = rel.Version, rel.URL
 	}
-	if v.Version == "" && v.State == "" {
+	if d, ok := update.LastDone(s.d.Store, time.Now()); ok && d.To == s.version {
+		v.Done = &d
+	}
+	if v.Version == "" && v.State == "" && v.Done == nil {
 		return nil
 	}
 	return v
+}
+
+// updateStatus is the update notice's live data: the version this daemon runs and what an update under way is doing.
+func (s *server) updateStatus(w http.ResponseWriter, r *http.Request) {
+	state := update.State(s.d.Store)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"version": s.version, "state": state, "busy": update.Busy(state)})
 }
 
 // startUpdate installs the newest release (through the daemon) and comes back to the main page saying what it does.
@@ -234,8 +248,12 @@ func (s *server) startUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg, err := s.updates.Start()
-	if err != nil {
+	switch {
+	case err != nil:
 		msg = "Not updated: " + err.Error()
+	case update.Busy(update.State(s.d.Store)):
+		http.Redirect(w, r, "/", http.StatusSeeOther) // the notice follows it from here
+		return
 	}
 	http.Redirect(w, r, "/?msg="+url.QueryEscape(msg), http.StatusSeeOther)
 }

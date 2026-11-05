@@ -1,7 +1,7 @@
 {{define "head"}}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
-<link rel="icon" href="/favicon.png" sizes="32x32" type="image/png"><link rel="icon" href="/icon.svg" type="image/svg+xml">{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}
+<link rel="icon" href="/favicon.png" sizes="32x32" type="image/png"><link rel="icon" href="/icon.svg" type="image/svg+xml">{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}; url=?">{{end}}
 <style>
   /* Catppuccin Mocha */
   :root { --base:#1e1e2e; --mantle:#181825; --s0:#313244; --s1:#45475a; --text:#cdd6f4; --sub:#a6adc8;
@@ -100,7 +100,11 @@
 <h1 class="brand"><img src="/icon.svg" alt="">personal-review-bot <span class="ver">{{about.Version}}</span></h1>
 <p class="meta">Reviews PRs where your review is requested directly. Findings the verifier confirms at {{.Threshold}}% certainty or more, and of {{.AutoSeverity}} severity or higher, are posted automatically; everything else, and every approval, waits here.</p>
 {{with .Msg}}<div class="summary">{{.}}</div>{{end}}
-{{with .Update}}<div class="summary">{{if .State}}<div><b>Update:</b> {{.State}}</div>{{end}}
+{{with .Update}}<div class="summary" id="update" data-version="{{.Current}}"{{if .Busy}} data-busy{{end}}>
+  {{if .Busy}}<div class="running"><span class="spin" aria-hidden="true">✻</span><b>Updating:</b> <span class="update-state">{{.State}}</span></div>
+  {{else if .State}}<div><b>Update:</b> {{.State}}</div>{{end}}
+  {{with .Done}}<div>✓ <b>Updated to {{.To}}</b> (from {{.From}}), {{ago .At}} ·
+    <a href="{{about.Repo}}/releases/tag/{{.To}}" target="_blank" rel="noopener">what's new</a></div>{{end}}
   {{if and .Version (not .Busy)}}<b>personal-review-bot {{.Version}}</b> is available (you run {{.Current}}) ·
     <a href="{{.URL}}" target="_blank" rel="noopener">what's new</a>
     {{if .CanInstall}}<form class="inline" method="post" action="/update"><input type="hidden" name="csrf" value="{{$.Token}}">
@@ -126,7 +130,7 @@
 {{template "review-rows" .Recent}}
 <div class="footer"><a href="/history">All reviews →</a> · this page refreshes every minute{{if .CanUpdate}} ·
   <form class="inline" method="post" action="/update/check"><input type="hidden" name="csrf" value="{{.Token}}"><button class="linkbtn">Check for updates</button></form>{{end}}</div>
-<script src="/running.js" defer></script>
+<script src="/running.js" defer></script><script src="/update.js" defer></script>
 {{template "foot"}}{{end}}
 
 {{define "running-line"}}<div class="running" data-id="{{.ID}}" data-status="{{.Status}}" data-started="{{unixms .StartedAt}}">

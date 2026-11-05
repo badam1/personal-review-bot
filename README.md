@@ -125,7 +125,10 @@ away. When there is one, the page and the TUI say so, with a link to its notes; 
   build attestation (built by this repo's release workflow, checked with `gh attestation verify`), and puts it in
   place of the installed binary;
 - the daemon then takes no new reviews, lets the running ones finish, and restarts into the new version in place
-  (same process, so launchd, systemd or a terminal keep it).
+  (same process, so launchd, systemd or a terminal keep it);
+- the page follows each step live (downloading, checking, waiting for N running reviews, restarting) and then says
+  "✓ Updated to v…" for an hour; the TUI and `personal-review-bot update` show the same steps. A TUI that was open
+  during the update still runs the old version and says to restart it.
 
 While you run a beta you are offered betas; a stable release only offers stable ones. Without a running daemon,
 `personal-review-bot update` just replaces the binary. Only the binary is updated: when a release changes the
