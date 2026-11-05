@@ -28,7 +28,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/version"
 )
 
-//go:embed templates.html select-all.js filter.js running.js update.js icon.svg favicon.png
+//go:embed templates.html select-all.js filter.js running.js update.js bar.js icon.svg favicon.png
 var files embed.FS
 
 var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
@@ -134,7 +134,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /r/{id}", s.act)
 	mux.HandleFunc("GET /active.json", s.active)
 	mux.HandleFunc("GET /update.json", s.updateStatus)
-	for _, name := range []string{"select-all.js", "filter.js", "running.js", "update.js", "icon.svg", "favicon.png"} {
+	for _, name := range []string{"select-all.js", "filter.js", "running.js", "update.js", "bar.js", "icon.svg", "favicon.png"} {
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, files, name) })
 	}
 	return mux
