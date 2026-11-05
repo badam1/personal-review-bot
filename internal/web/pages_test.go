@@ -479,6 +479,7 @@ func TestPageFooter(t *testing.T) {
 			`href="https://github.com/acme/prb/issues/new?platform=darwin%2Farm64&amp;template=bug_report.yml&amp;version=v0.1.0-beta.4"`,
 			`href="https://github.com/acme/prb/issues/new?template=feature_request.yml"`, `href="https://github.com/acme/prb#readme"`,
 			`href="https://github.com/acme/prb#settings"`, `href="https://github.com/acme/prb" target="_blank" rel="noopener">Source</a>`,
+			`<script src="/bar.js" defer></script>`,
 			`title="config ~/.config/personal-review-bot · data ~/.local/state/personal-review-bot · log ~/Library/Logs/personal-review-bot.log"`)
 	}
 
@@ -762,4 +763,16 @@ func TestRiskLabels(t *testing.T) {
 	_, page = s.get("/history")
 	want(t, page, `<th scope="col">Risk</th>`, `<div class="lstack"><span class="plabel high">auto-risk/high</span>`,
 		`<span class="ohead"><span class="dot need"></span><b>Needs you</b></span><span class="sub">no issues: approve?</span>`)
+}
+
+// Every page loads the bar's script, served from this origin like the others.
+func TestBarScript(t *testing.T) {
+	s := newSite(t)
+	_, page := s.get("/history")
+	want(t, page, `<script src="/bar.js" defer></script>`)
+	rec := httptest.NewRecorder()
+	s.h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://localhost:12346/bar.js", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `classList.add("stuck")`) {
+		t.Errorf("bar.js: %d", rec.Code)
+	}
 }
