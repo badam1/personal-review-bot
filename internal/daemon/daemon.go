@@ -89,8 +89,22 @@ func Run(ctx context.Context, cfg config.Config) error {
 
 // seed records the requests that were already open when the bot first started as skipped, so it doesn't fire off
 // a burst of reviews; they can be queued from the TUI.
+// requested lists the open review requests addressed to you, and says so when GitHub matched more than one
+// search returns: the ones left out are never reviewed, and watching several orgs makes that likelier.
+func requested(d pipeline.Deps) ([]gh.PR, error) {
+	prs, total, err := d.GH.RequestedFromMe(d.Cfg.Orgs)
+	if err != nil {
+		return nil, err
+	}
+	if total > len(prs) {
+		log.Printf("GitHub matched %d open review requests for you but one search returns %d: %d are not being looked at. Narrow ORG.",
+			total, len(prs), total-len(prs))
+	}
+	return prs, nil
+}
+
 func seed(d pipeline.Deps) error {
-	prs, err := d.GH.RequestedFromMe(d.Cfg.Orgs)
+	prs, err := requested(d)
 	if err != nil {
 		return err
 	}
@@ -106,7 +120,7 @@ func seed(d pipeline.Deps) error {
 }
 
 func poll(d pipeline.Deps) {
-	prs, err := d.GH.RequestedFromMe(d.Cfg.Orgs)
+	prs, err := requested(d)
 	if err != nil {
 		log.Printf("poll: %v", err)
 		return

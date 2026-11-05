@@ -86,7 +86,11 @@ func New() (*Client, error) {
 	return &Client{rest: rest, diff: diff, gql: gql, dl: dl, Login: u.Login}, nil
 }
 
-var prURL = regexp.MustCompile(`github\.com/([^/]+/[^/]+)/pull/(\d+)`)
+// prURL is anchored at the start and takes owner and repo apart, so that only a github.com address parses and
+// the repo is a name rather than whatever stood between two slashes: unanchored, "https://elsewhere.example/
+// github.com/a/b/pull/1" read as a GitHub PR, and "github.com/../x/pull/1" gave a repo of "../x", which is
+// joined into a path under the cache directory.
+var prURL = regexp.MustCompile(`^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9](?:-?[A-Za-z0-9]){0,38})/([A-Za-z0-9._-]{1,100})/pull/(\d+)`)
 
 // ParseURL turns https://github.com/owner/repo/pull/123 into ("owner/repo", 123).
 func ParseURL(u string) (string, int, error) {
@@ -94,11 +98,15 @@ func ParseURL(u string) (string, int, error) {
 	if m == nil {
 		return "", 0, fmt.Errorf("not a GitHub PR URL: %s", u)
 	}
-	n, _ := strconv.Atoi(m[2])
-	return m[1], n, nil
+	n, _ := strconv.Atoi(m[3])
+	return m[1] + "/" + m[2], n, nil
 }
 
-// requestedQuery is the search RequestedFromMe runs. GitHub ORs a qualifier that is repeated, so several orgs
+// searchPage is how many results one GitHub search returns; RequestedFromMe says when more matched.
+const searchPage = 50
+
+// requestedQuery is the search RequestedFromMe runs. The orgs reach it from ORG, which config.Validate has
+// already refused unless every one of them is an organisation name, so none can add a qualifier of its own. GitHub ORs a qualifier that is repeated, so several orgs
 // come out as "org:acme org:umbrella": a PR in either one. Kept apart from the call so it can be tested.
 func requestedQuery(login string, orgs []string) string {
 	q := "is:pr is:open archived:false user-review-requested:" + login
@@ -109,15 +117,17 @@ func requestedQuery(login string, orgs []string) string {
 }
 
 // RequestedFromMe lists open PRs where a review is requested from the logged-in user directly — not via a team.
-// With orgs set, only PRs in those orgs.
-func (c *Client) RequestedFromMe(orgs []string) ([]PR, error) {
-	const query = `query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ... on PullRequest {
+// With orgs set, only PRs in those orgs. It also returns how many GitHub matched in all: one search returns at
+// most searchPage of them, and the rest would never be reviewed, so the caller can say so.
+func (c *Client) RequestedFromMe(orgs []string) ([]PR, int, error) {
+	const query = `query($q: String!) { search(query: $q, type: ISSUE, first: 50) { issueCount nodes { ... on PullRequest {
 	  url number title isDraft createdAt updatedAt headRefOid additions deletions changedFiles author { login } repository { nameWithOwner }
 	  timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 20) { nodes { ... on ReviewRequestedEvent {
 	    createdAt requestedReviewer { ... on User { login } } } } } } } } }`
 	var resp struct {
 		Search struct {
-			Nodes []struct {
+			IssueCount int `json:"issueCount"`
+			Nodes      []struct {
 				URL          string                 `json:"url"`
 				Number       int                    `json:"number"`
 				Title        string                 `json:"title"`
@@ -142,7 +152,7 @@ func (c *Client) RequestedFromMe(orgs []string) ([]PR, error) {
 		} `json:"search"`
 	}
 	if err := c.gql.Do(query, map[string]interface{}{"q": requestedQuery(c.Login, orgs)}, &resp); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var out []PR
 	for _, n := range resp.Search.Nodes {
@@ -159,7 +169,15 @@ func (c *Client) RequestedFromMe(orgs []string) ([]PR, error) {
 		}
 		out = append(out, pr)
 	}
-	return out, nil
+	return out, resp.Search.IssueCount, nil
+}
+
+// byTheBot reports whether a PR comment is one this bot posted. The watermark alone does not say so: it ends
+// every comment the bot posts, so it is on the PR for anyone to copy, and a comment that merely contains it would
+// otherwise be handed to the reviewers as the bot's own word about the code. The author has to be the account the
+// bot posts as. MatchThread checks a thread the same way.
+func byTheBot(login, body, owner, watermark string) bool {
+	return watermark != "" && login == owner && strings.Contains(body, watermark)
 }
 
 // Conversation renders the PR's discussion for the reviewers: general comments, reviews, and inline threads with
@@ -209,7 +227,7 @@ func (c *Client) Conversation(repo string, number int, watermark string) (string
 
 	clean := func(login, body string) string {
 		who := "@" + login
-		if watermark != "" && strings.Contains(body, watermark) {
+		if byTheBot(login, body, c.Login, watermark) {
 			who += " [personal-review-bot]"
 			if i := strings.LastIndex(body, "<sub>"); i >= 0 {
 				body = body[:i]
