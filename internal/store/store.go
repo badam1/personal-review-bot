@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -37,32 +38,38 @@ const (
 )
 
 type Review struct {
-	ID         int64
-	Repo       string // owner/name
-	Number     int
-	URL        string
-	Title      string
-	Author     string
-	HeadSHA    string
-	Status     string
-	Stage      string
-	Tier       string
-	Models     string
-	Additions  int
-	Deletions  int
-	Files      int
-	Source     string // auto | manual
-	DryRun     bool
-	Deep       bool // you asked for a deep review: Opus and the design review whatever the PR's size
-	Summary    string
-	Decision   string
-	Error      string
-	Reasons    string // why triage picked the tier and models
-	Iteration  int    // which review of the PR this is: earlier ones that ran (dry runs and idle skips left out), plus one
-	CostUSD    float64
-	CreatedAt  time.Time
-	StartedAt  time.Time
-	FinishedAt time.Time
+	ID        int64
+	Repo      string // owner/name
+	Number    int
+	URL       string
+	Title     string
+	Author    string
+	HeadSHA   string
+	Status    string
+	Stage     string
+	Tier      string
+	Models    string
+	Additions int
+	Deletions int
+	Files     int
+	Source    string // auto | manual
+	DryRun    bool
+	Deep      bool   // you asked for a deep review: Opus and the design review whatever the PR's size
+	Summary   string // the verifier's verdict on the findings
+	About     string // what the PR changes and why, in two sentences, for the top of its page
+	// Approval is how confident the verifier is (0-100) that nothing beyond its findings stands in the way of
+	// approving, and ApprovalReason why ("" = it gave none).
+	Approval       int
+	ApprovalReason string
+	Labels         []string // the PR's labels the page shows beside its size (SHOW_LABELS), e.g. risk/high
+	Decision       string
+	Error          string
+	Reasons        string // why triage picked the tier and models
+	Iteration      int    // which review of the PR this is: earlier ones that ran (dry runs and idle skips left out), plus one
+	CostUSD        float64
+	CreatedAt      time.Time
+	StartedAt      time.Time
+	FinishedAt     time.Time
 }
 
 // Reran says whether the review is a re-review worth numbering: it ran (or will), it isn't a dry run, and it isn't
@@ -174,6 +181,10 @@ func Open(path string) (*Store, error) {
 	for _, c := range []struct{ table, column, def string }{
 		{"reviews", "reasons", "TEXT NOT NULL DEFAULT ''"},
 		{"reviews", "deep", "INTEGER NOT NULL DEFAULT 0"},
+		{"reviews", "about", "TEXT NOT NULL DEFAULT ''"},
+		{"reviews", "approval", "INTEGER NOT NULL DEFAULT 0"},
+		{"reviews", "approval_reason", "TEXT NOT NULL DEFAULT ''"},
+		{"reviews", "labels", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "context", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "wrong", "INTEGER NOT NULL DEFAULT 0"},
 		{"findings", "followup", "TEXT NOT NULL DEFAULT ''"},
@@ -245,21 +256,21 @@ func (s *Store) CSRFToken() (string, error) {
 // ── reviews ──────────────────────────────────────────────────────────────────
 
 const reviewCols = `id, repo, number, url, title, author, head_sha, status, stage, tier, models, additions, deletions,
-  files, source, dry_run, deep, summary, decision, error, reasons, cost_usd, created_at, started_at, finished_at,
+  files, source, dry_run, deep, summary, about, approval, approval_reason, labels, decision, error, reasons, cost_usd, created_at, started_at, finished_at,
   (SELECT count(*) FROM reviews p WHERE p.repo = reviews.repo AND p.number = reviews.number AND p.id < reviews.id
     AND p.tier <> '' AND p.dry_run = 0) + 1`
 
 func scanReview(row interface{ Scan(...any) error }) (*Review, error) {
 	var r Review
 	var dry, deep int
-	var created, started, finished string
+	var created, started, finished, labels string
 	err := row.Scan(&r.ID, &r.Repo, &r.Number, &r.URL, &r.Title, &r.Author, &r.HeadSHA, &r.Status, &r.Stage, &r.Tier,
-		&r.Models, &r.Additions, &r.Deletions, &r.Files, &r.Source, &dry, &deep, &r.Summary, &r.Decision, &r.Error,
+		&r.Models, &r.Additions, &r.Deletions, &r.Files, &r.Source, &dry, &deep, &r.Summary, &r.About, &r.Approval, &r.ApprovalReason, &labels, &r.Decision, &r.Error,
 		&r.Reasons, &r.CostUSD, &created, &started, &finished, &r.Iteration)
 	if err != nil {
 		return nil, err
 	}
-	r.DryRun, r.Deep = dry == 1, deep == 1
+	r.DryRun, r.Deep, r.Labels = dry == 1, deep == 1, strings.Fields(labels)
 	r.CreatedAt, r.StartedAt, r.FinishedAt = parseTime(created), parseTime(started), parseTime(finished)
 	return &r, nil
 }
@@ -417,6 +428,24 @@ func (s *Store) Failures(since time.Time) ([]Review, error) {
 
 func (s *Store) SetStage(id int64, stage string) error {
 	_, err := s.db.Exec(`UPDATE reviews SET stage = ? WHERE id = ?`, stage, id)
+	return err
+}
+
+// SetAbout records what the PR changes and why, as the summary wrote it.
+func (s *Store) SetAbout(id int64, about string) error {
+	_, err := s.db.Exec(`UPDATE reviews SET about = ? WHERE id = ?`, about, id)
+	return err
+}
+
+// SetLabels records the PR's labels the page shows.
+func (s *Store) SetLabels(id int64, labels []string) error {
+	_, err := s.db.Exec(`UPDATE reviews SET labels = ? WHERE id = ?`, strings.Join(labels, " "), id)
+	return err
+}
+
+// SetApproval records the verifier's confidence in approving, and why.
+func (s *Store) SetApproval(id int64, confidence int, reason string) error {
+	_, err := s.db.Exec(`UPDATE reviews SET approval = ?, approval_reason = ? WHERE id = ?`, confidence, reason, id)
 	return err
 }
 

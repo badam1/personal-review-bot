@@ -53,7 +53,7 @@ func TestVerifierIsNotAnchored(t *testing.T) {
 	if verifyPrompt, _ := builtinPrompts.ReadFile("prompts/verify.md"); strings.Contains(string(verifyPrompt), "without a human") {
 		t.Error("the verifier prompt should judge truth, not the posting policy")
 	}
-	for _, field := range []string{`"certainty"`, `"severity":{"enum":["high","medium","low"]}`} {
+	for _, field := range []string{`"certainty"`, `"severity":{"enum":["high","medium","low"]}`, `"approval"`} {
 		if !strings.Contains(verdictsSchema, field) {
 			t.Errorf("verdicts schema is missing %s", field)
 		}

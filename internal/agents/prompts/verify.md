@@ -39,6 +39,18 @@ For every finding, by its `id`:
 
 Also give a one-sentence `summary` of the PR's state for the reviewer.
 
+Then, whatever the findings, `approval`: whether @{{.Owner}} can approve this PR once the findings you confirm or call
+plausible are dealt with. If there are no findings, the reviewers found nothing: return an empty `verdicts` list and
+give the approval from your own check.
+- `confidence` 0–100 that nothing else in the PR should stop the approval: no real problem the reviewers missed in
+  what the diff changes. Check the riskiest changes yourself. Lower it for what nobody examined: a changed area that
+  no reviewer's account below covers, a file too large to read, behaviour you couldn't confirm from the code. 90 or
+  more means you would approve it yourself; below 70 means @{{.Owner}} should look before approving.
+- `reason`: one sentence for @{{.Owner}}: what the confidence rests on, and the biggest gap left, if any.
+
+What each reviewer says it examined:
+{{.Accounts}}
+
 Findings:
 ```json
 {{.Findings}}

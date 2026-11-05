@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -101,5 +102,22 @@ not a setting
 	}
 	if c.PollInterval.Seconds() != 120 {
 		t.Errorf("unset values keep their defaults, poll interval is %s", c.PollInterval)
+	}
+}
+
+// The page shows the labels that start with SHOW_LABELS's prefixes, sorted; by default the risk labels.
+func TestShownLabels(t *testing.T) {
+	t.Setenv("PERSONAL_REVIEW_BOT_CONFIG_DIR", t.TempDir())
+	labels := []string{"size/m", "risk/medium", "bug", "auto-risk/high"}
+	if got := Load().Shown(labels); !slices.Equal(got, []string{"auto-risk/high", "risk/medium"}) {
+		t.Errorf("default: %q", got)
+	}
+	t.Setenv("PERSONAL_REVIEW_BOT_SHOW_LABELS", " size/ , bug")
+	if got := Load().Shown(labels); !slices.Equal(got, []string{"bug", "size/m"}) {
+		t.Errorf("size/ and bug: %q", got)
+	}
+	t.Setenv("PERSONAL_REVIEW_BOT_SHOW_LABELS", "")
+	if got := Load().Shown(labels); got != nil {
+		t.Errorf("empty shows none: %q", got)
 	}
 }

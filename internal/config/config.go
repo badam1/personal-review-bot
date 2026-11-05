@@ -29,6 +29,7 @@ type Config struct {
 	Watermark    string        // footer on every comment the bot posts, followed by the finding's confidence
 	UpdateCheck  bool          // look for new releases every hour, to offer them on the page and in the TUI
 	UpdateRepo   string        // the GitHub repo releases come from
+	ShowLabels   []string      // prefixes of the PR labels shown beside its size, e.g. risk/
 	ConfigDir    string        // config.env
 	StateDir     string        // SQLite database
 	CacheDir     string        // repo clones and per-review worktrees
@@ -58,6 +59,7 @@ func Load() Config {
 		Watermark:    s.str("WATERMARK", "🤖 personal-review-bot"),
 		UpdateCheck:  s.str("UPDATE_CHECK", "1") == "1",
 		UpdateRepo:   s.str("UPDATE_REPO", "badam1/personal-review-bot"),
+		ShowLabels:   list(s.str("SHOW_LABELS", "risk/,auto-risk/")),
 		ConfigDir:    dir,
 		StateDir:     s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
 		CacheDir:     s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),
@@ -120,6 +122,29 @@ func orList(words []string) string {
 		return strings.Join(words, "")
 	}
 	return strings.Join(words[:len(words)-1], ", ") + " or " + words[len(words)-1]
+}
+
+// Shown picks the labels the page shows beside a PR's size: those starting with one of ShowLabels, sorted.
+func (c Config) Shown(labels []string) []string {
+	var out []string
+	for _, l := range labels {
+		if slices.ContainsFunc(c.ShowLabels, func(p string) bool { return strings.HasPrefix(l, p) }) {
+			out = append(out, l)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// list splits a comma-separated setting, leaving out empty parts.
+func list(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Footer is appended to every comment the bot posts, e.g. "🤖 personal-review-bot · 92%".

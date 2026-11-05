@@ -3,6 +3,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -66,6 +67,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	if err != nil {
 		return fail(fmt.Errorf("fetch PR: %w", err))
 	}
+	_ = d.Store.SetLabels(id, d.Cfg.Shown(pr.Labels))
 	files, err := d.GH.Files(r.Repo, r.Number)
 	if err != nil {
 		return fail(fmt.Errorf("fetch files: %w", err))
@@ -145,6 +147,20 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 			results <- result{a, fs, run, err}
 		}()
 	}
+	// The two sentences at the top of the page, while the reviewers work: what the PR changes and why. It is shown as
+	// soon as it's written, and a failure costs nothing but the summary.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		about, run, err := kit.Summarize(ctx, in, min(3*time.Minute, d.Cfg.AgentTimeout))
+		_ = d.Store.AddCost(id, run.Cost)
+		saveRun(d, id, agents.SummaryAgent, agents.SummaryModel, 0, run, err)
+		if err != nil {
+			d.Log("%s: summary failed: %v", tag, err)
+			return
+		}
+		_ = d.Store.SetAbout(id, about)
+	}()
 	var concerns []agents.Concern
 	var designRun agents.Run
 	var designErr error
@@ -212,12 +228,18 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 
 	var cands []agents.Candidate
 	var failed []string
+	var accounts []string // what each reviewer says it examined, for the verifier's approval confidence
+	if withDesign && designErr == nil {
+		accounts = append(accounts, "- design (the approach, not the lines): "+designRun.Checked)
+	}
 	for res := range results {
 		saveRun(d, id, res.agent, plan.ModelFor(res.agent), len(res.findings), res.run, res.err)
 		if res.err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %v", res.agent, res.err))
+			accounts = append(accounts, fmt.Sprintf("- %s: failed, so it examined nothing", res.agent))
 			continue
 		}
+		accounts = append(accounts, fmt.Sprintf("- %s: %s", res.agent, cmp.Or(res.run.Checked, "(gave no account)")))
 		for _, f := range res.findings {
 			fid, err := d.Store.AddFinding(&store.Finding{ReviewID: id, Agent: res.agent, Path: f.Path, Line: f.Line,
 				Severity: f.Severity, Title: f.Title, Comment: f.Comment, AgentConfidence: f.Confidence, Status: store.Candidate})
@@ -231,21 +253,26 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		return fail(fmt.Errorf("all reviewers failed: %s", strings.Join(failed, "; ")))
 	}
 
-	// Verifier: nothing is posted on a reviewer's word alone.
-	summary := ""
-	verdicts := map[int64]agents.Verdict{}
+	// Verifier: nothing is posted on a reviewer's word alone. It runs when nothing was found too, for its confidence
+	// in approving.
+	sort.Strings(accounts)
 	if len(cands) > 0 {
 		stage("verifying %d finding(s) (%s)", len(cands), plan.VerifierModel)
-		vs, sum, run, err := kit.Verify(ctx, plan.VerifierModel, in, cands, d.Cfg.AgentTimeout)
-		_ = d.Store.AddCost(id, run.Cost)
-		saveRun(d, id, agents.VerifierAgent, plan.VerifierModel, len(vs), run, err)
-		if err != nil {
-			d.Log("%s: verifier failed, everything goes to the confirmation page: %v", tag, err)
-		}
-		summary = sum
-		for _, v := range vs {
-			verdicts[v.ID] = v
-		}
+	} else {
+		stage("verifying: nothing found, a last check before approving (%s)", plan.VerifierModel)
+	}
+	verdicts := map[int64]agents.Verdict{}
+	ver, run, err := kit.Verify(ctx, plan.VerifierModel, in, cands, strings.Join(accounts, "\n"), d.Cfg.AgentTimeout)
+	_ = d.Store.AddCost(id, run.Cost)
+	saveRun(d, id, agents.VerifierAgent, plan.VerifierModel, len(ver.Verdicts), run, err)
+	if err != nil {
+		d.Log("%s: verifier failed, its %d finding(s) go to the confirmation page unverified: %v", tag, len(cands), err)
+	} else if ver.Approval.Reason != "" {
+		_ = d.Store.SetApproval(id, ver.Approval.Confidence, ver.Approval.Reason)
+	}
+	summary := ver.Summary
+	for _, v := range ver.Verdicts {
+		verdicts[v.ID] = v
 	}
 
 	// Decide per finding.

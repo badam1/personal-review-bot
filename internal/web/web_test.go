@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
 )
@@ -88,7 +89,7 @@ func TestStaleReview(t *testing.T) {
 	head := "bbbbbbb2"
 	// d.GH stays nil: anything that tried to post would panic.
 	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf}, token: "secret",
-		head: func(string, int) (string, error) { return head, nil }}
+		fetch: func(string, int) (gh.PR, error) { return gh.PR{HeadSHA: head}, nil }}
 
 	do := func(method, action string) *httptest.ResponseRecorder {
 		form := ""
@@ -158,7 +159,7 @@ func TestIncompleteReview(t *testing.T) {
 	_ = st.AddRun(&store.Run{ReviewID: id, Agent: "security", Model: "opus", Error: "claude (opus) timed out"})
 	// d.GH stays nil: anything that tried to post would panic.
 	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf}, token: "secret",
-		head: func(string, int) (string, error) { return "aaa", nil }}
+		fetch: func(string, int) (gh.PR, error) { return gh.PR{HeadSHA: "aaa"}, nil }}
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/r/%d", id), nil)
 	req.SetPathValue("id", fmt.Sprint(id))
@@ -279,14 +280,14 @@ func TestDesignSection(t *testing.T) {
 	fid, _ := st.AddFinding(&store.Finding{ReviewID: id, Agent: "design", Severity: "medium",
 		Title: "Second release path", Comment: "Use the shared workflow.", Confidence: 85, Status: store.Pending})
 	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf}, token: "secret",
-		head: func(string, int) (string, error) { return "aaa", nil }}
+		fetch: func(string, int) (gh.PR, error) { return gh.PR{HeadSHA: "aaa"}, nil }}
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/r/%d", id), nil)
 	req.SetPathValue("id", fmt.Sprint(id))
 	rec := httptest.NewRecorder()
 	s.review(rec, req)
 	page := rec.Body.String()
 	for _, want := range []string{`Design concerns <span class="count design">1</span>`, "Never posted without you.", fmt.Sprintf(`name="f_%d"`, fid),
-		"Compared against ADR-0009", "1 concern(s)", `value="post"`, "Approve without comments", `<b class="cert hi">85%</b> sure`} {
+		"Compared against ADR-0009", "1 concern</span>", `value="post"`, "Approve without comments", `<b class="cert hi">85%</b> sure`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page is missing %q", want)
 		}
@@ -310,7 +311,7 @@ func TestSelectAll(t *testing.T) {
 			Title: title, Comment: "Fix it.", Status: store.Pending})
 	}
 	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf}, token: "secret", hosts: []string{"localhost:12346"},
-		head: func(string, int) (string, error) { return "aaa", nil }}
+		fetch: func(string, int) (gh.PR, error) { return gh.PR{HeadSHA: "aaa"}, nil }}
 	h := s.guard(s.routes())
 	get := func(path string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()

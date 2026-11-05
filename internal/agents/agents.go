@@ -81,6 +81,12 @@ const DesignAgent = "design"
 // VerifierAgent checks every reviewer finding against the code before anything is posted.
 const VerifierAgent = "verifier"
 
+// SummaryAgent writes the two sentences at the top of a review's page: what the PR changes and why.
+const SummaryAgent = "summary"
+
+// SummaryModel is cheap and quick: the summary reads only its prompt.
+const SummaryModel = "haiku"
+
 // Fable costs 2.5× Opus per token, so unless the plan says otherwise it runs at high effort rather than the xhigh
 // default (Fable at high often matches or beats Opus at xhigh), and a run that passes its cap stops instead of going on.
 var (
@@ -105,7 +111,9 @@ const findingsSchema = `{"type":"object","required":["checked","findings"],"prop
   "path":{"type":"string"},"line":{"type":"integer","minimum":1},"severity":{"enum":["high","medium","low"]},
   "title":{"type":"string"},"comment":{"type":"string"},"confidence":{"type":"integer","minimum":0,"maximum":100}}}}}}`
 
-const verdictsSchema = `{"type":"object","required":["summary","verdicts"],"properties":{"summary":{"type":"string"},
+const verdictsSchema = `{"type":"object","required":["summary","verdicts","approval"],"properties":{"summary":{"type":"string"},
+  "approval":{"type":"object","required":["confidence","reason"],"properties":{
+  "confidence":{"type":"integer","minimum":0,"maximum":100},"reason":{"type":"string","minLength":20}}},
   "verdicts":{"type":"array","items":{"type":"object","required":["id","verdict","certainty","severity","comment","line"],
   "properties":{"id":{"type":"integer"},"verdict":{"enum":["confirmed","plausible","rejected"]},
   "certainty":{"type":"integer","minimum":0,"maximum":100},"severity":{"enum":["high","medium","low"]},
@@ -116,6 +124,8 @@ const designSchema = `{"type":"object","required":["assessment","concerns"],"pro
   "required":["title","concern","evidence","alternative","severity","confidence"],"properties":{
   "title":{"type":"string"},"concern":{"type":"string"},"evidence":{"type":"string"},"alternative":{"type":"string"},
   "severity":{"enum":["high","medium","low"]},"confidence":{"type":"integer","minimum":0,"maximum":100}}}}}}`
+
+const summarySchema = `{"type":"object","required":["about"],"properties":{"about":{"type":"string","minLength":80,"maxLength":600}}}`
 
 const followupSchema = `{"type":"object","required":["followups"],"properties":{"followups":{"type":"array","items":{
   "type":"object","required":["id","status","note"],"properties":{"id":{"type":"integer"},
@@ -154,6 +164,7 @@ func clip(s string, n int) string {
 type promptData struct {
 	Input
 	Area, Focus, Findings string
+	Accounts              string // what each reviewer says it examined, for the verifier's approval confidence
 	Context               string // context.md: the owner's notes about their organisation
 }
 
@@ -233,6 +244,25 @@ func (k *Kit) CheckEarlier(ctx context.Context, model string, in Input, earlier 
 	return out.Followups, r, nil
 }
 
+// Summarize says what the PR changes and why, for the top of its page. It has no tools: it reads only the prompt,
+// whose description and diff come from people the bot doesn't control.
+func (k *Kit) Summarize(ctx context.Context, in Input, timeout time.Duration) (string, Run, error) {
+	in.Diff, in.Body = clip(in.Diff, 60_000), clip(in.Body, 4000)
+	prompt, err := k.prompt("summary", promptData{Input: in})
+	if err != nil {
+		return "", Run{}, err
+	}
+	raw, r, err := runWith(ctx, in.Dir, SummaryModel, "", prompt, summarySchema, timeout, noTools)
+	if err != nil {
+		return "", r, err
+	}
+	var out struct{ About string }
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", r, fmt.Errorf("parse summary: %w", err)
+	}
+	return strings.TrimSpace(out.About), r, nil
+}
+
 // Text is the concern as it would be posted: the problem, the better way, then the references.
 func (c Concern) Text() string {
 	parts := []string{strings.TrimSpace(c.Concern)}
@@ -244,26 +274,44 @@ func (c Concern) Text() string {
 	return strings.Join(parts, "\n\n")
 }
 
-// Verify re-checks every candidate against the code and returns a verdict and confidence per finding.
-func (k *Kit) Verify(ctx context.Context, model string, in Input, cands []Candidate, timeout time.Duration) ([]Verdict, string, Run, error) {
+// Verification is the verifier's answer: a verdict per finding, the PR's state in a sentence, and how confident it is
+// that nothing beyond its findings stands in the way of approving.
+type Verification struct {
+	Verdicts []Verdict
+	Summary  string
+	Approval Approval
+}
+
+// Approval is how confident the verifier is that the PR can be approved once its findings are dealt with: nothing
+// the reviewers missed in what the diff changes. The reason names what it rests on and the biggest gap left.
+type Approval struct {
+	Confidence int    `json:"confidence"`
+	Reason     string `json:"reason"`
+}
+
+// Verify re-checks every candidate against the code and returns a verdict and confidence per finding, and its
+// confidence in approving. It runs with no candidates too: then the approval rests on its own check of the diff and
+// on what the reviewers' accounts say they examined.
+func (k *Kit) Verify(ctx context.Context, model string, in Input, cands []Candidate, accounts string, timeout time.Duration) (Verification, Run, error) {
 	js, _ := json.MarshalIndent(cands, "", "  ")
+	if len(cands) == 0 {
+		js = []byte("[]")
+	}
 	in.Diff, in.Body = clip(in.Diff, MaxDiff), clip(in.Body, 4000)
-	prompt, err := k.prompt("verify", promptData{Input: in, Findings: string(js)})
+	prompt, err := k.prompt("verify", promptData{Input: in, Findings: string(js), Accounts: accounts})
 	if err != nil {
-		return nil, "", Run{}, err
+		return Verification{}, Run{}, err
 	}
 	raw, r, err := run(ctx, in.Dir, model, in.Effort, prompt, verdictsSchema, timeout)
 	if err != nil {
-		return nil, "", r, err
+		return Verification{}, r, err
 	}
-	var out struct {
-		Summary  string
-		Verdicts []Verdict
-	}
+	var out Verification
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, "", r, fmt.Errorf("parse verdicts: %w", err)
+		return Verification{}, r, fmt.Errorf("parse verdicts: %w", err)
 	}
-	return out.Verdicts, out.Summary, r, nil
+	out.Summary, out.Approval.Reason = strings.TrimSpace(out.Summary), strings.TrimSpace(out.Approval.Reason)
+	return out, r, nil
 }
 
 // Usage is how full the Claude plan's rate limits are, as `claude -p` reports with every run: the 5-hour session
@@ -391,16 +439,25 @@ func parseStream(out []byte, now time.Time) (*result, *Usage) {
 	}
 }
 
+// readOnly is what reviewers and the verifier may use: the checkout, and a few commands that only read.
+var readOnly = []string{"--permission-mode", "default",
+	"--tools", "Read", "Grep", "Glob", "Bash",
+	"--allowedTools", "Read", "Grep", "Glob",
+	"Bash(gh search code *)", "Bash(gh api *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)"}
+
+// noTools is for a run that needs nothing beyond its prompt.
+var noTools = []string{"--tools", ""}
+
 // run executes one read-only reviewer or verifier run and returns its structured output.
 func run(ctx context.Context, dir, model, effort, prompt, schema string, timeout time.Duration) (json.RawMessage, Run, error) {
+	return runWith(ctx, dir, model, effort, prompt, schema, timeout, readOnly)
+}
+
+// runWith executes one run with the given tools and returns its structured output.
+func runWith(ctx context.Context, dir, model, effort, prompt, schema string, timeout time.Duration, tools []string) (json.RawMessage, Run, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	args := []string{"--model", model,
-		"--json-schema", schema,
-		"--permission-mode", "default",
-		"--tools", "Read", "Grep", "Glob", "Bash",
-		"--allowedTools", "Read", "Grep", "Glob",
-		"Bash(gh search code *)", "Bash(gh api *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)"}
+	args := append([]string{"--model", model, "--json-schema", schema}, tools...)
 	if effort == "" {
 		effort = defaultEffort[model]
 	}

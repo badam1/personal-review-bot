@@ -1,7 +1,11 @@
 package web
 
 import (
+	"cmp"
 	"fmt"
+	"html/template"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -197,6 +201,117 @@ func home(r store.Review, retried bool) string {
 	return "history"
 }
 
+// tally is what the bots found on one review, for the card under its summary: how the verifier judged the reviewers'
+// findings, and every finding it didn't reject by severity and certainty. Not an average: one 95% high among three
+// 55% lows would average to a harmless-looking 65%.
+type tally struct {
+	Line   string // e.g. "7 found → 5 confirmed · 1 plausible · 1 rejected · 1 design concern"
+	Chips  []chip
+	Agents []agentCount // who found what, for the filter; design first
+	Total  int
+}
+
+type chip struct {
+	Severity, Agent, Title string
+	Confidence             int
+}
+
+type agentCount struct {
+	Name string
+	N    int
+}
+
+func tallyFindings(fs []store.Finding) tally {
+	var t tally
+	found, design := 0, 0
+	verdicts := map[string]int{}
+	counts := map[string]int{}
+	for _, f := range fs {
+		if f.Status == store.Candidate {
+			continue // still with the verifier
+		}
+		if f.Agent == "design" {
+			design++
+		} else {
+			found++
+			verdicts[f.Verdict]++
+		}
+		counts[f.Agent]++
+		t.Total++
+		if f.Status != store.Rejected {
+			t.Chips = append(t.Chips, chip{f.Severity, f.Agent, f.Title, f.Confidence})
+		}
+	}
+	slices.SortStableFunc(t.Chips, func(a, b chip) int {
+		return cmp.Or(cmp.Compare(severityRank(b.Severity), severityRank(a.Severity)), cmp.Compare(b.Confidence, a.Confidence))
+	})
+	for name, n := range counts {
+		t.Agents = append(t.Agents, agentCount{name, n})
+	}
+	slices.SortFunc(t.Agents, func(a, b agentCount) int {
+		return cmp.Or(cmp.Compare(btoi(b.Name == "design"), btoi(a.Name == "design")), cmp.Compare(b.N, a.N), cmp.Compare(a.Name, b.Name))
+	})
+
+	var parts []string
+	for _, v := range []struct{ key, word string }{{"confirmed", "confirmed"}, {"plausible", "plausible"},
+		{"rejected", "rejected"}, {"unverified", "not verified"}} {
+		if n := verdicts[v.key]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, v.word))
+		}
+	}
+	switch {
+	case found == 0:
+		t.Line = "The reviewers found nothing"
+	case len(parts) == 0:
+		t.Line = fmt.Sprintf("%d found", found)
+	default:
+		t.Line = fmt.Sprintf("%d found → %s", found, strings.Join(parts, " · "))
+	}
+	if design > 0 {
+		t.Line += " · " + plural(design, "design concern", "design concerns")
+	}
+	return t
+}
+
+func severityRank(s string) int { return slices.Index([]string{"low", "medium", "high"}, s) }
+
+// labelKind colours a PR label by the level it ends in: risk/high, auto-risk/low.
+func labelKind(label string) string {
+	_, level, _ := strings.Cut(label, "/")
+	switch level {
+	case "high", "medium", "low":
+		return level
+	}
+	return ""
+}
+
+// runOrder lists the runs the way the page explains a review: the design review and the verifier first, then the
+// reviewers, then the follow-up check and the summary.
+func runOrder(agent string) int {
+	switch agent {
+	case "design":
+		return 0
+	case "verifier":
+		return 1
+	case "followup":
+		return 3
+	case "summary":
+		return 4
+	}
+	return 2
+}
+
+var (
+	backticks = regexp.MustCompile("`([^`\n]+)`")
+	stars     = regexp.MustCompile(`\*\*([^*\n]+)\*\*`)
+)
+
+// ticks shows the `code` and **bold** in a bot's prose as such. Everything else is escaped first.
+func ticks(s string) template.HTML {
+	s = backticks.ReplaceAllString(template.HTMLEscapeString(s), "<code>$1</code>")
+	return template.HTML(stars.ReplaceAllString(s, "<b>$1</b>"))
+}
+
 // outcome says how a review ended up, for the lists.
 func outcome(r store.Review) badge {
 	d := strings.ToLower(r.Decision)
@@ -235,8 +350,8 @@ func outcomeNote(r store.Review) string {
 }
 
 // waitingBadges says what a review waiting for you holds: findings to decide, design concerns, earlier findings still
-// open, or nothing new (approve?).
-func waitingBadges(fs []store.Finding, earlier []store.Finding) []badge {
+// open, or nothing new (approve?), with the verifier's confidence in approving.
+func waitingBadges(r store.Review, fs []store.Finding, earlier []store.Finding) []badge {
 	pending, design, open := 0, 0, 0
 	for _, f := range fs {
 		if f.Status != store.Pending {
@@ -264,7 +379,14 @@ func waitingBadges(fs []store.Finding, earlier []store.Finding) []badge {
 		out = append(out, badge{fmt.Sprintf("%d earlier still open", open), "open"})
 	}
 	if pending == 0 && design == 0 {
-		out = append(out, badge{"Nothing new: approve?", "approve"})
+		switch {
+		case r.ApprovalReason == "":
+			out = append(out, badge{"Nothing new: approve?", "approve"})
+		case r.Approval < 70:
+			out = append(out, badge{fmt.Sprintf("Nothing new, but only %d%% sure", r.Approval), "open"})
+		default:
+			out = append(out, badge{fmt.Sprintf("Nothing new: approve? %d%% sure", r.Approval), "approve"})
+		}
 	}
 	return out
 }
