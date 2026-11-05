@@ -32,7 +32,7 @@ func newSite(t *testing.T) *site {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf, Cfg: config.Config{Threshold: 80, AutoSeverity: "high"}},
+	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf, Cfg: config.Config{Threshold: 80, AutoPost: []string{"low", "medium"}}},
 		token: "secret", hosts: []string{"localhost:12346"}, origins: []string{"http://localhost:12346"},
 		head:    func(string, int) (string, error) { return "aaa", nil },
 		threads: func(string, int) ([]gh.Thread, error) { return nil, nil }, login: "octocat",

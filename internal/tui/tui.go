@@ -248,8 +248,12 @@ func header(cfg config.Config, s snapshot, interactive bool, width, height int) 
 	if !s.lastPoll.IsZero() && time.Since(s.lastPoll) < 2*cfg.PollInterval+30*time.Second {
 		daemon = okStyle.Render(fmt.Sprintf("● watching (checked %s ago)", time.Since(s.lastPoll).Round(time.Second)))
 	}
+	rule := "auto-post off"
+	if sev := cfg.AutoPostSeverities(); sev != "" {
+		rule = fmt.Sprintf("auto-post ≥ %d%% · %s", cfg.Threshold, sev)
+	}
 	lines := []string{titleStyle.Render(title) + " " + dim.Render(version.String()), daemon,
-		dim.Render(fmt.Sprintf("auto-post ≥ %d%% · %s+ · %s", cfg.Threshold, cfg.AutoSeverity, cfg.WebURL()))}
+		dim.Render(rule + " · " + cfg.WebURL())}
 	lines = append(lines, dim.Render(fmt.Sprintf("spend: today %s · 7 days %s", money(s.spentToday), money(s.spentWeek))))
 	if s.hasUsage {
 		lines = append(lines, strings.TrimSuffix(usageLine(cfg, s.usage, time.Now()), "\n"))

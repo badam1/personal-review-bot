@@ -32,10 +32,11 @@ login.
    fixed, partly fixed, is still open, no longer applies, or the author declined it, with one line of evidence.
 3. **Verifies.** A separate verifier re-checks every finding against the code, without seeing the reviewer's own
    confidence, and rates two things apart: how certain it is the problem is real, and how severe it is if merged.
-4. **Posts only what's confirmed, ≥ 80% certain and high severity** as one short COMMENT review. Every comment ends
-   with the watermark and the certainty, e.g. `🤖 personal-review-bot · 92%`.
-5. **Asks you about the rest.** Everything else, and every approval, waits under "Needs you" on a local page (and in
-   the TUI), with a desktop notification. You pick what to post (and can edit it), approve, skip, or ignore the PR.
+4. **Posts only what's confirmed, ≥ 80% certain and of low or medium severity** as one short COMMENT review. Every
+   comment ends with the watermark and the certainty, e.g. `🤖 personal-review-bot · 92%`.
+5. **Asks you about the rest.** High-severity findings (the costly kind to get wrong under your name), design
+   concerns, everything less certain, and every approval wait under "Needs you" on a local page (and in the TUI),
+   with a desktop notification. You pick what to post (and can edit it), approve, skip, or ignore the PR.
 
 ## Requirements
 
@@ -151,7 +152,7 @@ it), then falls back to its default. The background service reads the file, so t
 # ~/.config/personal-review-bot/config.env
 ORG=my-company
 WATERMARK=🤖 my-review-bot
-AUTO_SEVERITY=medium
+AUTO_POST=low
 ```
 
 Restart the service after changing it (`./install.sh`).
@@ -160,7 +161,7 @@ Restart the service after changing it (`./install.sh`).
 |---|---|
 | `ORG` | empty: review requests from any org. Set it to only review PRs in that GitHub org; reviewers also search it for related repos (otherwise the PR repo's owner) |
 | `THRESHOLD` | `80`: auto-post a confirmed finding at or above this certainty |
-| `AUTO_SEVERITY` | `high`: lowest severity posted without asking (`high`, `medium`, `low`; anything else means `high`). The stats page's "What became of findings, by score" table shows whether the rule fits |
+| `AUTO_POST` | `low,medium`: the severities posted without asking, once confirmed at `THRESHOLD`. High ones wait for you; `high` alone posts only those, `low,medium,high` everything, empty nothing. A misspelt word is left out. The stats page's "What became of findings, by score" table shows whether the rule fits. (The older `AUTO_SEVERITY`, "this severity or higher", still works when `AUTO_POST` isn't set.) |
 | `APPROVE_TEXT` | `LGTM :+1:`: said with your first approval of a PR; a re-approval (after new commits dismissed it) goes without it; empty = approve without a comment |
 | `WATERMARK` | `🤖 personal-review-bot`: ends every comment the bot posts, followed by the certainty |
 | `SAVE_AT` | `75`: % of the Claude plan's 5-hour or weekly limit from which reviews use cheaper models at medium effort |

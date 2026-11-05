@@ -71,7 +71,7 @@ func TestLogo(t *testing.T) {
 
 // The header shows the version, and the logo beside it only in the TUI on a terminal with room for it.
 func TestHeader(t *testing.T) {
-	cfg := config.Config{Threshold: 80, AutoSeverity: "high", WebAddr: "127.0.0.1:12346", UpdateRepo: "acme/prb"}
+	cfg := config.Config{Threshold: 80, AutoPost: []string{"low", "medium"}, WebAddr: "127.0.0.1:12346", UpdateRepo: "acme/prb"}
 	roomy := header(cfg, snapshot{}, true, 100, 40)
 	if !strings.Contains(roomy, "▀") || strings.Contains(roomy, "🤖") || !strings.Contains(roomy, "personal-review-bot "+version.String()) {
 		t.Errorf("roomy terminal: want the logo, no emoji, and the version:\n%s", roomy)
@@ -97,7 +97,7 @@ func TestCosts(t *testing.T) {
 			t.Errorf("cost(%v) = %q, want %q", usd, got, want)
 		}
 	}
-	cfg := config.Config{Threshold: 80, AutoSeverity: "high", WebAddr: "127.0.0.1:12346", UpdateRepo: "acme/prb"}
+	cfg := config.Config{Threshold: 80, AutoPost: []string{"low", "medium"}, WebAddr: "127.0.0.1:12346", UpdateRepo: "acme/prb"}
 	s := snapshot{spentToday: 12.5, spentWeek: 80.25,
 		active: []store.Review{{Repo: "acme/api", Number: 3, Title: "Add retries", Status: store.Running, CostUSD: 0.38}},
 		recent: []store.Review{{Repo: "acme/api", Number: 1, Title: "Fix login", Author: "dev", Status: store.Done, CostUSD: 1.4},

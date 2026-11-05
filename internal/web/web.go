@@ -176,7 +176,6 @@ type reviewPage struct {
 	Pending, Auto, Rejected, Old []findingView
 	Token, Msg                   string
 	Threshold                    int
-	AutoSeverity                 string
 	ApproveText                  string
 	Watermark                    string        // the footer the bot signs its comments with
 	Stale                        string        // the PR's head, when it has moved past the reviewed commit
@@ -236,8 +235,9 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 		cards[i] = waitingCard{rev, waitingBadges(fs, earlier)}
 	}
 	s.render(w, "index", map[string]any{"Title": title, "Waiting": cards, "Active": active, "Recent": recent,
-		"Failed": failed, "Token": s.token, "Threshold": s.d.Cfg.Threshold, "AutoSeverity": s.d.Cfg.AutoSeverity,
-		"Msg": r.URL.Query().Get("msg"), "SpentToday": today.CostUSD, "SpentWeek": week.CostUSD})
+		"Failed": failed, "Token": s.token, "Threshold": s.d.Cfg.Threshold, "AutoPost": s.d.Cfg.AutoPostSeverities(),
+		"Held": s.d.Cfg.HeldSeverities(), "Msg": r.URL.Query().Get("msg"), "SpentToday": today.CostUSD,
+		"SpentWeek": week.CostUSD})
 }
 
 // waitingCard is a review waiting for you on the main page, with what it holds.
@@ -334,7 +334,7 @@ type statsPage struct {
 	Decisions                  []store.DecisionRow
 	Tiers, Models, Repos       []store.CostRow
 	Threshold, SaveAt, MinAt   int
-	AutoSeverity               string
+	AutoPost                   string // e.g. "low or medium"
 	FiveHour, WeekUsage        float64
 	FiveHourResets, WeekResets time.Time
 	HasUsage                   bool
@@ -343,7 +343,8 @@ type statsPage struct {
 
 func (s *server) stats(w http.ResponseWriter, r *http.Request) {
 	st, now := s.d.Store, time.Now()
-	p := statsPage{Threshold: s.d.Cfg.Threshold, SaveAt: s.d.Cfg.SaveAt, MinAt: s.d.Cfg.MinAt, AutoSeverity: s.d.Cfg.AutoSeverity}
+	p := statsPage{Threshold: s.d.Cfg.Threshold, SaveAt: s.d.Cfg.SaveAt, MinAt: s.d.Cfg.MinAt,
+		AutoPost: s.d.Cfg.AutoPostSeverities()}
 	var errs [8]error
 	p.Week, errs[0] = st.Totals(now.AddDate(0, 0, -7))
 	p.All, errs[1] = st.Totals(time.Time{})
@@ -464,7 +465,7 @@ func (s *server) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := reviewPage{Title: rev.Title + " · personal-review-bot", R: rev, Token: s.token, Msg: r.URL.Query().Get("msg"),
-		Threshold: s.d.Cfg.Threshold, AutoSeverity: s.d.Cfg.AutoSeverity, ApproveText: s.d.Cfg.ApproveText,
+		Threshold: s.d.Cfg.Threshold, ApproveText: s.d.Cfg.ApproveText,
 		Watermark: s.d.Cfg.Watermark}
 	if rev.Status == store.Queued || rev.Status == store.Running {
 		p.Refresh = 15
