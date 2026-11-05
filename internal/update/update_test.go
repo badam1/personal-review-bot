@@ -257,3 +257,18 @@ func TestStarted(t *testing.T) {
 		}
 	}
 }
+
+// The version menu shows the first bullets of a release's notes, as plain text.
+func TestNotes(t *testing.T) {
+	body := "The first stable release.\n\n### What's new\n\n- **Deep review on demand**: the [Deep review](https://x) button runs `--deep`.\n" +
+		"- A footer with help.\n- A third one.\n\n### Upgrade\n\n- not this\n"
+	got := notes(body, 2)
+	want := []string{"Deep review on demand: the Deep review button runs --deep.", "A footer with help."}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("notes = %q", got)
+	}
+	long := notes("- "+strings.Repeat("word ", 40), 1)
+	if len(long) != 1 || !strings.HasSuffix(long[0], "…") || len([]rune(long[0])) > 120 {
+		t.Errorf("a long bullet is cut at a word: %q", long)
+	}
+}

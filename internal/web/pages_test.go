@@ -40,6 +40,8 @@ func newSite(t *testing.T) *site {
 			t.Fatal("nothing may be sent to GitHub unless the test says so")
 			return "", nil
 		}}
+	header = s.headerView
+	t.Cleanup(func() { header = nil })
 	return &site{t: t, st: st, h: s.guard(s.routes()), srv: s}
 }
 
@@ -86,8 +88,10 @@ func TestIndexLive(t *testing.T) {
 	s.review(2, store.AwaitingYou, "no issues: approve?")
 	s.review(3, store.Running, "")
 	_, page := s.get("/")
-	want(t, page, `<h1 class="brand"><img src="/icon.svg" alt="">personal-review-bot <span class="ver">`, "<title>(2) personal-review-bot</title>", `<meta http-equiv="refresh" content="60; url=?">`, "Running now",
-		`href="/pr/acme/infra/3"`, ">infra#3<", `href="/history"`, "All reviews →")
+	want(t, page, `<a class="brand" href="/"><svg`, "</svg>personal-review-bot</a>", "<title>(2) personal-review-bot</title>",
+		`<meta http-equiv="refresh" content="60; url=?">`, `<h2 id="running-h" class="h2">Running</h2>`,
+		`data-running-pill data-status="running"`, `<span class="count-n">1</span> running`,
+		`href="/pr/acme/infra/3"`, ">infra#3<", `<a href="/history">All reviews</a>`, `<span class="count need">2</span>`)
 	if strings.Contains(page, ">acme/infra#") {
 		t.Error("lists should show the repo without its owner")
 	}
@@ -103,7 +107,7 @@ func TestReviewCode(t *testing.T) {
 	_, page := s.get(fmt.Sprintf("/r/%d", id))
 	want(t, page, `href="https://github.com/acme/infra/blob/aaa/dir/a%20b.go#L11"`,
 		`<span class="add tgt"><i>11</i><b>+</b>	m[k] = v</span>`, `<span class=""><i>10</i>`,
-		"Why medium: risky paths: prod/iam.tf · 120 lines in 2 files", `href="/pr/acme/infra/4"`)
+		`<dt>Why</dt><dd>risky paths: prod/iam.tf · 120 lines in 2 files</dd>`, `href="/pr/acme/infra/4"`)
 
 	running := s.review(5, store.Running, "")
 	_, page = s.get(fmt.Sprintf("/r/%d", running))
@@ -191,8 +195,8 @@ func TestTimeline(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status %d", code)
 	}
-	want(t, page, "3 review(s)", "Wildcard action", "✅ you posted · marked wrong", "security · iam.tf:3", "🙋 needs you",
-		"⏸ never decided")
+	want(t, page, "3 review(s)", "Wildcard action", "you posted · marked wrong", `security · <span class="where">iam.tf:3</span>`,
+		"<b>Needs you</b>", "never decided")
 	if code, _ := s.get("/pr/acme/infra/404"); code != http.StatusNotFound {
 		t.Errorf("unknown PR: %d", code)
 	}
@@ -280,15 +284,15 @@ func TestIterationLabel(t *testing.T) {
 	_ = s.st.Finish(again, store.AwaitingYou, "1 need you", "", "")
 
 	_, page := s.get(fmt.Sprintf("/r/%d", again))
-	want(t, page, `<span class="pill">2nd iteration · new commits</span>`)
+	want(t, page, `<span>2nd iteration · new commits</span>`)
 	_, page = s.get(fmt.Sprintf("/r/%d", first))
 	if strings.Contains(page, "iteration") {
 		t.Error("a first review carries no iteration label")
 	}
 	_, page = s.get("/")
-	want(t, page, "· 2nd iteration · new commits ·", `<div class="meta">2nd iteration · new commits</div>`)
+	want(t, page, "@dev · 2nd iteration · new commits</span>", `<span>2nd iteration · new commits</span>`)
 	_, page = s.get("/pr/acme/infra/12")
-	want(t, page, "· 1st iteration ·", "· 2nd iteration ·")
+	want(t, page, "<span>1st iteration</span>", "<span>2nd iteration</span>")
 }
 
 // A re-review lists what became of the earlier findings, and approving with a high one still open asks once more.
@@ -312,8 +316,9 @@ func TestEarlierFindings(t *testing.T) {
 	_ = s.st.Finish(again, store.AwaitingYou, "no issues: approve?, 1 earlier still open", "", "")
 
 	_, page := s.get(fmt.Sprintf("/r/%d", again))
-	want(t, page, "Earlier findings · 1 fixed · 1 still open · 1 not checked yet", "✅ fixed", "❌ still open",
-		"⏳ not checked yet", "Fixed in abc123: the map is made in New.", "1 high-severity finding(s) posted earlier are still open")
+	want(t, page, `<span class="count ok">1 fixed</span><span class="count open">1 still open</span><span class="count skip">1 not checked yet</span>`,
+		"fixed · Fixed in abc123: the map is made in New.", "still open · Still ignored at a.go:42.", `<span class="sub">not checked yet</span>`,
+		"1 high-severity finding(s) posted earlier are still open")
 
 	back := fmt.Sprintf("/r/%d", again)
 	rec := s.post(back, url.Values{"action": {"approve"}})
@@ -330,7 +335,7 @@ func TestEarlierFindings(t *testing.T) {
 		t.Errorf("the second approve should go through, status %s", r.Status)
 	}
 	_, page = s.get("/pr/acme/infra/20")
-	want(t, page, "✅ you posted · ✅ fixed", "✅ you posted · ❌ still open")
+	want(t, page, "you posted · fixed", "you posted · still open")
 }
 
 // Failed reviews show on the main page with a retry; a retry queues the PR again the way the loop first meant to,
@@ -413,8 +418,8 @@ func TestUpdateNotice(t *testing.T) {
 	update.Save(s.st, update.Check{Checked: time.Now(), Latest: &rel})
 
 	_, page := s.get("/")
-	want(t, page, "<b>personal-review-bot v0.1.0-beta.3</b> is available (you run v0.1.0-beta.2)",
-		`href="https://github.com/o/r/releases/tag/v0.1.0-beta.3"`)
+	want(t, page, `<span class="dot new"></span>v0.1.0-beta.3 available`, `<div class="ttl new">v0.1.0-beta.3 is available</div>`,
+		"You run v0.1.0-beta.2</div>", `href="https://github.com/o/r/releases/tag/v0.1.0-beta.3"`)
 	if strings.Contains(page, `action="/update"`) {
 		t.Error("the page alone can't install, so it offers no button")
 	}
@@ -432,8 +437,8 @@ func TestUpdateNotice(t *testing.T) {
 
 	update.SetState(s.st, "v0.1.0-beta.3 installed: restarting once 1 running review finishes")
 	_, page = s.get("/")
-	want(t, page, `id="update" data-version="v0.1.0-beta.2" data-busy`, "<b>Updating:</b> <span class=\"update-state\">v0.1.0-beta.3 installed: restarting",
-		`<script src="/update.js" defer>`)
+	want(t, page, `id="vmenu" data-version="v0.1.0-beta.2" data-busy`, `<b class="verb">Updating to v0.1.0-beta.3…</b>`,
+		`<li class="now">`, `<span class="label">Restarting once 1 running review finishes</span>`, `<script src="/update.js" defer>`)
 	if strings.Contains(page, `action="/update"`) {
 		t.Error("no second update while one is under way")
 	}
@@ -457,14 +462,13 @@ func TestPageFooter(t *testing.T) {
 	id := s.review(1, store.Done, "you approved")
 	for _, path := range []string{"/", "/history", "/stats", fmt.Sprintf("/r/%d", id), "/pr/acme/infra/1"} {
 		_, page := s.get(path)
-		want(t, page, `<footer class="site">`,
+		want(t, page, `<footer class="foot">`,
 			`<a href="https://github.com/acme/prb/releases/tag/v0.1.0-beta.4" target="_blank" rel="noopener" title="Release notes">v0.1.0-beta.4</a> · darwin/arm64`,
 			`href="https://github.com/acme/prb/issues/new?platform=darwin%2Farm64&amp;template=bug_report.yml&amp;version=v0.1.0-beta.4"`,
-			`href="https://github.com/acme/prb/issues/new?template=feature_request.yml"`, `href="https://github.com/acme/prb/issues"`,
-			`href="https://github.com/acme/prb#settings"`, "config ~/.config/personal-review-bot · data ~/.local/state/personal-review-bot · log ~/Library/Logs/personal-review-bot.log")
+			`href="https://github.com/acme/prb/issues/new?template=feature_request.yml"`, `href="https://github.com/acme/prb#readme"`,
+			`href="https://github.com/acme/prb#settings"`, `href="https://github.com/acme/prb" target="_blank" rel="noopener">Source</a>`,
+			`title="config ~/.config/personal-review-bot · data ~/.local/state/personal-review-bot · log ~/Library/Logs/personal-review-bot.log"`)
 	}
-	_, page := s.get("/")
-	want(t, page, `personal-review-bot <span class="ver">v0.1.0-beta.4</span></h1>`)
 
 	about.Version = "v0.1.0-beta.4-2-gabc1234"
 	if got := about.ReleaseURL(); got != "https://github.com/acme/prb/releases" {
@@ -489,7 +493,7 @@ func TestCheckForUpdates(t *testing.T) {
 	fake := &fakeUpdates{check: "v0.1.0-beta.5 is available."}
 	s.srv.updates = fake
 	_, page := s.get("/")
-	want(t, page, `action="/update/check"`, `class="linkbtn">Check for updates</button>`)
+	want(t, page, `action="/update/check"`, `<button class="btn quiet wide">Check for updates</button>`)
 	rec := s.post("/update/check", url.Values{})
 	if loc := rec.Header().Get("Location"); fake.checks != 1 || loc != "/?msg=v0.1.0-beta.5+is+available." {
 		t.Errorf("POST /update/check: %d checks, redirect %q", fake.checks, loc)
@@ -614,7 +618,7 @@ func TestDeepReview(t *testing.T) {
 		t.Errorf("redirect = %q", loc)
 	}
 	_, page = s.get(fmt.Sprintf("/r/%d", latest.ID))
-	want(t, page, "🔬 deep review")
+	want(t, page, `<span class="tag deep">deep review</span>`)
 
 	done := s.review(41, store.Done, "you approved")
 	_, page = s.get(fmt.Sprintf("/r/%d", done))
@@ -653,8 +657,9 @@ func TestUpdateProgress(t *testing.T) {
 	}
 	s.srv.version = "v0.1.1"
 	_, page := s.get("/")
-	want(t, page, "✓ <b>Updated to v0.1.1</b> (from v0.1.0)", `href="https://github.com/badam1/personal-review-bot/releases/tag/v0.1.1"`)
-	if strings.Contains(page, "data-busy") {
+	want(t, page, "<span>Updated to v0.1.1</span>", "from v0.1.0 ·", "What's new in v0.1.1",
+		`href="https://github.com/badam1/personal-review-bot/releases/tag/v0.1.1"`)
+	if strings.Contains(page, "data-busy>") {
 		t.Error("the update is over")
 	}
 	_, js = s.get("/update.json")

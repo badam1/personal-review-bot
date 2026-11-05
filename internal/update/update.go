@@ -36,6 +36,7 @@ type Release struct {
 	Archive   gh.Asset  `json:"archive"` // the binary for this OS and CPU
 	Checksums gh.Asset  `json:"checksums"`
 	Published time.Time `json:"published"`
+	Notes     []string  `json:"notes,omitempty"` // the first lines of its notes, for the version menu
 }
 
 // Source is the GitHub API, as far as updates need it.
@@ -76,10 +77,46 @@ func Newest(releases []gh.Release, current, goos, goarch string) (Release, bool)
 		if rel.Archive.URL == "" || rel.Checksums.URL == "" {
 			continue
 		}
-		rel.Version, rel.URL, rel.Published = r.Tag, r.URL, r.Published
+		rel.Version, rel.URL, rel.Published, rel.Notes = r.Tag, r.URL, r.Published, notes(r.Body, 2)
 		best, bestV, found = rel, v, true
 	}
 	return best, found
+}
+
+var (
+	mdLink   = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
+	mdMarkup = regexp.MustCompile("\\*\\*|__|`")
+)
+
+// notes returns the first n bullets of release notes, as plain text: what's new, at a glance.
+func notes(body string, n int) []string {
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "### ") {
+			if len(out) > 0 { // only the first section's bullets
+				break
+			}
+			continue
+		}
+		text, ok := strings.CutPrefix(line, "- ")
+		if !ok {
+			continue
+		}
+		text = mdMarkup.ReplaceAllString(mdLink.ReplaceAllString(text, "$1"), "")
+		if r := []rune(text); len(r) > 120 {
+			cut := strings.LastIndex(string(r[:119]), " ")
+			if cut < 60 {
+				cut = len(string(r[:119]))
+			}
+			text = string(r[:119])[:cut] + "…"
+		}
+		out = append(out, text)
+		if len(out) == n {
+			break
+		}
+	}
+	return out
 }
 
 // Verifier checks that an archive was built by repo's release workflow.

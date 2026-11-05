@@ -12,13 +12,15 @@ import (
 	"github.com/badam1/personal-review-bot/internal/store"
 )
 
-// headData is what the shared page head needs: the tab title, and a refresh for pages that change on their own.
+// headData is what the shared page head needs: the tab title, a refresh for pages that change on their own, and which
+// of the bar's pages this one belongs to.
 type headData struct {
 	Title   string
-	Refresh int // seconds; 0 = never
+	Refresh int    // seconds; 0 = never
+	Nav     string // reviews | history | stats
 }
 
-func page(title string, refresh int) headData { return headData{title, refresh} }
+func page(title string, refresh int, nav string) headData { return headData{title, refresh, nav} }
 
 // repoName drops the owner: the bot reviews one org, and the full name wrapped every row.
 func repoName(repo string) string {
@@ -102,21 +104,21 @@ func (s *server) active(w http.ResponseWriter, r *http.Request) {
 }
 
 var fates = map[string]string{
-	store.Candidate:  "⏳ verifying",
-	store.AutoPosted: "🤖 bot posted",
-	store.WouldPost:  "🧪 would post",
-	store.Pending:    "🙋 waiting for you",
-	store.Posted:     "✅ you posted",
-	store.Discarded:  "🗑 you dropped",
-	store.Rejected:   "✗ verifier rejected",
+	store.Candidate:  "verifying",
+	store.AutoPosted: "bot posted",
+	store.WouldPost:  "would post",
+	store.Pending:    "waiting for you",
+	store.Posted:     "you posted",
+	store.Discarded:  "you dropped",
+	store.Rejected:   "verifier rejected",
 }
 
 var followups = map[string]string{
-	store.FollowFixed:    "✅ fixed",
-	store.FollowPartly:   "◐ partly fixed",
-	store.FollowOpen:     "❌ still open",
-	store.FollowMoot:     "➖ no longer applies",
-	store.FollowDeclined: "💬 author declined",
+	store.FollowFixed:    "fixed",
+	store.FollowPartly:   "partly fixed",
+	store.FollowOpen:     "still open",
+	store.FollowMoot:     "no longer applies",
+	store.FollowDeclined: "author declined",
 }
 
 // followup says what a later review found about a posted finding.
@@ -124,7 +126,7 @@ func followup(f store.Finding) string {
 	if label := followups[f.Followup]; label != "" {
 		return label
 	}
-	return "⏳ not checked yet"
+	return "not checked yet"
 }
 
 // fate says what became of a finding, and of its follow-up once one was done.
