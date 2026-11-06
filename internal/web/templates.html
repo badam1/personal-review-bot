@@ -421,6 +421,7 @@
     <a href="/"{{if eq .Nav "reviews"}} aria-current="page"{{end}}>Reviews</a>
     <a href="/history"{{if eq .Nav "history"}} aria-current="page"{{end}}>History</a>
     <a href="/stats"{{if eq .Nav "stats"}} aria-current="page"{{end}}>Stats</a>
+    <a href="/autonomy">Autonomy</a>
   </nav>
   <div class="grow"></div>
   <div class="status">{{with header}}
@@ -1199,3 +1200,91 @@
     </div>
   </form>
 </div>{{end}}
+
+{{define "autonomy"}}<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autonomy · personal-review-bot</title>
+<style>
+  :root{color-scheme:dark;
+    --canvas:#0d1117;--card:#161b22;--inset:#010409;--fg:#e6edf3;--muted:#7d8590;--subtle:#6e7681;
+    --border:#30363d;--border-muted:#21262d;--btn:#21262d;--btn-hover:#30363d;--accent:#2f81f7;--green:#3fb950;--red:#f85149;
+    --g-bg:rgba(46,160,67,.15);--g-bd:rgba(63,185,80,.3);--n-bg:rgba(110,118,129,.1);--r-bg:rgba(248,81,73,.1);--r-bd:rgba(248,81,73,.3);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;}
+  :root[data-theme="light"]{color-scheme:light;
+    --canvas:#f6f8fa;--card:#fff;--inset:#f6f8fa;--fg:#1f2328;--muted:#656d76;--subtle:#818b98;
+    --border:#d0d7de;--border-muted:#d8dee4;--btn:#f6f8fa;--btn-hover:#eef1f4;--accent:#0969da;--green:#1a7f37;--red:#cf222e;
+    --g-bg:#dafbe1;--g-bd:rgba(31,136,61,.25);--n-bg:#f6f8fa;--r-bg:#ffebe9;--r-bd:rgba(207,34,46,.25);}
+  *{box-sizing:border-box} html,body{margin:0;min-height:100%}
+  body{background:var(--canvas);color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;display:flex;align-items:flex-start;justify-content:center;font-size:14px;line-height:1.5}
+  .page{width:100%;max-width:680px;padding:40px 24px 80px}
+  .top{display:flex;align-items:center;justify-content:space-between;margin:0 0 20px}
+  .crumb{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px}
+  .crumb svg{fill:var(--muted)} .crumb a{color:var(--fg);font-weight:600;text-decoration:none} .crumb a:hover{text-decoration:underline} .crumb .dot{color:var(--border)}
+  .toggle{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);border-radius:6px;background:var(--btn);color:var(--muted);cursor:pointer}
+  .toggle:hover{background:var(--btn-hover);color:var(--fg)} .toggle svg{width:16px;height:16px;fill:currentColor}
+  .toggle .moon{display:none} :root[data-theme="light"] .toggle .moon{display:block} :root[data-theme="light"] .toggle .sun{display:none}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:40px 36px 36px;text-align:center}
+  .eyebrow{font-size:12px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--subtle);margin:0 0 20px}
+  .hero{font-weight:650;font-size:clamp(72px,12vw,128px);line-height:1;letter-spacing:-.04em;color:var(--green);margin:0;font-variant-numeric:tabular-nums}
+  .hero .unit{font-size:.28em;font-weight:600;color:var(--muted);margin-left:.08em;letter-spacing:0}
+  .caption{font-size:18px;color:var(--fg);margin:16px 0 0;font-weight:500}
+  .lane{display:flex;gap:6px;justify-content:center;margin:28px auto 0;max-width:360px}
+  .pill{height:8px;flex:1;border-radius:6px;background:var(--border);opacity:0;transform:translateY(5px);transition:opacity .45s ease,transform .45s ease}
+  .pill.in{opacity:1;transform:none} .pill.carried{background:var(--green)}
+  .carryline{font-size:14px;color:var(--muted);margin:14px 0 0} .carryline b{color:var(--fg);font-weight:600}
+  .rule{height:1px;background:var(--border-muted);margin:36px 0}
+  .road .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+  .road .head .l{font-size:13px;font-weight:600;color:var(--fg)} .road .head .r{font-size:13px;color:var(--muted)}
+  .road .head .r b{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  .road .line{position:relative;height:8px;background:var(--inset);border:1px solid var(--border);border-radius:6px}
+  .road .done{position:absolute;left:0;top:-1px;height:8px;width:0;border-radius:6px 0 0 6px;background:var(--accent);transition:width 1s cubic-bezier(.22,.61,.36,1)}
+  .road .tgt{position:absolute;top:50%;width:2px;height:16px;background:var(--muted);transform:translate(-50%,-50%);border-radius:2px}
+  .road .ends{display:flex;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--subtle)} .road .ends .now{color:var(--muted);font-weight:500}
+  .stats{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .stat{flex:1;min-width:150px;border:1px solid var(--border);border-radius:8px;padding:16px 14px;background:var(--card)}
+  .stat .n{font-size:26px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--fg)}
+  .stat .n.green{color:var(--green)} .stat .n.red{color:var(--red)} .stat .k{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .labels{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:22px}
+  .label{font-size:12px;font-weight:500;padding:1px 10px;border-radius:2em;border:1px solid transparent}
+  .label.g{color:var(--green);background:var(--g-bg);border-color:var(--g-bd)} .label.n{color:var(--muted);background:var(--n-bg);border-color:var(--border)} .label.r{color:var(--red);background:var(--r-bg);border-color:var(--r-bd)}
+  .foot{color:var(--subtle);font-size:12px;line-height:1.6;margin:22px auto 0;max-width:52ch;text-align:center}
+  @media (prefers-reduced-motion:reduce){.pill,.road .done{transition:none}}
+  @media(max-width:520px){.stats{flex-direction:column}.stat{min-width:0}}
+</style></head>
+<body>
+  <main class="page" id="autonomy" data-autonomy="{{.DataJSON}}">
+    <div class="top">
+      <div class="crumb">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0Zm9.78-2.22-3.78 3.78-1.28-1.28a.75.75 0 0 0-1.06 1.06l1.81 1.81a.75.75 0 0 0 1.06 0l4.31-4.31a.75.75 0 1 0-1.06-1.06Z"></path></svg>
+        <a href="/">personal-review-bot</a><span class="dot">/</span><span>autonomy</span>
+      </div>
+      <button class="toggle" id="toggle" aria-label="Toggle theme" title="Toggle light / dark">
+        <svg class="sun" viewBox="0 0 16 16"><path d="M8 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-1.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Zm5.657-8.157a.75.75 0 0 1 0 1.061l-1.061 1.06a.749.749 0 1 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0Zm-9.193 9.193a.75.75 0 0 1 0 1.06l-1.06 1.061a.75.75 0 1 1-1.061-1.06l1.06-1.061a.75.75 0 0 1 1.061 0ZM8 0a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V.75A.75.75 0 0 1 8 0ZM3 8a.75.75 0 0 1-.75.75H.75a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 3 8Zm13 0a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 16 8ZM8 13a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 8 13ZM2.343 2.343a.75.75 0 0 1 1.061 0l1.06 1.061a.751.751 0 0 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06Zm9.193 9.193a.75.75 0 0 1 1.06 0l1.061 1.06a.75.75 0 0 1-1.06 1.061l-1.061-1.06a.75.75 0 0 1 0-1.061Z"></path></svg>
+        <svg class="moon" viewBox="0 0 16 16"><path d="M9.598 1.591a.749.749 0 0 1 .785-.175 7.001 7.001 0 1 1-8.967 8.967.75.75 0 0 1 .961-.96 5.5 5.5 0 0 0 7.046-7.046.75.75 0 0 1 .175-.786Zm1.616 1.945a7 7 0 0 1-7.678 7.678 5.499 5.499 0 1 0 7.678-7.678Z"></path></svg>
+      </button>
+    </div>
+    <div class="card">
+      <p class="eyebrow">This week</p>
+      <div class="hero"><span id="hrs">0.0</span><span class="unit">hrs</span></div>
+      <p class="caption">of review it handled for you</p>
+      <div class="lane" id="lane"></div>
+      <p class="carryline"><b id="carried">—</b> of <b id="total">—</b> pull requests carried to one click · <b id="needed">—</b> needed you</p>
+      <div class="rule"></div>
+      <div class="road">
+        <div class="head"><span class="l">Trust to run on its own</span><span class="r"><b id="floor">—</b> toward target <span id="target">—</span></span></div>
+        <div class="line"><div class="done" id="done"></div><div class="tgt" id="tgt"></div></div>
+        <div class="ends"><span class="now">Supervised</span><span>Hands-off</span></div>
+      </div>
+      <div class="rule"></div>
+      <div class="stats">
+        <div class="stat"><div class="n green" id="verb">0%</div><div class="k">posted in its words</div></div>
+        <div class="stat"><div class="n" id="sent">0</div><div class="k">comments sent as you</div></div>
+        <div class="stat"><div class="n red" id="push">0</div><div class="k">auto-posts pushed back on</div></div>
+      </div>
+      <div class="labels" id="labels"></div>
+    </div>
+    <p class="foot">Hours are an estimate — reviews carried × about 45 minutes each. The trust figure is a 95%-confidence lower bound on the bot's clean auto-posts; it rises as posts hold, and only then does more go out without you.</p>
+  </main>
+  <script src="/autonomy.js"></script>
+</body></html>{{end}}

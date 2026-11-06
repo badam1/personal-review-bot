@@ -874,3 +874,22 @@ func TestStatsAutonomy(t *testing.T) {
 		}
 	}
 }
+
+// The dedicated Autonomy page renders and carries its data for autonomy.js to read.
+func TestAutonomyPage(t *testing.T) {
+	s := newSite(t)
+	id := s.review(9, store.Done, "bot posted 1, you posted 1")
+	fid, _ := s.st.AddFinding(&store.Finding{ReviewID: id, Agent: "logic", Severity: "low", Status: store.Candidate, Path: "a.go", Line: 1, Comment: "x"})
+	_ = s.st.UpdateFinding(&store.Finding{ID: fid, Status: store.Pending, Path: "a.go", Line: 1, Comment: "x"})
+	_ = s.st.UpdateFinding(&store.Finding{ID: fid, Status: store.AutoPosted, Path: "a.go", Line: 1, Comment: "x", PostedURL: "u"})
+	_ = s.st.SetDownstream(fid, "endorsed", "2026-01-01T00:00:00Z")
+	code, page := s.get("/autonomy")
+	if code != 200 {
+		t.Fatalf("GET /autonomy = %d", code)
+	}
+	for _, want := range []string{"of review it handled for you", "data-autonomy=", `src="/autonomy.js"`, "Trust to run on its own"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("autonomy page missing %q", want)
+		}
+	}
+}

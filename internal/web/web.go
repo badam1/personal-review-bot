@@ -31,7 +31,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/version"
 )
 
-//go:embed templates.html select-all.js filter.js running.js update.js bar.js settings.js icon.svg favicon.png
+//go:embed templates.html select-all.js filter.js running.js update.js bar.js settings.js autonomy.js icon.svg favicon.png
 var files embed.FS
 
 var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
@@ -172,6 +172,7 @@ func (s *server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /stats", s.stats)
+	mux.HandleFunc("GET /autonomy", s.autonomy)
 	mux.HandleFunc("GET /settings", s.settings)
 	mux.HandleFunc("POST /settings", s.saveSettings)
 	mux.HandleFunc("POST /settings/reviewer", s.saveReviewer)
@@ -191,7 +192,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /r/{id}", s.act)
 	mux.HandleFunc("GET /active.json", s.active)
 	mux.HandleFunc("GET /update.json", s.updateStatus)
-	for _, name := range []string{"select-all.js", "filter.js", "running.js", "update.js", "bar.js", "settings.js", "icon.svg", "favicon.png"} {
+	for _, name := range []string{"select-all.js", "filter.js", "running.js", "update.js", "bar.js", "settings.js", "autonomy.js", "icon.svg", "favicon.png"} {
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, files, name) })
 	}
 	return mux
@@ -400,6 +401,49 @@ type statsPage struct {
 	PostedKnown, VerbatimPct   int
 	CleanAuto, AutoTotal       int
 	FloorPct, Need90           int
+}
+
+func (s *server) autonomy(w http.ResponseWriter, r *http.Request) {
+	st, now := s.d.Store, time.Now()
+	week, _ := st.Totals(now.AddDate(0, 0, -7))
+	awaiting, _ := st.AwaitingYou()
+	a, _ := st.Autonomy()
+	carried := week.Reviews - len(awaiting)
+	if carried < 0 {
+		carried = 0
+	}
+	known := a.Verbatim + a.Edited
+	verbatimPct := 0
+	if known > 0 {
+		verbatimPct = int(math.Round(float64(a.Verbatim) / float64(known) * 100))
+	}
+	autoTotal := a.AutoClean + a.AutoHard
+	floor := 0
+	if autoTotal > 0 {
+		lo, _, _ := metrics.Wilson(a.AutoClean, autoTotal)
+		floor = int(math.Round(lo * 100))
+	}
+	type lab struct {
+		K string `json:"k"`
+		C string `json:"c"`
+	}
+	var mix []lab
+	add := func(key, cls, word string) {
+		if n := a.Downstream[key]; n > 0 {
+			mix = append(mix, lab{K: fmt.Sprintf("%d %s", n, word), C: cls})
+		}
+	}
+	add("endorsed", "g", "endorsed")
+	add("quiet", "n", "quiet")
+	add("disputed", "r", "disputed")
+	add("removed", "r", "removed")
+	b, _ := json.Marshal(map[string]any{
+		"reviews": week.Reviews, "carried": carried, "needed": len(awaiting),
+		"hours":    math.Round(float64(carried)*0.75*10) / 10,
+		"verbatim": verbatimPct, "sentAsYou": known, "disputed": a.Downstream["disputed"],
+		"autoTotal": autoTotal, "floor": floor, "target": 90, "mix": mix,
+	})
+	s.render(w, "autonomy", map[string]any{"DataJSON": string(b)})
 }
 
 func (s *server) stats(w http.ResponseWriter, r *http.Request) {
