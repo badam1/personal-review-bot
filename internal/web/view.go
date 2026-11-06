@@ -73,7 +73,7 @@ func (s *server) headerView() *headerView {
 		}
 	}
 	h.LastPoll, _ = time.Parse(time.RFC3339, st.Meta("last_poll"))
-	interval := s.d.Cfg.PollInterval
+	interval := s.cfg().PollInterval
 	if interval == 0 {
 		interval = 2 * time.Minute
 	}

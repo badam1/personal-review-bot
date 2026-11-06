@@ -18,9 +18,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/agents"
+	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
@@ -28,7 +30,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/version"
 )
 
-//go:embed templates.html select-all.js filter.js running.js update.js bar.js icon.svg favicon.png
+//go:embed templates.html select-all.js filter.js running.js update.js bar.js settings.js icon.svg favicon.png
 var files embed.FS
 
 var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
@@ -68,20 +70,53 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"labelKind":    labelKind,
 	"clip":         func(s string) string { return clipText(s, 90) },
 	"plural":       plural,
+	"initial":      initial,
+	"commas":       func(s string) string { return strings.ReplaceAll(s, ",", ", ") },
+	"rangeMin":     func(v string) int { n, _ := strconv.Atoi(v); return min(50, n/5*5) },
+	"num": func(s setting, lo, hi int, unit string) numberField {
+		return numberField{S: s, Min: lo, Max: hi, Unit: unit}
+	},
+	"seg": func(s setting, c []choice) segField { return segField{S: s, C: c} },
 }).ParseFS(files, "templates.html"))
 
-type server struct {
-	d       pipeline.Deps
-	token   string
-	hosts   []string
-	origins []string
-	fetch   func(repo string, number int) (gh.PR, error) // the PR as it is now: its head commit and labels
-	updates Updater                                      // nil: the page alone, which can't update
-	version string                                       // the running build's version
-	threads func(repo string, number int) ([]gh.Thread, error)
-	login   string // whose reviews these are: the owner of the bot's earlier comments
-	send    func(rev *store.Review, event string, fs []store.Finding, reminders []pipeline.Reminder) (string, error)
+// numberField and segField hand a settings row's template its setting and how to show it.
+type numberField struct {
+	S        setting
+	Min, Max int
+	Unit     string
 }
+
+type segField struct {
+	S setting
+	C []choice
+}
+
+// initial is the first letter of a login, for an account without a picture.
+func initial(login string) string {
+	for _, r := range login {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
+}
+
+type server struct {
+	d        pipeline.Deps
+	token    string
+	hosts    []string
+	origins  []string
+	fetch    func(repo string, number int) (gh.PR, error) // the PR as it is now: its head commit and labels
+	updates  Updater                                      // nil: the page alone, which can't update
+	version  string                                       // the running build's version
+	threads  func(repo string, number int) ([]gh.Thread, error)
+	login    string // whose reviews these are: the owner of the bot's earlier comments
+	send     func(rev *store.Review, event string, fs []store.Finding, reminders []pipeline.Reminder) (string, error)
+	accounts *accountCache // the GitHub account the bot acts as, kept for an hour
+	listen   string        // the address the page was started on; a new ADDR takes a restart
+	saving   sync.Mutex    // one Settings save at a time, so two tabs can't interleave their writes
+}
+
+// cfg is the settings as they are now: the Settings page changes them while the page runs.
+func (s *server) cfg() config.Config { return s.d.Current().Cfg }
 
 // Updater is the daemon's side of updates: install the newest release, or look for one right away. Each says what it
 // did, for the page's message.
@@ -98,9 +133,13 @@ func Serve(ctx context.Context, d pipeline.Deps, updates Updater) error {
 		return err
 	}
 	about = newAbout(d.Cfg)
-	s := &server{d: d, token: token, hosts: d.Cfg.AllowedHosts(), fetch: d.GH.GetPR, updates: updates, version: version.String(), threads: d.GH.ReviewThreads, login: d.GH.Login,
+	if d.Live == nil {
+		d.Live = config.NewLive(d.Cfg)
+	}
+	s := &server{d: d, token: token, accounts: &accountCache{}, hosts: d.Cfg.AllowedHosts(), listen: d.Cfg.WebAddr,
+		fetch: d.GH.GetPR, updates: updates, version: version.String(), threads: d.GH.ReviewThreads, login: d.GH.Login,
 		send: func(rev *store.Review, event string, fs []store.Finding, rms []pipeline.Reminder) (string, error) {
-			return pipeline.Post(d, rev, event, fs, rms)
+			return pipeline.Post(d.Current(), rev, event, fs, rms)
 		}}
 	for _, h := range s.hosts {
 		s.origins = append(s.origins, "http://"+h)
@@ -123,6 +162,14 @@ func (s *server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /stats", s.stats)
+	mux.HandleFunc("GET /settings", s.settings)
+	mux.HandleFunc("POST /settings", s.saveSettings)
+	mux.HandleFunc("POST /settings/reviewer", s.saveReviewer)
+	mux.HandleFunc("POST /settings/reviewer/remove", s.removeReviewer)
+	mux.HandleFunc("POST /settings/prompt", s.savePrompt)
+	mux.HandleFunc("POST /settings/prompt/reset", s.resetPrompt)
+	mux.HandleFunc("GET /profile", s.profile)
+	mux.HandleFunc("GET /avatar", s.avatar)
 	mux.HandleFunc("GET /history", s.history)
 	mux.HandleFunc("GET /pr/{owner}/{name}/{number}", s.timeline)
 	mux.HandleFunc("POST /unignore", s.unignore)
@@ -134,7 +181,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /r/{id}", s.act)
 	mux.HandleFunc("GET /active.json", s.active)
 	mux.HandleFunc("GET /update.json", s.updateStatus)
-	for _, name := range []string{"select-all.js", "filter.js", "running.js", "update.js", "bar.js", "icon.svg", "favicon.png"} {
+	for _, name := range []string{"select-all.js", "filter.js", "running.js", "update.js", "bar.js", "settings.js", "icon.svg", "favicon.png"} {
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, files, name) })
 	}
 	return mux
@@ -235,8 +282,8 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 		cards[i] = waitingCard{rev, waitingBadges(rev, fs, earlier)}
 	}
 	s.render(w, "index", map[string]any{"Title": title, "Waiting": cards, "Active": active, "Recent": recent,
-		"Failed": failed, "Token": s.token, "Threshold": s.d.Cfg.Threshold, "AutoPost": s.d.Cfg.AutoPostSeverities(),
-		"Held": s.d.Cfg.HeldSeverities(), "Msg": r.URL.Query().Get("msg"), "SpentToday": today.CostUSD,
+		"Failed": failed, "Token": s.token, "Threshold": s.cfg().Threshold, "AutoPost": s.cfg().AutoPostSeverities(),
+		"Held": s.cfg().HeldSeverities(), "Msg": r.URL.Query().Get("msg"), "SpentToday": today.CostUSD,
 		"SpentWeek": week.CostUSD})
 }
 
@@ -343,14 +390,14 @@ type statsPage struct {
 
 func (s *server) stats(w http.ResponseWriter, r *http.Request) {
 	st, now := s.d.Store, time.Now()
-	p := statsPage{Threshold: s.d.Cfg.Threshold, SaveAt: s.d.Cfg.SaveAt, MinAt: s.d.Cfg.MinAt,
-		AutoPost: s.d.Cfg.AutoPostSeverities()}
+	p := statsPage{Threshold: s.cfg().Threshold, SaveAt: s.cfg().SaveAt, MinAt: s.cfg().MinAt,
+		AutoPost: s.cfg().AutoPostSeverities()}
 	var errs [8]error
 	p.Week, errs[0] = st.Totals(now.AddDate(0, 0, -7))
 	p.All, errs[1] = st.Totals(time.Time{})
 	p.Days, errs[2] = st.DailySpend(14, now)
 	p.Reviewers, errs[3] = st.Reviewers()
-	p.Since, p.Decisions, errs[4] = st.Decisions(s.d.Cfg.Threshold)
+	p.Since, p.Decisions, errs[4] = st.Decisions(s.cfg().Threshold)
 	p.Tiers, errs[5] = st.Tiers()
 	p.Models, errs[6] = st.Models()
 	p.Repos, errs[7] = st.Repos(10)
@@ -465,8 +512,8 @@ func (s *server) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := reviewPage{Title: rev.Title + " · personal-review-bot", R: rev, Token: s.token, Msg: r.URL.Query().Get("msg"),
-		Threshold: s.d.Cfg.Threshold, ApproveText: s.d.Cfg.ApproveText,
-		Watermark: s.d.Cfg.Watermark}
+		Threshold: s.cfg().Threshold, ApproveText: s.cfg().ApproveText,
+		Watermark: s.cfg().Watermark}
 	if rev.Status == store.Queued || rev.Status == store.Running {
 		p.Refresh = 15
 	}
@@ -673,7 +720,7 @@ func posted(findings, reminders int) string {
 // reminder is what the page offers for a still-open earlier finding: its thread's state and the text to post.
 func (s *server) reminder(rev *store.Review, f store.Finding, threads []gh.Thread) *reminderView {
 	rm := &reminderView{Text: pipeline.ReminderText(f, rev.HeadSHA), Ticked: f.RemindedSHA != rev.HeadSHA}
-	if t, ok := pipeline.MatchThread(f, threads, s.login, s.d.Cfg.Watermark); ok {
+	if t, ok := pipeline.MatchThread(f, threads, s.login, s.cfg().Watermark); ok {
 		rm.Thread, rm.Resolved = true, t.Resolved
 		if a, ok := pipeline.Answer(t, s.login); ok {
 			body := strings.Join(strings.Fields(a.Body), " ")
@@ -715,7 +762,7 @@ func (s *server) tickedReminders(r *http.Request, rev *store.Review) []pipeline.
 		s.d.Log("%s#%d: review threads unavailable, reminders go in the review body: %v", rev.Repo, rev.Number, err)
 	}
 	for i := range out {
-		if t, ok := pipeline.MatchThread(out[i].Finding, threads, s.login, s.d.Cfg.Watermark); ok {
+		if t, ok := pipeline.MatchThread(out[i].Finding, threads, s.login, s.cfg().Watermark); ok {
 			out[i].Thread = &t
 		}
 	}
@@ -772,7 +819,7 @@ func (s *server) moved(rev *store.Review) string {
 	if err != nil {
 		return ""
 	}
-	if labels := s.d.Cfg.Shown(pr.Labels); !slices.Equal(labels, rev.Labels) {
+	if labels := s.cfg().Shown(pr.Labels); !slices.Equal(labels, rev.Labels) {
 		_ = s.d.Store.SetLabels(rev.ID, labels)
 		rev.Labels = labels
 	}
