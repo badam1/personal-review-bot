@@ -39,7 +39,25 @@ jobs:
           go vet -tags demo ./...  # the demo page (cmd/demo) isn't in the normal build, so check it here
 
       - name: Run tests
-        run: go test ./...
+        run: go test -race ./...  # -race: the daemon runs goroutine workers against a shared atomic config
+
+  govulncheck:
+    name: Vulnerabilities (govulncheck)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: govulncheck
+        # Reports only vulnerabilities in code paths the binary actually reaches, so a hit is real, not advisory noise.
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   shellcheck:
     name: Shellcheck (install.sh)
