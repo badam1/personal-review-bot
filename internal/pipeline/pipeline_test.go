@@ -1,8 +1,10 @@
 package pipeline
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -285,5 +287,51 @@ func TestFormatPriorReminded(t *testing.T) {
 		Followup: store.FollowOpen, RemindedSHA: "abcdef1234"}}, "@octocat")
 	if !strings.Contains(got, "last follow-up: still open; @octocat reminded the author at abcdef1") {
 		t.Errorf("prior = %q", got)
+	}
+}
+
+// Findings the auto-post rule lets through become auto_posted only once GitHub has them. A failed post leaves them
+// pending, so a later review of the PR doesn't take them for comments the bot left.
+func TestPostAuto(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	d := Deps{Store: st, Log: t.Logf}
+	id, _ := st.Insert(&store.Review{Repo: "o/r", Number: 1, Status: store.Running})
+	var auto []store.Finding
+	for _, title := range []string{"Nil map", "Typo"} {
+		f := store.Finding{ReviewID: id, Agent: "logic", Severity: "low", Path: "a.go", Line: 1, Title: title, Comment: "c",
+			Status: store.Candidate}
+		f.ID, _ = st.AddFinding(&f)
+		f.Status, f.Confidence = store.Pending, 90 // as Run saves them before posting
+		_ = st.UpdateFinding(&f)
+		auto = append(auto, f)
+	}
+	_ = st.Finish(id, store.Failed, "failed", "", "post review: HTTP 502")
+	later, _ := st.Insert(&store.Review{Repo: "o/r", Number: 1, Status: store.Running})
+
+	failing := func([]store.Finding) (string, error) { return "", errors.New("HTTP 502") }
+	if err := postAuto(d, slices.Clone(auto), failing); err == nil {
+		t.Fatal("the post's error should come back")
+	}
+	for _, f := range auto {
+		if got, _ := st.Finding(f.ID); got.Status != store.Pending || got.PostedURL != "" {
+			t.Errorf("after a failed post %q is %s at %q", f.Title, got.Status, got.PostedURL)
+		}
+	}
+	if earlier, _ := st.EarlierPosted("o/r", 1, later); len(earlier) != 0 {
+		t.Errorf("a later review sees %d posted finding(s) that never were", len(earlier))
+	}
+
+	url := "https://github.com/o/r/pull/1#pullrequestreview-1"
+	if err := postAuto(d, slices.Clone(auto), func([]store.Finding) (string, error) { return url, nil }); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range auto {
+		if got, _ := st.Finding(f.ID); got.Status != store.AutoPosted || got.PostedURL != url {
+			t.Errorf("after the post %q is %s at %q", f.Title, got.Status, got.PostedURL)
+		}
 	}
 }
