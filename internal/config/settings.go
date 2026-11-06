@@ -49,7 +49,7 @@ func (c Config) Values() map[string]string {
 		return "0"
 	}
 	return map[string]string{
-		"ORG":                   c.Org,
+		"ORG":                   strings.Join(c.Orgs, ","),
 		"POLL_SECONDS":          strconv.Itoa(int(c.PollInterval / time.Second)),
 		"THRESHOLD":             strconv.Itoa(c.Threshold),
 		"AUTO_POST":             strings.Join(c.AutoPost, ","),
@@ -79,7 +79,6 @@ func FromEnv(name string) bool {
 func (c Config) File() string { return filepath.Join(c.ConfigDir, "config.env") }
 
 var (
-	orgName  = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
 	onOff    = []string{"0", "1"}
 	maxLabel = 50
 )
@@ -98,8 +97,12 @@ func Check(name, value string) error {
 	}
 	switch name {
 	case "ORG":
-		if value != "" && !orgName.MatchString(value) {
-			return errors.New("must be a GitHub organisation's name: letters, digits and dashes")
+		// ORG takes several orgs, so each name is checked rather than the whole value.
+		for _, o := range SplitOrgs(value) {
+			if !ValidOrg(o) {
+				return fmt.Errorf("must be a GitHub organisation's name: letters, digits and dashes;"+
+					" separate several with commas (%s is not one)", strconv.Quote(o))
+			}
 		}
 	case "POLL_SECONDS":
 		return number(30, 3600)

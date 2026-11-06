@@ -931,7 +931,7 @@
       {{if .Avatar}}<img class="face" src="/avatar" width="56" height="56" alt="">{{else}}<span class="face" aria-hidden="true">{{initial .Login}}</span>{{end}}
       <div class="who"><b>Acting as @{{.Login}}</b>{{with .Name}}<span class="sub">{{.}}</span>{{end}}
         {{if .Orgs}}<div class="orgs"><span class="of">Member of</span>{{range .Orgs}}<span class="org{{if .Watched}} on{{end}}">{{if .Watched}}{{template "i-tick"}}{{.Name}} · watched{{else}}{{.Name}}{{end}}</span>{{end}}</div>{{end}}
-        {{with .NotMember}}<span class="hint">This account isn't a member of {{.}}, the organisation it watches.</span>{{end}}
+        {{with .NotMember}}<span class="hint">This account isn't a member of {{.}}, which it is set to watch.</span>{{end}}
         {{with .Err}}<span class="hint">GitHub couldn't be asked just now: {{.}}</span>{{end}}</div>
       {{with .URL}}<a class="btn small out" href="{{.}}" target="_blank" rel="noopener">{{template "i-github"}}Open on GitHub{{template "i-ext"}}</a>{{end}}
     </div>{{end}}
@@ -940,9 +940,10 @@
   <section class="set" id="reviewing" aria-labelledby="h-reviewing">
     <div class="hd"><h2 id="h-reviewing">What it reviews</h2>
       <p class="desc">Only PRs where your review is asked for directly, never through a team.</p></div>
-    {{with index .F "ORG"}}<div class="srow" data-row data-label="Organisation">
-      <div class="what"><span class="slabel"><label for="s-ORG">Organisation</label>{{template "changed" .}}</span>
-        <p class="desc">Review requests from other organisations are left alone. Empty: any org you belong to.</p></div>
+    {{with index .F "ORG"}}<div class="srow" data-row data-label="Organisations">
+      <div class="what"><span class="slabel"><label for="s-ORG">Organisations</label>{{template "changed" .}}</span>
+        <p class="desc">Review requests from other organisations are left alone. Separate several with commas.
+          Empty: any org you belong to.</p></div>
       <div class="ctl">{{template "text" .}}{{template "set-note" .}}</div>
     </div>{{end}}
     {{with index .F "SKIP_DRAFTS"}}<div class="srow" data-row data-label="Skip draft PRs">

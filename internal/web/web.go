@@ -154,7 +154,8 @@ func Serve(ctx context.Context, d pipeline.Deps, updates Updater) error {
 	}
 	header = s.headerView
 	labelsColumn = func() string { return s.cfg().LabelsColumn() }
-	srv := &http.Server{Addr: d.Cfg.WebAddr, Handler: s.guard(s.routes()), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: d.Cfg.WebAddr, Handler: s.guard(s.routes()),
+		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -217,6 +218,7 @@ func (s *server) guard(next http.Handler) http.Handler {
 		// running.js read /active.json; img-src 'self' the favicon.
 		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
 		// same-origin, not no-referrer: with no-referrer browsers send "Origin: null" on the page's own form posts,
 		// which the origin check above (rightly) refuses. Links out to GitHub still get no referrer.
 		h.Set("Referrer-Policy", "same-origin")
@@ -592,7 +594,34 @@ func (s *server) review(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "review", p)
 }
 
+var (
+	decidingMu sync.Mutex
+	deciding   = map[int64]*sync.Mutex{}
+)
+
+// decideLock serializes the decisions taken on one review. Without it two submits of the page's form — a double
+// click, a request the browser retried — both read the review as still waiting for you and both post to GitHub,
+// which is two reviews on someone's PR under your name. The store claims a queued review the same way (ClaimNext).
+func decideLock(id int64) *sync.Mutex {
+	decidingMu.Lock()
+	defer decidingMu.Unlock()
+	if deciding[id] == nil {
+		deciding[id] = &sync.Mutex{}
+	}
+	return deciding[id]
+}
+
 func (s *server) act(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	l := decideLock(id)
+	l.Lock()
+	defer l.Unlock()
+
+	// Read the review inside the lock: its status is what says the decision is still open.
 	rev, fs, ok := s.load(w, r)
 	if !ok {
 		return
@@ -680,7 +709,10 @@ func (s *server) act(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			url, err := s.send(rev, event, post, reminders)
-			if url == "" {
+			// Nothing was posted only when it also failed: an empty URL on its own means GitHub took the review
+			// without saying where it is, and treating that as a failure left the findings unrecorded here while
+			// they were live on the PR — and read err, which is nil, for a reason.
+			if err != nil && url == "" {
 				http.Redirect(w, r, back+"?msg="+template.URLQueryEscaper("GitHub refused it: "+err.Error()), http.StatusSeeOther)
 				return
 			}
@@ -691,17 +723,27 @@ func (s *server) act(w http.ResponseWriter, r *http.Request) {
 				post[i].PostedURL = url
 			}
 			for _, rm := range reminders {
-				_ = s.d.Store.SetReminded(rm.Finding.ID, rev.HeadSHA)
+				if err := s.d.Store.SetReminded(rm.Finding.ID, rev.HeadSHA); err != nil {
+					s.d.Log("%s#%d: reminded of finding %d but couldn't record it, it may be sent again: %v",
+						rev.Repo, rev.Number, rm.Finding.ID, err)
+				}
 			}
 		}
 	}
+	// A finding that is on the PR but still "pending" here would be offered again on the next review, so a
+	// store that refuses the update is worth a line in the log rather than nothing.
 	for _, f := range post {
 		f.Status = store.Posted
-		_ = s.d.Store.UpdateFinding(&f)
+		if err := s.d.Store.UpdateFinding(&f); err != nil {
+			s.d.Log("%s#%d: posted finding %d but couldn't record it, it may be posted again: %v",
+				rev.Repo, rev.Number, f.ID, err)
+		}
 	}
 	for _, f := range rest {
 		f.Status = store.Discarded
-		_ = s.d.Store.UpdateFinding(&f)
+		if err := s.d.Store.UpdateFinding(&f); err != nil {
+			s.d.Log("%s#%d: couldn't record finding %d as discarded: %v", rev.Repo, rev.Number, f.ID, err)
+		}
 	}
 	decision := you
 	if auto > 0 {

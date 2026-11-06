@@ -24,7 +24,7 @@ func TestConversationLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("conversation of %s#%d:\n%s", repo, n, conv)
-	prs, err := c.RequestedFromMe("acme")
+	prs, _, err := c.RequestedFromMe([]string{"acme"})
 	if err != nil {
 		t.Fatal(err)
 	}

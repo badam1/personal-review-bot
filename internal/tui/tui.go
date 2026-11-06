@@ -256,11 +256,7 @@ func header(cfg config.Config, s snapshot, interactive bool, width, height int) 
 	}
 	acting := ""
 	if s.login != "" {
-		acting = dim.Render("as @" + s.login)
-		if cfg.Org != "" {
-			acting = dim.Render("as @" + s.login + " in " + cfg.Org)
-		}
-		acting = " " + acting
+		acting = " " + dim.Render(actingAs(s.login, cfg.Orgs...))
 	}
 	lines := []string{titleStyle.Render(title) + " " + dim.Render(version.String()) + acting, daemon,
 		dim.Render(rule + " · " + cfg.WebURL())}
@@ -417,4 +413,19 @@ func openURL(url, what string) string {
 		}
 	}
 	return "couldn't open a browser: " + url
+}
+
+// actingAs names the account reviews go out as, and the orgs it watches: "as @you in acme, umbrella". ORG takes
+// a list, so the header names all of them rather than only the first.
+func actingAs(login string, orgs ...string) string {
+	var watched []string
+	for _, o := range orgs {
+		if o != "" {
+			watched = append(watched, o)
+		}
+	}
+	if len(watched) == 0 {
+		return "as @" + login
+	}
+	return "as @" + login + " in " + strings.Join(watched, ", ")
 }

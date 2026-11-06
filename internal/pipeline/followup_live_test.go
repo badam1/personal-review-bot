@@ -59,7 +59,7 @@ func TestFollowupLive(t *testing.T) {
 
 	model := cmp.Or(os.Getenv("PERSONAL_REVIEW_BOT_LIVE_MODEL"), "sonnet")
 	in := agents.Input{Repo: repo, Number: n, Title: pr.Title, Author: pr.Author, Body: pr.Body, Base: pr.BaseRef,
-		Head: pr.HeadRef, Dir: ws.Dir, HeadSHA: pr.HeadSHA, Conversation: conv, Owner: c.Login, Org: relatedOrg("", repo)}
+		Head: pr.HeadRef, Dir: ws.Dir, HeadSHA: pr.HeadSHA, Conversation: conv, Owner: c.Login, Org: relatedOrg(nil, repo)}
 	fus, run, err := agents.Builtin().CheckEarlier(ctx, model, in, earlier, 20*time.Minute)
 	if err != nil {
 		t.Fatal(err)
