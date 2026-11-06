@@ -446,17 +446,18 @@ func parseStream(out []byte, now time.Time) (*result, *Usage) {
 // `--method`, and `-f`/`-F`/`--field`/`--raw-field`/`--input`, which make it a POST on their own, with the
 // whole `repo` scope of your gh login behind them (`gh api graphql -f query='mutation …'` included). The
 // prompt telling a reviewer not to post is not a control: the PR it reads is written by someone else, and the
-// ground rule is that a reviewer cannot change anything even if its input tells it to. So the write forms are
-// denied; a denial beats the allowlist.
+// ground rule is that a reviewer cannot change anything even if its input tells it to.
+//
+// Naming the write flags does not close it. gh takes a value attached to a short flag and combines shorthands,
+// so `-fbody=x`, `-X=POST` and `-if body=x` all write and none of them contains `-f `, `-X ` or `-XPOST`;
+// widening the patterns far enough to catch them starts refusing ordinary reads whose path contains `-f`. What
+// holds is the other way round: `gh api` without a flag is a GET, and no flag means no way to change the method
+// or send a body. So every flag is denied. The cost is `--jq` and `--paginate`, which only shape the reply.
 var readOnly = []string{"--permission-mode", "default",
 	"--tools", "Read", "Grep", "Glob", "Bash",
 	"--allowedTools", "Read", "Grep", "Glob",
 	"Bash(gh search code *)", "Bash(gh api *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)",
-	"--disallowedTools",
-	"Bash(gh api *-X *)", "Bash(gh api *-XPOST*)", "Bash(gh api *-XPUT*)", "Bash(gh api *-XPATCH*)",
-	"Bash(gh api *-XDELETE*)", "Bash(gh api *--method*)",
-	"Bash(gh api *-f *)", "Bash(gh api *-F *)",
-	"Bash(gh api *--field*)", "Bash(gh api *--raw-field*)", "Bash(gh api *--input*)"}
+	"--disallowedTools", "Bash(gh api -*)", "Bash(gh api * -*)"}
 
 // noTools is for a run that needs nothing beyond its prompt.
 var noTools = []string{"--tools", ""}
