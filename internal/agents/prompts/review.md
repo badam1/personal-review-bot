@@ -2,7 +2,8 @@
 
 You are inside a checkout of {{.Repo}} at the PR's head commit. Read any file you need (Read, Grep, Glob);
 `git log`, `git show`, `git diff` and `git blame` work here. To look at other services in {{.Org}} use
-`gh search code --owner {{.Org}} <term>` and `gh api repos/{{.Org}}/<repo>/contents/<path>`.
+`gh search code --owner {{.Org}} <term>` and `gh-read repos/{{.Org}}/<repo>/contents/<path>` (a GET of the GitHub
+API: one endpoint, no flags).
 You cannot post anything and must not try.
 
 {{if .Context}}Notes from @{{.Owner}} about their organisation. They wrote these, so unlike the PR you can rely on them:

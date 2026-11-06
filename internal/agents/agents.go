@@ -1,5 +1,6 @@
 // Package agents runs the Claude reviewers and the verifier as headless `claude -p` processes inside the PR
-// checkout. They are read-only: their only tools are Read/Grep/Glob and a few read-only git/gh commands, and their
+// checkout. They are read-only: their only tools are Read/Grep/Glob, a few read-only git commands, `gh search code`
+// and gh-read, a GET of the GitHub API (see ghRead), and their
 // output is schema-validated JSON. Each run has PERSONAL_REVIEW_BOT_AGENT=1 set, so your own Claude Code hooks can
 // tell these runs apart (for example to block GitHub writes from them as well).
 package agents
@@ -11,8 +12,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -385,7 +388,12 @@ func claude(ctx context.Context, dir, prompt string, args ...string) (*result, *
 	args = append(slices.Clone(baseArgs), args...)
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "PERSONAL_REVIEW_BOT_AGENT=1")
+	bin, err := commandDir()
+	if err != nil {
+		return nil, nil, fmt.Errorf("gh-read: %w", err)
+	}
+	// The last PATH in the list is the one the run gets.
+	cmd.Env = append(os.Environ(), "PERSONAL_REVIEW_BOT_AGENT=1", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -440,10 +448,48 @@ func parseStream(out []byte, now time.Time) (*result, *Usage) {
 }
 
 // readOnly is what reviewers and the verifier may use: the checkout, and a few commands that only read.
+//
+// GitHub is read through gh-read, never `gh api`: the same `gh api` writes with your token when given -X, --method
+// or a field (-f, -F, --input), and a permission rule only sees the command's text, which quoting a flag gets past
+// ('-fname=x' and "-X" POST both reached gh as writes past a deny list naming them). gh-read checks the arguments
+// the shell actually hands it. `gh api` itself is denied outright. (Found by @krisztiankoszegi in #24.)
 var readOnly = []string{"--permission-mode", "default",
 	"--tools", "Read", "Grep", "Glob", "Bash",
 	"--allowedTools", "Read", "Grep", "Glob",
-	"Bash(gh search code *)", "Bash(gh api *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)"}
+	"Bash(gh search code *)", "Bash(gh-read *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)",
+	"--disallowedTools", "Bash(gh api *)"}
+
+// ghRead is the gh-read command the runs find first on their PATH: one GET of the GitHub API. It takes exactly one
+// argument, refuses one that is a flag or another host, and passes it after "--", where gh can only take it for the
+// endpoint, so no form of the call can change the method or add a body.
+const ghRead = `#!/bin/sh
+# gh-read: a GET of the GitHub API and nothing else, for personal-review-bot's reviewers.
+if [ "$#" -ne 1 ]; then
+  echo "gh-read takes exactly one endpoint, e.g. gh-read repos/OWNER/REPO/contents/PATH" >&2
+  exit 2
+fi
+case "$1" in
+  -*|*://*) echo "gh-read: not an API endpoint: $1" >&2; exit 2 ;;
+esac
+exec gh api --method GET -- "$1"
+`
+
+var (
+	binOnce sync.Once
+	binDir  string
+	binErr  error
+)
+
+// commandDir writes gh-read into a private directory of its own, once, and returns the directory, for the front of
+// the runs' PATH.
+func commandDir() (string, error) {
+	binOnce.Do(func() {
+		if binDir, binErr = os.MkdirTemp("", "personal-review-bot-bin-"); binErr == nil {
+			binErr = os.WriteFile(filepath.Join(binDir, "gh-read"), []byte(ghRead), 0o755)
+		}
+	})
+	return binDir, binErr
+}
 
 // noTools is for a run that needs nothing beyond its prompt.
 var noTools = []string{"--tools", ""}
