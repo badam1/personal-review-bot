@@ -1,6 +1,9 @@
 package gh
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 // The approval text is said once per PR; only my own approvals (dismissed ones too) count.
 func TestSaidIn(t *testing.T) {
@@ -62,6 +65,22 @@ func TestAvatarHost(t *testing.T) {
 	for _, c := range cases {
 		if got := avatarHost(c.url); got != c.want {
 			t.Errorf("%s: avatarHost(%q) = %v, want %v", c.name, c.url, got, c.want)
+		}
+	}
+}
+
+// A picture over the cap is refused, not cut short. io.LimitReader stops at its limit without an error, so a
+// truncated picture would otherwise be cached and served as a whole one.
+func TestReadAvatar(t *testing.T) {
+	for _, n := range []int{0, 1024, avatarMax - 1, avatarMax} {
+		b, err := readAvatar(bytes.NewReader(make([]byte, n)))
+		if err != nil || len(b) != n {
+			t.Errorf("readAvatar(%d bytes) = %d bytes, %v; want %d bytes, no error", n, len(b), err, n)
+		}
+	}
+	for _, n := range []int{avatarMax + 1, avatarMax * 2} {
+		if b, err := readAvatar(bytes.NewReader(make([]byte, n))); err == nil {
+			t.Errorf("readAvatar(%d bytes) returned %d bytes, want an error", n, len(b))
 		}
 	}
 }
