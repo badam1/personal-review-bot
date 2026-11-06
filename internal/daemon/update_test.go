@@ -119,7 +119,7 @@ func TestUpdateStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := st.Insert(&store.Review{Repo: "o/r", Number: 1, Status: store.Queued})
-	worker(context.Background(), u.d, u)
+	worker(context.Background(), u.d, u, 0)
 	if r, _ := st.Get(id); r.Status != store.Queued {
 		t.Errorf("a draining worker took a review: %s", r.Status)
 	}
@@ -176,5 +176,23 @@ func TestCheckNow(t *testing.T) {
 	u.current = func() string { return "v0.1.0-beta.2" }
 	if msg, err := u.CheckNow(); err != nil || msg != "Up to date (v0.1.0-beta.2)." {
 		t.Errorf("CheckNow = %q, %v", msg, err)
+	}
+}
+
+// A worker past PARALLEL leaves the queue alone until the Settings page raises it.
+func TestWorkerFollowsParallel(t *testing.T) {
+	u, st, _ := testUpdater(t, "v0.1.0")
+	cfg := u.d.Cfg
+	cfg.MaxParallel = 1
+	u.d.Live = config.NewLive(cfg)
+	id, _ := st.Insert(&store.Review{Repo: "o/r", Number: 1, Status: store.Queued})
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	worker(ctx, u.d, u, 1)
+	if r, _ := st.Get(id); r.Status != store.Queued {
+		t.Errorf("the second worker took a review with PARALLEL=1: %s", r.Status)
+	}
+	if n := u.running.Load(); n != 0 {
+		t.Errorf("%d reviews counted as running", n)
 	}
 }

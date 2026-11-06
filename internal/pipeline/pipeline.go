@@ -28,9 +28,19 @@ import (
 
 type Deps struct {
 	Cfg   config.Config
+	Live  *config.Live // the settings as the Settings page last saved them (nil: Cfg never changes)
 	Store *store.Store
 	GH    *gh.Client
 	Log   func(format string, args ...any)
+}
+
+// Current returns d with the settings as they are now. The Settings page can change them while the daemon runs, so
+// each review, poll and page starts from Current rather than from the settings it was started with.
+func (d Deps) Current() Deps {
+	if d.Live != nil {
+		d.Cfg = d.Live.Get()
+	}
+	return d
 }
 
 // Run reviews the PR behind review id. It records every outcome in the store and only returns an error for

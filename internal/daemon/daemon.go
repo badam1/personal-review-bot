@@ -28,7 +28,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	d := pipeline.Deps{Cfg: cfg, Store: st, GH: client, Log: log.Printf}
+	d := pipeline.Deps{Cfg: cfg, Live: config.NewLive(cfg), Store: st, GH: client, Log: log.Printf}
 	auto := cfg.AutoPostSeverities()
 	if auto == "" {
 		auto = "no severity"
@@ -49,9 +49,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if done, ok := update.Started(st, version.String()); ok { // a start ends whatever update was under way
 		log.Printf("updated from %s to %s", done.From, done.To)
 	}
-	if cfg.UpdateCheck {
-		go upd.loop(ctx)
-	}
+	go upd.loop(ctx)
 	if st.Meta("seeded") == "" {
 		if err := seed(d); err != nil {
 			return fmt.Errorf("first run: %w", err)
@@ -63,14 +61,20 @@ func Run(ctx context.Context, cfg config.Config) error {
 			log.Printf("confirmation page stopped: %v", err)
 		}
 	}()
-	for i := 0; i < cfg.MaxParallel; i++ {
-		go worker(ctx, d, upd)
+	for i := range max(cfg.MaxParallel, maxWorkers) {
+		go worker(ctx, d, upd, i)
 	}
 
-	tick := time.NewTicker(cfg.PollInterval)
+	interval := cfg.PollInterval
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
-		poll(d)
+		cur := d.Current()
+		poll(cur)
+		if cur.Cfg.PollInterval != interval { // changed on the Settings page
+			interval = cur.Cfg.PollInterval
+			tick.Reset(interval)
+		}
 		select {
 		case <-ctx.Done():
 			log.Printf("personal-review-bot stopping")
@@ -184,14 +188,23 @@ func reviewReason(pr gh.PR, last *store.Review) string {
 	return ""
 }
 
-// worker runs queued reviews until ctx ends or an update is installed. It counts a review as running from before it
-// claims one, so the restart after an update can't slip in between the claim and the review.
-func worker(ctx context.Context, d pipeline.Deps, upd *updater) {
+// maxWorkers is how many workers the daemon starts at least: as many reviews at a time as the Settings page offers,
+// so changing that there needs no restart.
+const maxWorkers = 4
+
+// worker runs queued reviews until ctx ends or an update is installed. Worker n only takes reviews while PARALLEL is
+// above n, so the number running follows the setting. It counts a review as running from before it claims one, so
+// the restart after an update can't slip in between the claim and the review.
+func worker(ctx context.Context, d pipeline.Deps, upd *updater, n int) {
 	for ctx.Err() == nil && !upd.draining() {
+		cur := d.Current()
+		var r *store.Review
+		var err error
 		upd.running.Add(1)
-		r, err := d.Store.ClaimNext()
-		if err != nil {
-			log.Printf("queue: %v", err)
+		if n < cur.Cfg.MaxParallel {
+			if r, err = cur.Store.ClaimNext(); err != nil {
+				log.Printf("queue: %v", err)
+			}
 		}
 		if r == nil {
 			upd.running.Add(-1)
@@ -202,7 +215,7 @@ func worker(ctx context.Context, d pipeline.Deps, upd *updater) {
 			}
 			continue
 		}
-		if err := pipeline.Run(ctx, d, r.ID); err != nil {
+		if err := pipeline.Run(ctx, cur, r.ID); err != nil {
 			log.Printf("%s#%d: %v", r.Repo, r.Number, err)
 		}
 		upd.running.Add(-1)

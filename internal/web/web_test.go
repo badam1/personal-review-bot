@@ -1,7 +1,6 @@
 package web
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -336,66 +335,5 @@ func TestSelectAll(t *testing.T) {
 	if js.Code != http.StatusOK || !strings.Contains(js.Header().Get("Content-Type"), "javascript") ||
 		!strings.Contains(js.Body.String(), `getElementById("select-all")`) {
 		t.Errorf("select-all.js: status %d, type %q", js.Code, js.Header().Get("Content-Type"))
-	}
-}
-
-// The profile page says who the bot acts as and the rules it follows under that name. The account is seeded into
-// the cache so the page renders without asking GitHub, which is also what a second load within the hour does.
-func TestProfile(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "reviews.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	id, _ := st.Insert(&store.Review{Repo: "acme/api", Number: 7, HeadSHA: "aaa", Status: store.Running})
-	_ = st.SetPlan(id, "t", "a", "aaa", "medium", "sonnet → opus", "90 lines", 90, 4, 2)
-	_ = st.AddCost(id, 2.25)
-	_ = st.Finish(id, store.Done, "you approved", "", "")
-
-	cfg := config.Config{Org: "acme", Threshold: 80, AutoPost: []string{"low"}, Watermark: "🤖 bot",
-		ApproveText: "LGTM :+1:", PollInterval: 2 * time.Minute, MaxParallel: 2, MaxAge: 14 * 24 * time.Hour}
-	s := &server{d: pipeline.Deps{Store: st, Cfg: cfg}, login: "octocat",
-		accounts: &accountCache{at: time.Now(), acc: gh.Account{Login: "octocat", Name: "Mona",
-			HTMLURL: "https://github.com/octocat", Orgs: []string{"acme", "umbrella"}}}}
-
-	rec := httptest.NewRecorder()
-	s.profile(rec, httptest.NewRequest(http.MethodGet, "/profile", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
-	}
-	page := rec.Body.String()
-	for _, want := range []string{"Acting as", "Mona", "@octocat", "acme", "umbrella",
-		`class="on"`,                                         // the org it watches is marked among the ones you belong to
-		"never through a team",                               // how it decides whose PRs to review
-		"80%+ certainty, of low severity",                    // what goes out without asking
-		"high severity, design concerns, and every approval", // what always waits
-		"14 days", "$2.25"} {
-		if !strings.Contains(page, want) {
-			t.Errorf("profile page is missing %q", want)
-		}
-	}
-	if strings.Contains(page, "avatars.githubusercontent.com") {
-		t.Error("the page points at GitHub for the picture; it should serve /avatar itself")
-	}
-}
-
-// Without GitHub the page still says what the bot is configured to do, and names the account from start-up.
-func TestProfileWithoutGitHub(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "reviews.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	s := &server{d: pipeline.Deps{Store: st, Cfg: config.Config{Threshold: 80}}, login: "octocat",
-		accounts: &accountCache{at: time.Now(), err: errors.New("no network")}}
-	rec := httptest.NewRecorder()
-	s.profile(rec, httptest.NewRequest(http.MethodGet, "/profile", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
-	}
-	for _, want := range []string{"no network", "@octocat", "every finding waits for you"} {
-		if !strings.Contains(rec.Body.String(), want) {
-			t.Errorf("offline profile page is missing %q", want)
-		}
 	}
 }

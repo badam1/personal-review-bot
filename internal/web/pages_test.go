@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +33,8 @@ func newSite(t *testing.T) *site {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf, Cfg: config.Config{Threshold: 80, AutoPost: []string{"low", "medium"}}},
+	s := &server{d: pipeline.Deps{Store: st, Log: t.Logf, Cfg: config.Config{Threshold: 80, AutoPost: []string{"low", "medium"},
+		ConfigDir: t.TempDir()}}, accounts: &accountCache{at: time.Now(), err: errors.New("GitHub isn't asked in tests")},
 		token: "secret", hosts: []string{"localhost:12346"}, origins: []string{"http://localhost:12346"},
 		fetch:   func(string, int) (gh.PR, error) { return gh.PR{HeadSHA: "aaa"}, nil },
 		threads: func(string, int) ([]gh.Thread, error) { return nil, nil }, login: "octocat",
@@ -472,13 +474,13 @@ func TestPageFooter(t *testing.T) {
 		ConfigDir: "~/.config/personal-review-bot", StateDir: "~/.local/state/personal-review-bot", Log: "~/Library/Logs/personal-review-bot.log"}
 	s := newSite(t)
 	id := s.review(1, store.Done, "you approved")
-	for _, path := range []string{"/", "/history", "/stats", fmt.Sprintf("/r/%d", id), "/pr/acme/infra/1"} {
+	for _, path := range []string{"/", "/history", "/stats", "/settings", fmt.Sprintf("/r/%d", id), "/pr/acme/infra/1"} {
 		_, page := s.get(path)
 		want(t, page, `<footer class="foot">`,
 			`<a href="https://github.com/acme/prb/releases/tag/v0.1.0-beta.4" target="_blank" rel="noopener" title="Release notes">v0.1.0-beta.4</a> · darwin/arm64`,
 			`href="https://github.com/acme/prb/issues/new?platform=darwin%2Farm64&amp;template=bug_report.yml&amp;version=v0.1.0-beta.4"`,
 			`href="https://github.com/acme/prb/issues/new?template=feature_request.yml"`, `href="https://github.com/acme/prb#readme"`,
-			`href="https://github.com/acme/prb#settings"`, `href="https://github.com/acme/prb" target="_blank" rel="noopener">Source</a>`,
+			`<a href="/settings">Settings</a>`, `href="https://github.com/acme/prb" target="_blank" rel="noopener">Source</a>`,
 			`<script src="/bar.js" defer></script>`,
 			`title="config ~/.config/personal-review-bot · data ~/.local/state/personal-review-bot · log ~/Library/Logs/personal-review-bot.log"`)
 	}

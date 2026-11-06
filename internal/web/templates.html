@@ -40,6 +40,8 @@
           border: 1px solid var(--s0); color: var(--text); font-size: 13px; }
   a.chip:hover { color: var(--text); text-decoration: none; border-color: var(--s2); }
   .chip b { font-weight: 600; } .chip.work { border-color: var(--s1); }
+  a.chip.setpill { padding: 0 14px 0 12px; border-color: var(--s1); color: var(--text); font-weight: 600; }
+  a.chip.setpill[aria-current=page] { background: var(--s0); border-color: var(--s2); } .chip .ic { width: 16px; height: 16px; flex: none; }
   .chip.work .verb { display: inline-block; width: 8.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--dim); }
   .dot.ok, .dot.watching { background: var(--green); } .dot.bad, .dot.fail { background: var(--red); } .dot.new { background: var(--mauve); }
@@ -239,21 +241,145 @@
   @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .tile { padding: 16px 18px; } .tile .l { color: var(--sub); font-size: 13px; }
   .tile .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; } .tile .all { color: var(--sub); font-size: 12px; }
-  .who { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-  .who img, .who .noface { width: 72px; height: 72px; border-radius: 50%; border: 1px solid var(--s0); flex: none; }
-  .who .noface { display: grid; place-items: center; background: var(--s0); color: var(--sub); font-size: 26px; font-weight: 650; }
-  .who .nm { font-size: 20px; font-weight: 650; } .who .at { color: var(--sub); }
-  .orgs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  .orgs span { background: var(--s0); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--sub); }
-  .orgs span.on { background: var(--green-dim, var(--s0)); color: var(--text); font-weight: 600; }
-  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: 14px; }
-  .kv dt { color: var(--sub); } .kv dd { margin: 0; }
   .chart { width: 100%; height: auto; display: block; }
   .chart .grid { stroke: var(--s1); stroke-width: 1; } .chart .bar { fill: var(--blue); } .chart .hit { fill: transparent; }
   .chart g:hover .bar { fill: var(--mauve); } .chart g:hover .hit { fill: var(--s0); opacity: .35; }
   .chart text { fill: var(--sub); font-size: 11px; } .chart text.val { fill: var(--text); font-weight: 600; }
   .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .pager { display: flex; justify-content: space-between; }
+
+  /* Settings: sections of rows, a label and its description on the left, the control and its default on the right */
+  .set-layout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
+  .set-nav { flex: 0 0 220px; position: sticky; top: 88px; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+  .set-nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 0 12px;
+               border-radius: 8px; color: var(--sub); font-weight: 500; }
+  .set-nav a:hover { background: var(--s0); color: var(--text); text-decoration: none; }
+  .set-nav a[aria-current=true] { background: var(--s0); color: var(--text); font-weight: 600; }
+  .set-nav .n { color: var(--peach); font-size: 12px; font-weight: 600; }
+  @media (max-width: 900px) { .set-nav { position: static; flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; } }
+  .set-main { flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
+  .set { border-radius: 12px; background: var(--mantle); border: 1px solid var(--s0); }
+  .set > .hd { padding: 18px 20px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .set > .hd.split { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .set > .hd.split > div { display: flex; flex-direction: column; gap: 4px; }
+  .set h2 { font-size: 16px; font-weight: 650; }
+  .set .desc { color: var(--sub); font-size: 13px; }
+  .set .callout { margin: 0 20px 14px; }
+  .srow { display: flex; flex-wrap: wrap; gap: 12px 32px; padding: 18px 20px; border-top: 1px solid var(--s0); }
+  .srow > .what { flex: 1 1 300px; display: flex; flex-direction: column; gap: 4px; }
+  .srow > .ctl { flex: 0 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .srow.stack { flex-direction: column; gap: 8px; }
+  .slabel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+  .pill { padding: 1px 8px; border-radius: 999px; background: var(--s0); color: var(--sub); font-size: 12px; font-weight: 650; white-space: nowrap; }
+  .pill.changed { background: rgba(250, 179, 135, .16); color: var(--peach); }
+  .pill.restart { color: var(--yellow); }
+  .pill.yours { background: rgba(203, 166, 247, .16); color: var(--mauve); }
+  .pill.sm { font-size: 11px; }
+  .hint { color: var(--sub); font-size: 12px; } .hint .linkbtn { margin-left: 10px; vertical-align: -1px; }
+  .pagehead .hint { font-size: 13px; } .pagehead .hint code { padding: 2px 6px; border-radius: 4px; background: var(--s0); }
+  .hint code { font-family: var(--mono); color: var(--text); overflow-wrap: anywhere; }
+  .field { width: 100%; min-height: 40px; padding: 0 12px; border-radius: 8px; background: var(--base); border: 1px solid var(--s1);
+           color: var(--text); font: inherit; font-size: 14px; }
+  .field.num { width: 96px; } .field.mono { font: 14px var(--mono); }
+  .field:focus, .set textarea:focus, .drawer textarea:focus { outline: 2px solid var(--lav); outline-offset: 1px; }
+  .field:disabled { background: var(--mantle); border-style: dashed; color: var(--sub); cursor: not-allowed; }
+  .set textarea, .drawer textarea { font: 13px/1.6 var(--mono); background: var(--base); }
+  .unit { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .locked { position: relative; } .locked > svg { position: absolute; left: 12px; top: 12px; color: var(--sub); }
+  .locked > .field { padding-left: 36px; }
+  .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; }
+  .switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  .switch .track { position: absolute; inset: 0; border-radius: 999px; background: var(--s1); pointer-events: none; transition: background .15s; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+                          background: var(--crust); transition: left .15s; }
+  .switch input:checked + .track { background: var(--blue); } .switch input:checked + .track::after { left: 23px; }
+  .switch input:focus-visible + .track { outline: 2px solid var(--lav); outline-offset: 2px; }
+  .switch input:disabled { cursor: not-allowed; } .switch input:disabled + .track { opacity: .5; }
+  .swrow { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  .swrow:has(input:checked) .is-off, .swrow:not(:has(input:checked)) .is-on { display: none; }
+  .seg { display: inline-flex; align-self: flex-start; flex-wrap: wrap; padding: 3px; border-radius: 10px; background: var(--base); border: 1px solid var(--s1); }
+  .seg label, .tog { position: relative; display: inline-flex; align-items: center; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .seg label { min-height: 34px; padding: 0 14px; border-radius: 7px; color: var(--sub); }
+  .seg input, .tog input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  .seg label:hover { color: var(--text); }
+  .seg label:has(input:checked) { background: var(--s1); color: var(--text); }
+  .seg label:has(input:focus-visible), .tog:has(input:focus-visible) { outline: 2px solid var(--lav); outline-offset: 1px; }
+  .seg label:has(input:disabled), .tog:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+  .togs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tog { gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--s1); color: var(--sub); }
+  .tog:hover { border-color: var(--s2); color: var(--text); }
+  .tog .ic { display: none; width: 14px; height: 14px; color: var(--blue); }
+  .tog:has(input:checked) { padding-left: 10px; border-color: var(--blue); background: rgba(137, 180, 250, .14); color: var(--text); }
+  .tog:has(input:checked) .ic { display: block; }
+  .confirm-high { display: none; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 8px; font-size: 13px;
+                  background: rgba(250, 179, 135, .08); border: 1px solid rgba(250, 179, 135, .55); }
+  .togs:has(input[value=high]:checked) + .confirm-high { display: flex; }
+  .confirm-high label { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+  .rangerow { display: flex; align-items: center; gap: 14px; }
+  .rangerow input { flex: 1 1 auto; accent-color: var(--blue); }
+  .rangerow output { min-width: 48px; text-align: right; font-size: 18px; font-weight: 700; color: var(--green); }
+  .linkbtn { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--blue);
+             font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .linkbtn:hover { color: var(--lav); } .linkbtn .ic { width: 12px; height: 12px; }
+  .sig { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 8px; background: var(--crust); border: 1px solid var(--s0); font-size: 13px; }
+  .sig .k { color: var(--sub); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .sig .end { color: var(--sub); font-size: 11px; overflow-wrap: anywhere; }
+  .zones { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; border-top: 1px solid var(--s0); }
+  .zbar { position: relative; display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: rgba(250, 179, 135, .45); }
+  .zbar .z1 { background: rgba(166, 227, 161, .35); } .zbar .z2 { background: rgba(249, 226, 175, .4); } .zbar .z3 { background: rgba(250, 179, 135, .45); }
+  .zbar .now { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--text); }
+  .zlabels { display: grid; font-size: 12px; color: var(--sub); } .zlabels span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .acct { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 20px; padding: 16px 20px 20px; }
+  .acct .face { width: 56px; height: 56px; border-radius: 50%; flex: none; }
+  .acct span.face { display: grid; place-items: center; background: var(--s1); color: var(--text); font-size: 22px; font-weight: 700; }
+  .acct .who { flex: 1 1 260px; display: flex; flex-direction: column; gap: 6px; }
+  .acct .who b { font-size: 16px; font-weight: 650; }
+  .orgs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
+  .orgs .of { color: var(--sub); font-size: 13px; }
+  .orgs .org { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; background: var(--s0); color: var(--sub); }
+  .orgs .org.on { color: var(--text); font-weight: 600; }
+  .rhead, .rrow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) 130px 70px 92px; gap: 0 16px; align-items: center; padding: 14px 20px; border-top: 1px solid var(--s0); }
+  .rhead { padding-top: 10px; padding-bottom: 10px; color: var(--sub); font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  .rrow { font-size: 14px; } .rrow.off > :not(.keep) { opacity: .6; }
+  .rrow .nm, .prow .nm { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .rrow .nm > span:first-child, .prow .nm > span:first-child { display: flex; align-items: center; gap: 8px; }
+  .rrow .nm b, .prow .nm b { font-weight: 650; }
+  .rrow .area, .prow .what { color: var(--sub); font-size: 13px; } .rrow .area::first-letter { text-transform: uppercase; }
+  .rrow .runs { color: var(--sub); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rrow .runs.mono { font-family: var(--mono); } .rrow .model { font-size: 13px; } .rrow .btn { justify-self: start; }
+  @media (max-width: 760px) { .rhead { display: none; } .rrow { grid-template-columns: minmax(0, 1fr) auto auto; } .rrow .runs, .rrow .model { display: none; } }
+  .set .foot-note { padding: 14px 20px 18px; border-top: 1px solid var(--s0); color: var(--sub); font-size: 13px; }
+  .set .foot-note b { color: var(--text); font-weight: 600; }
+  .prow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 20px; border-top: 1px solid var(--s0); font-size: 14px; }
+  .prow .nm { flex: 1 1 280px; } .prow .acts { display: flex; align-items: center; gap: 8px; }
+  .frow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 20px; border-top: 1px solid var(--s0); font-size: 14px; }
+  .frow .k { flex: 0 0 140px; font-weight: 600; }
+  .frow code { flex: 1 1 300px; min-width: 0; overflow-wrap: anywhere; font: 13px var(--mono); color: var(--sub); }
+  .btn.line { background: transparent; border: 1px solid var(--s1); color: var(--sub); } .btn.line:hover { color: var(--text); border-color: var(--s2); }
+  .savebar { position: sticky; bottom: 16px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 12px 14px 12px 18px;
+             border-radius: 12px; background: rgba(24, 24, 37, .88); -webkit-backdrop-filter: blur(14px) saturate(150%); backdrop-filter: blur(14px) saturate(150%);
+             border: 1px solid var(--s1); box-shadow: 0 12px 32px rgba(0, 0, 0, .45); }
+  .savebar .dot { background: var(--peach); }
+  .savebar .what { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+  .savebar .what b { font-weight: 650; } .savebar .what span { color: var(--sub); font-size: 13px; overflow-wrap: anywhere; }
+  .drawer { display: none; position: fixed; inset: 0; z-index: 50; }
+  .drawer:target, .drawer.open { display: block; }
+  body:has(.drawer:target), body:has(.drawer.open) { overflow: hidden; }
+  .drawer .scrim { position: absolute; inset: 0; background: rgba(17, 17, 27, .72); }
+  .drawer .scrim:hover { text-decoration: none; }
+  .drawer form { position: absolute; top: 0; right: 0; bottom: 0; width: min(600px, 100%); display: flex; flex-direction: column;
+                 background: var(--mantle); border-left: 1px solid var(--s1); box-shadow: -24px 0 48px rgba(0, 0, 0, .45); }
+  .drawer .dhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 28px 18px; border-bottom: 1px solid var(--s0); }
+  .drawer .dhead > div { display: flex; flex-direction: column; gap: 6px; }
+  .drawer .kicker { color: var(--sub); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .drawer h2 { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; }
+  .drawer .dbody { flex: 1 1 auto; overflow: auto; padding: 22px 28px; display: flex; flex-direction: column; gap: 22px; }
+  .drawer .dbody .callout { margin: 0; }
+  .dfield { display: flex; flex-direction: column; gap: 6px; } .dfield > label, .dfield > .slabel { font-weight: 600; }
+  .dswitch { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .dswitch > div { display: flex; flex-direction: column; gap: 2px; } .dswitch .slabel { font-weight: 600; }
+  .drawer .dfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 16px 28px; border-top: 1px solid var(--s0); }
+  .drawer .dfoot .saved-as { flex: 1 1 160px; min-width: 0; color: var(--sub); font-size: 12px; }
 
   /* The footer */
   .foot { border-top: 1px solid var(--s0); background: var(--mantle); }
@@ -275,6 +401,14 @@
 {{define "i-ext"}}<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"></path></svg><span class="vh"> (opens in a new tab)</span>{{end}}
 {{define "i-flag"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"></path></svg>{{end}}
 {{define "i-retry"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>{{end}}
+{{define "i-gear"}}<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>{{end}}
+{{define "i-edit"}}<svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>{{end}}
+{{define "i-plus"}}<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>{{end}}
+{{define "i-reset"}}<svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>{{end}}
+{{define "i-copy"}}<svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>{{end}}
+{{define "i-lock"}}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4"></path></svg>{{end}}
+{{define "i-x"}}<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>{{end}}
+{{define "i-tick"}}<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"></path></svg>{{end}}
 {{define "gh-pr"}}<a class="btn out" href="{{.}}" target="_blank" rel="noopener">{{template "i-github"}}Open on GitHub{{template "i-ext"}}</a>{{end}}
 {{define "gh-pr-small"}}<a class="btn small out" href="{{.}}" target="_blank" rel="noopener">{{template "i-github"}}Open on GitHub{{template "i-ext"}}</a>{{end}}
 {{define "gh-comment"}}<a class="btn tiny out" href="{{.}}" target="_blank" rel="noopener">{{template "i-comment"}}View comment{{template "i-ext"}}</a>{{end}}
@@ -286,10 +420,9 @@
     <a href="/"{{if eq .Nav "reviews"}} aria-current="page"{{end}}>Reviews</a>
     <a href="/history"{{if eq .Nav "history"}} aria-current="page"{{end}}>History</a>
     <a href="/stats"{{if eq .Nav "stats"}} aria-current="page"{{end}}>Stats</a>
-    <a href="/profile"{{if eq .Nav "profile"}} aria-current="page"{{end}}>Profile</a>
   </nav>
   <div class="grow"></div>
-  {{with header}}<div class="status">
+  <div class="status">{{with header}}
     {{$run := and .Lead (eq .Lead.Status "running")}}<a class="chip work" href="/#running" data-running-pill data-status="{{with .Lead}}{{.Status}}{{end}}"{{if not .Running}} hidden{{end}}>
       <span class="spin" aria-hidden="true">{{if $run}}✻{{else}}·{{end}}</span><span class="verb">{{if $run}}Working…{{else}}Waiting in line…{{end}}</span>
       <span class="sub"><span class="count-n">{{.Running}}</span> running</span></a>
@@ -299,8 +432,9 @@
     {{with .Usage}}<span class="chip sub" title="Claude plan usage"><span>Plan</span>
       <span class="usage">5h <span class="meter"><span style="width: {{.FiveHour}}%"></span></span> <b>{{.FiveHour}}%</b></span>
       <span class="usage">week <span class="meter"><span style="width: {{.Week}}%"></span></span> <b>{{.Week}}%</b></span></span>{{end}}
-    {{template "version" .}}
-  </div>{{end}}
+    {{template "version" .}}{{end}}
+    <a class="chip setpill" href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>{{template "i-gear"}}Settings</a>
+  </div>
 </header>{{end}}
 
 {{define "version"}}{{$v := .Version}}<details class="vmenu" id="vmenu" data-version="{{$v.Current}}"{{if $v.Busy}} data-busy{{end}}>
@@ -343,7 +477,7 @@
   <nav class="links" aria-label="Help"><a href="{{.BugURL}}" target="_blank" rel="noopener">Report a bug</a>
     <a href="{{.IdeaURL}}" target="_blank" rel="noopener">Suggest an idea</a>
     <a href="{{.Repo}}#readme" target="_blank" rel="noopener">Docs</a>
-    <a href="{{.Repo}}#settings" target="_blank" rel="noopener">Settings</a>
+    <a href="/settings">Settings</a>
     <a href="{{.Repo}}" target="_blank" rel="noopener">Source</a></nav>
 </div></footer>{{end}}
 <script src="/running.js" defer></script><script src="/update.js" defer></script><script src="/bar.js" defer></script>
@@ -756,58 +890,296 @@
 </main>
 {{template "foot"}}{{end}}
 
-{{define "profile"}}{{template "head" (page "Profile · personal-review-bot" 0 "profile")}}
-<main class="page">
-  <div class="pagehead"><div class="intro"><h1>Profile</h1>
-    <p class="lede">Every comment and every approval this bot sends goes out as this account. Nothing here is a
-      separate identity: it is your own GitHub login, used by the reviews you run.</p>
-    {{if .Err}}<p class="lede">GitHub couldn't be asked just now ({{.Err}}), so only what the bot knows locally is shown.</p>{{end}}</div></div>
+{{define "changed"}}{{if .Changed}}<span class="pill changed">Changed</span>{{end}}{{end}}
+{{define "set-note"}}{{if .Env}}<span class="hint">Set by <code>{{.Name}}</code> in the environment, which wins over this page. Change it there.</span>
+{{else}}<span class="hint">Default: {{.Shown}}{{if .Changed}}<button type="button" class="linkbtn" data-reset="{{.Key}}" data-value="{{.Default}}" hidden>{{template "i-reset"}}Reset to {{.Shown}}</button>{{end}}</span>{{end}}{{end}}
+{{define "switch"}}<div class="swrow"><span class="switch"><input type="hidden" name="{{.Key}}" value="0"{{if .Env}} disabled{{end}}><input type="checkbox" role="switch" id="s-{{.Key}}" name="{{.Key}}" value="1"{{if eq .Value "1"}} checked{{end}}{{if .Env}} disabled{{end}} aria-labelledby="l-{{.Key}}"><span class="track"></span></span><span class="is-on">On</span><span class="is-off">Off</span></div>{{end}}
+{{define "seg"}}<div class="seg" role="radiogroup" aria-labelledby="l-{{.S.Key}}">{{$s := .S}}{{range .C}}<label><input type="radio" name="{{$s.Key}}" value="{{.Value}}"{{if .On}} checked{{end}}{{if $s.Env}} disabled{{end}}>{{.Label}}</label>{{end}}</div>{{end}}
+{{define "text"}}<div class="inp{{if .Env}} locked{{end}}">{{if .Env}}{{template "i-lock"}}{{end}}<input class="field" id="s-{{.Key}}" name="{{.Key}}" value="{{.Value}}" autocomplete="off" spellcheck="false"{{if .Env}} disabled{{end}}></div>{{end}}
+{{define "number"}}<div class="unit"><input class="field num" type="number" id="s-{{.S.Key}}" name="{{.S.Key}}" value="{{.S.Value}}" min="{{.Min}}" max="{{.Max}}" required{{if .S.Env}} disabled{{end}}><span>{{.Unit}}</span></div>{{end}}
 
-  <section class="sect" aria-labelledby="acct"><h2 id="acct" class="h2">Acting as</h2>
-    <div class="card">
-      <div class="who">
-        {{if .HasAvatar}}<img src="/avatar" width="72" height="72" alt="">
-        {{else}}<span class="noface" aria-hidden="true">{{if .Account.Login}}{{slice .Account.Login 0 1}}{{else}}?{{end}}</span>{{end}}
-        <div>
-          <div class="nm">{{if .Account.Name}}{{.Account.Name}}{{else}}{{.Account.Login}}{{end}}</div>
-          <div class="at">{{if .Account.HTMLURL}}<a href="{{.Account.HTMLURL}}" target="_blank" rel="noopener">@{{.Account.Login}}</a>{{else}}@{{.Account.Login}}{{end}}{{if .Account.Company}} · {{.Account.Company}}{{end}}{{if not .Account.Created.IsZero}} · on GitHub since {{.Account.Created.Format "Jan 2006"}}{{end}}</div>
-          {{if .Account.Orgs}}<div class="orgs">{{range .Account.Orgs}}<span{{if and $.Scoped (eq . $.Watched)}} class="on" title="The org this bot watches"{{end}}>{{.}}</span>{{end}}</div>{{end}}
-        </div>
-      </div>
-    </div>
+{{define "settings"}}{{template "head" (page "Settings · personal-review-bot" 0 "settings")}}
+<main class="page wide">
+  <div class="pagehead"><div class="intro"><h1>Settings</h1>
+    <p class="lede">What the bot reviews, what it posts under your name, and what it may spend. Changes apply from the next
+      review; a setting that needs a restart says so.</p></div>
+    <span class="hint">Saved to <code>{{.File}}</code></span></div>
+  {{with .Err}}<div class="callout bad" role="alert"><b>Not saved.</b> {{.}}</div>{{end}}
+  {{if and .Msg (not .At)}}<div class="callout" role="status">{{.Msg}}</div>{{end}}
+
+  <div class="set-layout">
+  <nav class="set-nav" aria-label="Settings sections">
+    <a href="#account">Account<span class="n"></span></a>
+    <a href="#reviewing">What it reviews<span class="n" data-changes-for="reviewing"></span></a>
+    <a href="#posting">What goes out<span class="n" data-changes-for="posting"></span></a>
+    <a href="#cost">Cost and limits<span class="n" data-changes-for="cost"></span></a>
+    <a href="#reviewers">Reviewers<span class="n" data-changes-for="reviewers"></span></a>
+    <a href="#prompts">Prompts and notes<span class="n" data-changes-for="prompts"></span></a>
+    <a href="#page">This page<span class="n" data-changes-for="page"></span></a>
+    <a href="#updates">Updates<span class="n" data-changes-for="updates"></span></a>
+    <a href="#files">Files<span class="n"></span></a>
+  </nav>
+
+  <form class="set-main" id="settings" method="post" action="/settings" data-settings{{if .Err}} data-unsaved{{end}}>
+  <input type="hidden" name="csrf" value="{{.Token}}">
+
+  <section class="set" id="account" aria-labelledby="h-account">
+    <div class="hd"><h2 id="h-account">Account</h2>
+      <p class="desc">Every comment and approval goes out as this GitHub account: the one <code>gh</code> is logged in as.
+        To change it, log <code>gh</code> in as someone else and restart.</p></div>
+    {{with .Account}}<div class="acct">
+      {{if .Avatar}}<img class="face" src="/avatar" width="56" height="56" alt="">{{else}}<span class="face" aria-hidden="true">{{initial .Login}}</span>{{end}}
+      <div class="who"><b>Acting as @{{.Login}}</b>{{with .Name}}<span class="sub">{{.}}</span>{{end}}
+        {{if .Orgs}}<div class="orgs"><span class="of">Member of</span>{{range .Orgs}}<span class="org{{if .Watched}} on{{end}}">{{if .Watched}}{{template "i-tick"}}{{.Name}} · watched{{else}}{{.Name}}{{end}}</span>{{end}}</div>{{end}}
+        {{with .NotMember}}<span class="hint">This account isn't a member of {{.}}, the organisation it watches.</span>{{end}}
+        {{with .Err}}<span class="hint">GitHub couldn't be asked just now: {{.}}</span>{{end}}</div>
+      {{with .URL}}<a class="btn small out" href="{{.}}" target="_blank" rel="noopener">{{template "i-github"}}Open on GitHub{{template "i-ext"}}</a>{{end}}
+    </div>{{end}}
   </section>
 
-  <section class="sect" aria-labelledby="scope"><h2 id="scope" class="h2">What it watches</h2>
-    <div class="card"><dl class="kv">
-      <dt>Review requests</dt><dd>asked of @{{.Account.Login}} directly, never through a team</dd>
-      <dt>Organisations</dt><dd>{{if .Scoped}}{{.Watched}} only{{if and .Account.Orgs (not .Member)}} — note this account is not a member of it{{end}}{{else}}any org this account belongs to{{end}}</dd>
-      <dt>Checked</dt><dd>every {{dur .Poll}}, {{.Parallel}} review(s) at a time</dd>
-      {{if .MaxAgeDays}}<dt>Left alone</dt><dd>PRs with no activity for {{.MaxAgeDays}} days</dd>{{end}}
-    </dl></div>
+  <section class="set" id="reviewing" aria-labelledby="h-reviewing">
+    <div class="hd"><h2 id="h-reviewing">What it reviews</h2>
+      <p class="desc">Only PRs where your review is asked for directly, never through a team.</p></div>
+    {{with index .F "ORG"}}<div class="srow" data-row data-label="Organisation">
+      <div class="what"><span class="slabel"><label for="s-ORG">Organisation</label>{{template "changed" .}}</span>
+        <p class="desc">Review requests from other organisations are left alone. Empty: any org you belong to.</p></div>
+      <div class="ctl">{{template "text" .}}{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "SKIP_DRAFTS"}}<div class="srow" data-row data-label="Skip draft PRs">
+      <div class="what"><span class="slabel"><span id="l-SKIP_DRAFTS">Skip draft PRs</span>{{template "changed" .}}</span>
+        <p class="desc">A draft is reviewed once it's marked ready for review.</p></div>
+      <div class="ctl">{{template "switch" .}}{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "MAX_AGE_DAYS"}}<div class="srow" data-row data-label="Leave quiet PRs alone after" data-unit=" days">
+      <div class="what"><span class="slabel"><label for="s-MAX_AGE_DAYS">Leave quiet PRs alone after</label>{{template "changed" .}}</span>
+        <p class="desc">No commits, comments, reviews or edits for this long: skipped until there's activity again. 0 never skips.</p></div>
+      <div class="ctl">{{template "number" (num . 0 365 "days")}}{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "POLL_SECONDS"}}<div class="srow" data-row data-label="Check GitHub every">
+      <div class="what"><span class="slabel"><span id="l-POLL_SECONDS">Check GitHub every</span>{{template "changed" .}}</span>
+        <p class="desc">How often it looks for new review requests.</p></div>
+      <div class="ctl">{{template "seg" (seg . $.Polls)}}{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "PARALLEL"}}<div class="srow" data-row data-label="Reviews at a time">
+      <div class="what"><span class="slabel"><span id="l-PARALLEL">Reviews at a time</span>{{template "changed" .}}</span>
+        <p class="desc">More finishes a busy morning sooner, and uses your Claude plan faster.</p></div>
+      <div class="ctl">{{template "seg" (seg . $.Parallel)}}{{template "set-note" .}}</div>
+    </div>{{end}}
   </section>
 
-  <section class="sect" aria-labelledby="name"><h2 id="name" class="h2">What goes out under this name</h2>
-    <div class="card"><dl class="kv">
-      <dt>Posted without asking</dt><dd>{{if .AutoPost}}findings the verifier confirms at {{.Threshold}}%+ certainty, of {{.AutoPost}} severity{{else}}nothing — every finding waits for you{{end}}</dd>
-      <dt>Always waits for you</dt><dd>{{if .Held}}{{.Held}} severity, design concerns, and every approval{{else}}design concerns and every approval{{end}}</dd>
-      <dt>Signed</dt><dd><code>{{.Watermark}}</code> followed by the certainty</dd>
-      <dt>Approvals say</dt><dd>{{if .ApproveText}}<code>{{.ApproveText}}</code> the first time{{else}}nothing — approved without a comment{{end}}</dd>
-    </dl></div>
+  <section class="set" id="posting" aria-labelledby="h-posting">
+    <div class="hd"><h2 id="h-posting">What goes out under your name</h2>
+      <p class="desc">What the bot posts without asking you first. Design concerns and approvals always wait for you.</p></div>
+    {{with index .F "AUTO_POST"}}<div class="srow" data-row data-label="Post on its own">
+      <div class="what"><span class="slabel"><span id="l-AUTO_POST">Post on its own</span>{{template "changed" .}}</span>
+        <p class="desc">Confirmed findings of these severities are posted without asking. The rest wait for you on the review.</p></div>
+      <div class="ctl">{{$s := .}}{{if not .Env}}<input type="hidden" name="AUTO_POST" value="">{{end}}
+        <div class="togs" role="group" aria-labelledby="l-AUTO_POST">{{range $.Sevs}}<label class="tog">{{template "i-tick"}}<input type="checkbox" name="AUTO_POST" value="{{.Value}}"{{if .On}} checked{{end}}{{if $s.Env}} disabled{{end}}>{{.Label}}</label>{{end}}</div>
+        {{if not $.HighOn}}<div class="confirm-high"><span>High findings will go out under your name without you seeing them first:
+          they're the costly kind to get wrong.</span>
+          <label><input type="checkbox" name="confirm_high" value="1">Post high findings on their own</label></div>{{end}}
+        {{if .Env}}{{template "set-note" .}}{{else}}<span class="hint">Default: low and medium. High findings wait for you: they're the costly kind to get wrong under your name.{{if .Changed}}<button type="button" class="linkbtn" data-reset="AUTO_POST" data-value="{{.Default}}" hidden>{{template "i-reset"}}Reset to low and medium</button>{{end}}</span>{{end}}</div>
+    </div>{{end}}
+    {{with index .F "THRESHOLD"}}<div class="srow" data-row data-label="Certainty needed" data-unit="%">
+      <div class="what"><span class="slabel"><label for="s-THRESHOLD">Certainty needed</label>{{template "changed" .}}</span>
+        <p class="desc">How sure the verifier must be that a finding is real before it posts on its own.</p></div>
+      <div class="ctl"><div class="rangerow"><input type="range" id="s-THRESHOLD" name="THRESHOLD" min="{{rangeMin .Value}}" max="100" step="5" value="{{.Value}}"{{if .Env}} disabled{{end}}>
+        <output for="s-THRESHOLD" data-out="THRESHOLD">{{.Value}}%</output></div>{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "APPROVE_TEXT"}}<div class="srow" data-row data-label="Approval message">
+      <div class="what"><span class="slabel"><label for="s-APPROVE_TEXT">Approval message</label>{{template "changed" .}}</span>
+        <p class="desc">Said with your first approval of a PR; a re-approval after new commits goes without it. Empty approves without a comment.</p></div>
+      <div class="ctl">{{template "text" .}}{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "WATERMARK"}}<div class="srow" data-row data-label="Signature">
+      <div class="what"><span class="slabel"><label for="s-WATERMARK">Signature</label>{{template "changed" .}}</span>
+        <p class="desc">Ends every comment the bot posts, followed by its certainty, so readers know a bot wrote it. The bot
+          finds its earlier comments by it, so after a change it no longer follows up on the ones signed the old way.</p></div>
+      <div class="ctl">{{template "text" .}}
+        <div class="sig" aria-label="How a comment ends"><span class="k">How a comment ends</span>
+          <span>The key expires after 24h, so a retry the next day captures again.</span>
+          <span class="end" data-sig>{{.Value}} · 92%</span></div>{{template "set-note" .}}</div>
+    </div>{{end}}
   </section>
 
-  <section class="sect" aria-labelledby="done"><h2 id="done" class="h2">Done under this account</h2>
-    <div class="tiles">
-      <div class="card tile"><div class="l">Reviews today</div><div class="v">{{.Today.Reviews}}</div><div class="all">{{money .Today.CostUSD}} spent</div></div>
-      <div class="card tile"><div class="l">Last 7 days</div><div class="v">{{.Week.Reviews}}</div><div class="all">{{money .Week.CostUSD}} · {{.Week.PRs}} PRs</div></div>
-      <div class="card tile"><div class="l">All time</div><div class="v">{{.All.Reviews}}</div><div class="all">{{money .All.CostUSD}} · {{.All.Approvals}} approvals</div></div>
-      <div class="card tile"><div class="l">Findings posted</div><div class="v">{{.All.Posted}}</div><div class="all">bot {{.All.BotPosted}} · you {{.All.YouPosted}}{{if .All.Wrong}} · {{.All.Wrong}} marked wrong{{end}}</div></div>
-      <div class="card tile"><div class="l">You dropped</div><div class="v">{{.All.Discarded}}</div><div class="all">verifier rejected {{.All.Rejected}}</div></div>
-      <div class="card tile"><div class="l">Per review</div><div class="v">{{money .All.PerReview}}</div><div class="all">last 7 days {{money .Week.PerReview}}</div></div>
-    </div>
-    {{if .HasUsage}}<p class="lede">Reviews run on your Claude plan: <b>{{pct .FiveHour}}</b> of the 5-hour limit
-      (resets {{.FiveHourReset.Local.Format "15:04"}}) · <b>{{pct .Week7}}</b> of the week
-      (resets {{.WeekReset.Local.Format "Mon 15:04"}}), read {{ago .UsageSeen}}.</p>{{end}}
+  <section class="set" id="cost" aria-labelledby="h-cost">
+    <div class="hd"><h2 id="h-cost">Cost and limits</h2>
+      <p class="desc">Reviews run on your Claude plan. As it fills, they switch to cheaper models so they don't use up what you need yourself.</p></div>
+    {{with .Zones}}<div class="zones" data-zones>
+      <div class="zbar"><span class="z1" style="width: {{.Usual}}%"></span><span class="z2" style="width: {{.Cheaper}}%"></span><span class="z3" style="width: {{.Cheapest}}%"></span>
+        {{if ge $.Usage 0}}<span class="now" style="left: {{$.Mark}}%" title="Now: {{$.Usage}}% of the fuller limit"></span>{{end}}</div>
+      <div class="zlabels" style="grid-template-columns: {{.Usual}}% {{.Cheaper}}% {{.Cheapest}}%"><span>Usual models{{if ge $.Usage 0}} · now {{$.Usage}}%{{end}}</span><span>Cheaper</span><span>Cheapest</span></div>
+    </div>{{end}}
+    {{with index .F "SAVE_AT"}}<div class="srow" data-row data-label="Cheaper models from" data-unit="%">
+      <div class="what"><span class="slabel"><label for="s-SAVE_AT">Cheaper models from</label>{{template "changed" .}}</span>
+        <p class="desc">Of the plan's 5-hour or weekly limit, whichever is fuller: reviews move to cheaper models at medium effort.</p></div>
+      <div class="ctl">{{template "number" (num . 0 100 "% used")}}{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "MIN_AT"}}<div class="srow" data-row data-label="Cheapest from" data-unit="%">
+      <div class="what"><span class="slabel"><label for="s-MIN_AT">Cheapest from</label>{{template "changed" .}}</span>
+        <p class="desc">Haiku reviewers and a Sonnet verifier at low effort, without the design review. Must be above the line before.</p></div>
+      <div class="ctl">{{template "number" (num . 0 100 "% used")}}{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "AGENT_TIMEOUT_MINUTES"}}<div class="srow" data-row data-label="Time limit per reviewer" data-unit=" min">
+      <div class="what"><span class="slabel"><label for="s-AGENT_TIMEOUT_MINUTES">Time limit per reviewer</label>{{template "changed" .}}</span>
+        <p class="desc">A reviewer still running after this is stopped, and the review says so.</p></div>
+      <div class="ctl">{{template "number" (num . 1 120 "minutes")}}{{template "set-note" .}}</div>
+    </div>{{end}}
   </section>
-  <a class="spend" href="/stats">Full stats</a>
+
+  <section class="set" id="reviewers" aria-labelledby="h-reviewers">
+    <div class="hd split"><div><h2 id="h-reviewers">Reviewers</h2>
+      <p class="desc">Each reads the PR with its own focus. Changes apply from the next review.</p></div>
+      <a class="btn small" href="#rv-new">{{template "i-plus"}}Add a reviewer</a></div>
+    {{if eq .At "reviewers"}}<div class="callout" role="status">{{.Msg}}</div>{{end}}
+    {{with .KitErr}}<div class="callout bad" role="alert">A reviewer or prompt file can't be used, so reviews fail until it's fixed: {{.}}</div>{{end}}
+    {{if .Reviewers}}<div class="rhead" aria-hidden="true"><span>Reviewer</span><span>Runs on</span><span>Model</span><span>On</span><span></span></div>{{end}}
+    {{range .Reviewers}}<div class="rrow" data-row data-label="{{.Name}}">
+      <div class="nm"><span><b>{{.Name}}</b><span class="pill sm{{if eq .Tag "Customised"}} changed{{else if eq .Tag "Yours"}} yours{{end}}">{{.Tag}}</span></span><span class="area">{{.Area}}</span></div>
+      <span class="runs{{if .Paths}} mono{{end}}" title="{{.Runs}}{{if .Docs}}, docs-only PRs too{{end}}">{{.Runs}}</span>
+      <span class="model">{{.ModelIs}}</span>
+      <span class="switch keep"><input type="hidden" name="reviewer" value="{{.Name}}"><input type="checkbox" role="switch" name="on" value="{{.Name}}" aria-label="{{.Name}} on"{{if .Enabled}} checked{{end}}><span class="track"></span></span>
+      <a class="btn tiny keep" href="#rv-{{.Name}}">{{template "i-edit"}}Edit</a>
+    </div>{{end}}
+    <p class="foot-note">The bot also always runs its own four: <b>design</b> on a first review of a medium or large PR,
+      <b>follow-up</b> on re-reviews, the <b>verifier</b> and the <b>summary</b> on every review.</p>
+  </section>
+
+  <section class="set" id="prompts" aria-labelledby="h-prompts">
+    <div class="hd"><h2 id="h-prompts">Prompts and notes</h2>
+      <p class="desc">What every agent is told. A prompt you customise no longer gets the improvements new versions bring.</p></div>
+    {{if eq .At "prompts"}}<div class="callout" role="status">{{.Msg}}</div>{{end}}
+    {{if not .KitErr}}<div class="srow stack" data-row data-label="Notes about your organisation" data-long>
+      <label class="slabel" for="s-CONTEXT">Notes about your organisation</label>
+      <p class="desc">Every prompt gets these: where your ADRs live, how tasks are tracked, house rules. The PR can't change them,
+        so the agents rely on them.</p>
+      <textarea id="s-CONTEXT" name="CONTEXT" rows="5" spellcheck="false" placeholder="ADRs live in my-org/architecture under adr/; accepted ones are binding.">{{.Context}}</textarea>
+      <span class="hint">Saved as context.md{{if not .Context}} once you write something{{end}}</span>
+    </div>{{end}}
+    {{range .Prompts}}<div class="prow">
+      <div class="nm"><span><b>{{.Name}}</b><span class="pill sm{{if .Custom}} changed{{end}}">{{if .Custom}}Customised{{else}}Built-in{{end}}</span></span><span class="what">{{.What}}</span></div>
+      <div class="acts">{{if .Custom}}<button class="btn tiny line" form="prr-{{.Name}}" data-confirm="Go back to the built-in {{.Name}} prompt? Your version in {{.File}} is deleted.">{{template "i-reset"}}Reset to built-in</button>{{end}}
+        <a class="btn tiny" href="#pr-{{.Name}}">{{template "i-edit"}}{{if .Custom}}Edit{{else}}Customise{{end}}</a></div>
+    </div>{{end}}
+  </section>
+
+  <section class="set" id="page" aria-labelledby="h-page">
+    <div class="hd"><h2 id="h-page">This page</h2></div>
+    {{with index .F "SHOW_LABELS"}}<div class="srow" data-row data-label="PR labels to show">
+      <div class="what"><span class="slabel"><label for="s-SHOW_LABELS">PR labels to show</label>{{template "changed" .}}</span>
+        <p class="desc">Labels starting with these show in the lists' Risk column and on a review, coloured by the level they end in. Separate them with commas.</p></div>
+      <div class="ctl"><div class="inp{{if .Env}} locked{{end}}">{{if .Env}}{{template "i-lock"}}{{end}}<input class="field mono" id="s-SHOW_LABELS" name="SHOW_LABELS" value="{{commas .Value}}" placeholder="none" autocomplete="off" spellcheck="false"{{if .Env}} disabled{{end}}></div>
+        {{if .Env}}{{template "set-note" .}}{{else}}<span class="hint">Default: {{.Shown}}{{if .Changed}}<button type="button" class="linkbtn" data-reset="SHOW_LABELS" data-value="{{commas .Default}}" hidden>{{template "i-reset"}}Reset to {{.Shown}}</button>{{end}}</span>{{end}}</div>
+    </div>{{end}}
+    {{with index .F "ADDR"}}<div class="srow" data-row data-label="Address">
+      <div class="what"><span class="slabel"><label for="s-ADDR">Address</label><span class="pill restart">Needs a restart</span>{{template "changed" .}}</span>
+        <p class="desc">Where this page is served. Only this computer can reach it.</p></div>
+      <div class="ctl">{{template "text" .}}
+        {{with $.Moved}}<span class="hint">Saved: the page moves to {{.}} once the bot restarts.{{with $.Restart}} To restart now: <code>{{.}}</code>{{end}}</span>{{end}}
+        {{template "set-note" .}}</div>
+    </div>{{end}}
+  </section>
+
+  <section class="set" id="updates" aria-labelledby="h-updates">
+    <div class="hd"><h2 id="h-updates">Updates</h2></div>
+    {{with index .F "UPDATE_CHECK"}}<div class="srow" data-row data-label="Look for new releases">
+      <div class="what"><span class="slabel"><span id="l-UPDATE_CHECK">Look for new releases every hour</span>{{template "changed" .}}</span>
+        <p class="desc">Off: only when you ask, from the version menu. Nothing is installed until you click Update and restart.</p></div>
+      <div class="ctl">{{template "switch" .}}{{template "set-note" .}}</div>
+    </div>{{end}}
+    {{with index .F "UPDATE_REPO"}}<div class="srow">
+      <div class="what"><span class="slabel"><label for="s-UPDATE_REPO">Releases from</label>{{template "changed" .}}</span>
+        <p class="desc">For a fork that publishes its own releases; its release workflow must attest the builds the same way.</p></div>
+      <div class="ctl"><div class="inp locked">{{template "i-lock"}}<input class="field mono" id="s-UPDATE_REPO" value="{{.Value}}" disabled></div>
+        {{if .Env}}{{template "set-note" .}}{{else}}<span class="hint">It decides where the code you run comes from, so the page doesn't change it:
+          set <code>UPDATE_REPO</code> in config.env, or <code>{{.Name}}</code> in the environment.</span>{{end}}</div>
+    </div>{{end}}
+  </section>
+
+  <section class="set" id="files" aria-labelledby="h-files">
+    <div class="hd"><h2 id="h-files">Files</h2>
+      <p class="desc">Where it keeps things. These can only be moved in the environment.</p></div>
+    {{range .Files}}<div class="frow"><span class="k">{{.Name}}</span><code>{{.Path}}</code>
+      <button type="button" class="btn tiny" data-copy="{{.Full}}" hidden>{{template "i-copy"}}Copy path</button></div>{{end}}
+  </section>
+
+  <div class="savebar" role="region" aria-label="Unsaved changes" data-savebar>
+    <span class="dot" aria-hidden="true"></span>
+    <div class="what" aria-live="polite"><b data-count>{{if .Err}}Not saved yet{{else}}Save your changes{{end}}</b><span data-summary>{{if .Err}}Fix what's marked above, then save again.{{else}}Changes apply from the next review.{{end}}</span></div>
+    <button type="button" class="btn line" data-discard hidden>Discard</button>
+    <button class="btn primary">Save changes</button>
+  </div>
+  </form>
+  </div>
 </main>
+
+{{range .Reviewers}}{{template "rv-drawer" .}}{{end}}
+{{template "rv-drawer" .Adding}}
+{{range .Prompts}}{{template "pr-drawer" .}}
+<form id="prr-{{.Name}}" method="post" action="/settings/prompt/reset" hidden><input type="hidden" name="csrf" value="{{$.Token}}"><input type="hidden" name="name" value="{{.Name}}"></form>{{end}}
+<script src="/settings.js" defer></script>
 {{template "foot"}}{{end}}
+
+{{define "rv-drawer"}}{{$id := print "rv-" .Name}}{{if .New}}{{$id = "rv-new"}}{{end}}<div class="drawer{{if .Open}} open{{end}}" id="{{$id}}">
+  <a class="scrim" href="/settings#reviewers" tabindex="-1" aria-hidden="true"></a>
+  <form method="post" action="/settings/reviewer" role="dialog" aria-modal="true" aria-labelledby="{{$id}}-t">
+    <input type="hidden" name="csrf" value="{{.Token}}">
+    <div class="dhead"><div><span class="kicker">{{if .New}}Add a reviewer{{else}}Edit reviewer{{end}}</span>
+      <h2 id="{{$id}}-t">{{if .New}}New reviewer{{else}}{{.Name}}<span class="pill sm{{if eq .Tag "Customised"}} changed{{else if eq .Tag "Yours"}} yours{{end}}">{{.Tag}}</span>{{end}}</h2></div>
+      <a class="btn small" href="/settings#reviewers">{{template "i-x"}}Close</a></div>
+    <div class="dbody">
+      {{with .Err}}<div class="callout bad" role="alert"><b>Not saved.</b> {{.}}</div>{{end}}
+      {{if .New}}<input type="hidden" name="new" value="1">
+      <div class="dfield"><label for="{{$id}}-name">Name</label>
+        <input class="field mono" id="{{$id}}-name" name="name" value="{{.Name}}" required maxlength="40" pattern="[a-z0-9][a-z0-9\-]*" placeholder="cost" autocomplete="off" spellcheck="false">
+        <span class="hint">Lowercase letters, digits and dashes. It names the reviewer and its file.</span></div>
+      {{else}}<input type="hidden" name="name" value="{{.Name}}">{{end}}
+      <div class="dfield"><label for="{{$id}}-area">What it reviews</label>
+        <input class="field" id="{{$id}}-area" name="area" value="{{.Area}}" required maxlength="80" autocomplete="off">
+        <span class="hint">A few words. It names the reviewer's area in its instructions and on the review page.</span></div>
+      <div class="dfield"><label for="{{$id}}-paths">Runs on</label>
+        <input class="field mono" id="{{$id}}-paths" name="paths" value="{{.Paths}}" placeholder="every PR" autocomplete="off" spellcheck="false">
+        <span class="hint">A pattern of file paths (a Go regular expression): it runs only when a changed file matches. Empty runs it on every PR.</span></div>
+      <div class="dswitch"><div><span class="slabel" id="{{$id}}-l-docs">Also on PRs that only change docs</span><span class="hint">Off: a docs-only PR skips this reviewer.</span></div>
+        <span class="switch"><input type="checkbox" role="switch" name="docs" value="1"{{if .Docs}} checked{{end}} aria-labelledby="{{$id}}-l-docs"><span class="track"></span></span></div>
+      <div class="dfield"><span class="slabel" id="{{$id}}-l-model">Model</span>
+        <div class="seg" role="radiogroup" aria-labelledby="{{$id}}-l-model">{{range .Models}}<label><input type="radio" name="model" value="{{.Value}}"{{if .On}} checked{{end}}>{{.Label}}</label>{{end}}</div>
+        <span class="hint">By PR size: Haiku on a small PR, Sonnet on a medium one, Opus on a large one. A pinned model still steps down when your plan fills up (Cost and limits).</span></div>
+      <div class="dswitch"><div><span class="slabel" id="{{$id}}-l-on">Turned on</span><span class="hint">Off: it doesn't run, and its file stays for later.</span></div>
+        <span class="switch"><input type="checkbox" role="switch" name="enabled" value="1"{{if .Enabled}} checked{{end}} aria-labelledby="{{$id}}-l-on"><span class="track"></span></span></div>
+      <div class="dfield"><label for="{{$id}}-focus">What to look for</label>
+        <textarea id="{{$id}}-focus" name="focus" rows="9" required spellcheck="false">{{.Focus}}</textarea>
+        <span class="hint">Markdown. The reviewer reads this on top of the shared review prompt.</span></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn primary" style="order: 4">Save reviewer</button>
+      {{if not .New}}{{if not .Builtin}}<button class="btn line" formaction="/settings/reviewer/remove" formnovalidate data-confirm="Remove the {{.Name}} reviewer? Its file, {{.File}}, is deleted.">Remove reviewer</button>
+      {{else if ne .Tag "Built-in"}}<button class="btn line" formaction="/settings/reviewer/remove" formnovalidate data-confirm="Go back to the built-in {{.Name}} reviewer? Your changes in {{.File}} are deleted.">{{template "i-reset"}}Reset to built-in</button>{{end}}{{end}}
+      <span class="saved-as" style="order: 1">{{if .New}}Saved in the agents folder of the config directory{{else if eq .Tag "Built-in"}}Saved as {{.File}} once you change something{{else}}Saved as {{.File}}{{end}}</span>
+      <a class="btn line" href="/settings#reviewers" style="order: 2">Cancel</a>
+    </div>
+  </form>
+</div>{{end}}
+
+{{define "pr-drawer"}}{{$id := print "pr-" .Name}}<div class="drawer{{if .Open}} open{{end}}" id="{{$id}}">
+  <a class="scrim" href="/settings#prompts" tabindex="-1" aria-hidden="true"></a>
+  <form method="post" action="/settings/prompt" role="dialog" aria-modal="true" aria-labelledby="{{$id}}-t">
+    <input type="hidden" name="csrf" value="{{.Token}}"><input type="hidden" name="name" value="{{.Name}}">
+    <div class="dhead"><div><span class="kicker">{{if .Custom}}Edit prompt{{else}}Customise prompt{{end}}</span>
+      <h2 id="{{$id}}-t">{{.Name}}<span class="pill sm{{if .Custom}} changed{{end}}">{{if .Custom}}Customised{{else}}Built-in{{end}}</span></h2></div>
+      <a class="btn small" href="/settings#prompts">{{template "i-x"}}Close</a></div>
+    <div class="dbody">
+      {{with .Err}}<div class="callout bad" role="alert"><b>Not saved.</b> {{.}}</div>{{end}}
+      <p class="desc">{{.What}}. It's a Go template: the parts in double braces, like <code>{{"{{.Title}}"}}</code> and <code>{{"{{.Diff}}"}}</code>, are filled in for each review.
+        It's checked before it's saved, so a mistake can't stop a review.</p>
+      <div class="dfield"><label for="{{$id}}-text">Prompt</label>
+        <textarea id="{{$id}}-text" name="text" rows="24" required spellcheck="false">{{.Text}}</textarea></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn primary" style="order: 4">Save prompt</button>
+      {{if .Custom}}<button class="btn line" formaction="/settings/prompt/reset" formnovalidate data-confirm="Go back to the built-in {{.Name}} prompt? Your version in {{.File}} is deleted.">{{template "i-reset"}}Reset to built-in</button>{{end}}
+      <span class="saved-as" style="order: 1">{{if .Custom}}Saved as {{.File}}{{else}}Saved as {{.File}} once you change it{{end}}</span>
+      <a class="btn line" href="/settings#prompts" style="order: 2">Cancel</a>
+    </div>
+  </form>
+</div>{{end}}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -50,13 +51,21 @@ func (c *Client) Account() (Account, error) {
 
 // avatarHost reports whether raw is an address an avatar is served from. The address comes from the API rather
 // than from anyone's input, so this is a guard rather than a filter: it keeps a redirect or a changed field from
-// turning the fetch below into a request to somewhere else.
+// turning the fetch below into a request to somewhere else. It is the one host and not *.githubusercontent.com,
+// which also serves files anyone can upload (raw., user-images., objects.).
 func avatarHost(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" {
-		return false
-	}
-	return u.Host == "githubusercontent.com" || strings.HasSuffix(u.Host, ".githubusercontent.com")
+	return err == nil && u.Scheme == "https" && u.Host == "avatars.githubusercontent.com"
+}
+
+// avatarTypes are the pictures the page serves: the ones GitHub stores avatars as. Not SVG, which can carry script.
+var avatarTypes = []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
+
+// avatarType reads a Content-Type header and reports whether it is one of avatarTypes.
+func avatarType(header string) (string, bool) {
+	media, _, _ := strings.Cut(header, ";")
+	media = strings.ToLower(strings.TrimSpace(media))
+	return media, slices.Contains(avatarTypes, media)
 }
 
 // Avatar downloads the account's picture and returns it with its media type.
@@ -86,9 +95,9 @@ func Avatar(ctx context.Context, rawURL string) ([]byte, string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("avatar: %s", resp.Status)
 	}
-	media, _, _ := strings.Cut(resp.Header.Get("Content-Type"), ";")
-	if !strings.HasPrefix(media, "image/") {
-		return nil, "", fmt.Errorf("avatar is not an image: %s", media)
+	media, ok := avatarType(resp.Header.Get("Content-Type"))
+	if !ok {
+		return nil, "", fmt.Errorf("avatar is not a png, jpeg, gif or webp picture: %q", media)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {

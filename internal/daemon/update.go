@@ -54,13 +54,15 @@ func (u *updater) check() (update.Release, bool, error) {
 	return rel, ok, nil
 }
 
-// loop checks at start and then every checkEvery, until ctx ends.
+// loop checks at start and then every checkEvery, until ctx ends, while UPDATE_CHECK is on.
 func (u *updater) loop(ctx context.Context) {
 	for {
-		if rel, ok, err := u.check(); err != nil {
-			u.d.Log("update check: %v", err)
-		} else if ok {
-			u.d.Log("update available: %s (running %s)", rel.Version, u.current())
+		if u.d.Current().Cfg.UpdateCheck { // off: only when you ask, from the version menu
+			if rel, ok, err := u.check(); err != nil {
+				u.d.Log("update check: %v", err)
+			} else if ok {
+				u.d.Log("update available: %s (running %s)", rel.Version, u.current())
+			}
 		}
 		select {
 		case <-ctx.Done():

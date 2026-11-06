@@ -32,14 +32,25 @@ func TestSaidIn(t *testing.T) {
 // The avatar is fetched with a plain client, so the only thing standing between that fetch and an arbitrary
 // address is this check: the URL comes from the API, and the guard keeps a changed field or a redirect from
 // pointing it somewhere else.
+// Only the picture types GitHub stores avatars as are served on: not SVG, which can carry script, nor HTML.
+func TestAvatarType(t *testing.T) {
+	for header, want := range map[string]bool{"image/png": true, "image/jpeg; charset=binary": true, " IMAGE/WEBP ": true,
+		"image/gif": true, "image/svg+xml": false, "text/html": false, "": false, "image/png-ish": false} {
+		if _, ok := avatarType(header); ok != want {
+			t.Errorf("avatarType(%q) = %v, want %v", header, ok, want)
+		}
+	}
+}
+
 func TestAvatarHost(t *testing.T) {
 	cases := []struct {
 		name, url string
 		want      bool
 	}{
 		{"an avatar", "https://avatars.githubusercontent.com/u/1?v=4", true},
-		{"githubusercontent itself", "https://githubusercontent.com/u/1", true},
-		{"another githubusercontent subdomain", "https://raw.githubusercontent.com/a/b", true},
+		{"githubusercontent itself", "https://githubusercontent.com/u/1", false},
+		{"raw files anyone can push", "https://raw.githubusercontent.com/a/b", false},
+		{"uploaded images", "https://user-images.githubusercontent.com/1/x.svg", false},
 		{"plain http", "http://avatars.githubusercontent.com/u/1", false},
 		{"somewhere else", "https://evil.example/u/1", false},
 		{"a lookalike suffix", "https://githubusercontent.com.evil.example/u/1", false},
