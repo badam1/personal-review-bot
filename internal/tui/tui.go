@@ -44,6 +44,7 @@ type snapshot struct {
 	update         update.Release // a newer release ("" Version: none)
 	updateState    string         // what an update under way is doing
 	daemonVersion  string         // what the daemon last started as
+	login          string         // the GitHub account the daemon acts as, recorded when it started
 	updated        *update.Done   // an update that finished within the hour
 	err            error
 }
@@ -55,6 +56,7 @@ func load(st *store.Store) snapshot {
 		s.recent, s.err = st.Recent(10)
 	}
 	s.lastPoll, _ = time.Parse(time.RFC3339, st.Meta("last_poll"))
+	s.login = st.Meta("login")
 	s.usage, s.hasUsage = pipeline.LoadUsage(st)
 	now := time.Now()
 	if t, err := st.Totals(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())); err == nil {
@@ -252,7 +254,15 @@ func header(cfg config.Config, s snapshot, interactive bool, width, height int) 
 	if sev := cfg.AutoPostSeverities(); sev != "" {
 		rule = fmt.Sprintf("auto-post ≥ %d%% · %s", cfg.Threshold, sev)
 	}
-	lines := []string{titleStyle.Render(title) + " " + dim.Render(version.String()), daemon,
+	acting := ""
+	if s.login != "" {
+		acting = dim.Render("as @" + s.login)
+		if cfg.Org != "" {
+			acting = dim.Render("as @" + s.login + " in " + cfg.Org)
+		}
+		acting = " " + acting
+	}
+	lines := []string{titleStyle.Render(title) + " " + dim.Render(version.String()) + acting, daemon,
 		dim.Render(rule + " · " + cfg.WebURL())}
 	lines = append(lines, dim.Render(fmt.Sprintf("spend: today %s · 7 days %s", money(s.spentToday), money(s.spentWeek))))
 	if s.hasUsage {
