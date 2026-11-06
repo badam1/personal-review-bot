@@ -61,6 +61,9 @@ func avatarHost(raw string) bool {
 // avatarTypes are the pictures the page serves: the ones GitHub stores avatars as. Not SVG, which can carry script.
 var avatarTypes = []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
 
+// avatarMax is the largest picture served. An avatar is a few tens of kilobytes, so this is a guard, not a budget.
+const avatarMax = 4 << 20
+
 // avatarType reads a Content-Type header and reports whether it is one of avatarTypes.
 func avatarType(header string) (string, bool) {
 	media, _, _ := strings.Cut(header, ";")
@@ -99,9 +102,23 @@ func Avatar(ctx context.Context, rawURL string) ([]byte, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("avatar is not a png, jpeg, gif or webp picture: %q", media)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	b, err := readAvatar(resp.Body)
 	if err != nil {
 		return nil, "", err
 	}
 	return b, media, nil
+}
+
+// readAvatar reads a picture no larger than the cap. It reads one byte past it, so a larger one is refused rather
+// than cut short: io.LimitReader stops at the limit without an error, and the half-picture would otherwise be
+// cached and served as if it were whole.
+func readAvatar(r io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, avatarMax+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > avatarMax {
+		return nil, fmt.Errorf("avatar is larger than %d MB", avatarMax>>20)
+	}
+	return b, nil
 }
