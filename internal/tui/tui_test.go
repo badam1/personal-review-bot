@@ -130,3 +130,24 @@ func TestQueueDeep(t *testing.T) {
 		t.Errorf("deep reviews are marked:\n%s", screen)
 	}
 }
+
+// The header says who reviews go out as, and where it is looking. It takes the orgs one by one, so that when ORG
+// becomes a list the call site is all that changes — the several-orgs wording is already here.
+func TestActingAs(t *testing.T) {
+	cases := []struct {
+		name string
+		orgs []string
+		want string
+	}{
+		{"no org set", []string{""}, "as @kris"},
+		{"none at all", nil, "as @kris"},
+		{"one org", []string{"acme"}, "as @kris in acme"},
+		{"several, as #24 will pass them", []string{"acme", "umbrella"}, "as @kris in acme, umbrella"},
+		{"blanks are left out", []string{"", "acme", ""}, "as @kris in acme"},
+	}
+	for _, c := range cases {
+		if got := actingAs("kris", c.orgs...); got != c.want {
+			t.Errorf("%s: actingAs(%q) = %q, want %q", c.name, c.orgs, got, c.want)
+		}
+	}
+}

@@ -28,6 +28,7 @@ type headerView struct {
 	Usage    *usageView
 	Version  versionView
 	Token    string
+	Login    string // the account the bot acts as, for the profile button in the bar
 }
 
 type usageView struct{ FiveHour, Week int } // percent of the plan's 5-hour and weekly limits
@@ -63,7 +64,7 @@ type badge struct {
 
 func (s *server) headerView() *headerView {
 	st := s.d.Store
-	h := &headerView{Daemon: s.updates != nil, Token: s.token}
+	h := &headerView{Daemon: s.updates != nil, Token: s.token, Login: s.login}
 	if active, err := st.Active(); err == nil {
 		h.Running = len(active)
 		for i := range active {

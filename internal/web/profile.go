@@ -23,6 +23,7 @@ type profilePage struct {
 	Watched   string // the org being watched ("" = any)
 	Member    bool   // the account belongs to the org it watches
 	Scoped    bool   // an org is set at all
+	Orgs      []orgChip
 
 	Threshold                int
 	AutoPost, Held           string
@@ -35,6 +36,25 @@ type profilePage struct {
 	FiveHour, Week7          float64
 	FiveHourReset, WeekReset time.Time
 	UsageSeen                time.Time
+}
+
+// orgChip is one of the account's organisations as the page shows it. Whether it is watched is worked out here
+// rather than in the template, because GitHub's org: search ignores case: ORG=Acme does watch acme, so marking
+// the chip with a case-sensitive compare would leave the watched org unmarked on a page that says it is watched.
+type orgChip struct {
+	Name string
+	On   bool
+}
+
+// chips pairs each organisation with whether the bot watches it.
+func chips(orgs []string, watched ...string) []orgChip {
+	out := make([]orgChip, 0, len(orgs))
+	for _, o := range orgs {
+		out = append(out, orgChip{Name: o, On: slices.ContainsFunc(watched, func(w string) bool {
+			return w != "" && strings.EqualFold(w, o)
+		})})
+	}
+	return out
 }
 
 // accountCache keeps the account and its picture for an hour. The profile page would otherwise ask GitHub twice
@@ -94,9 +114,8 @@ func (s *server) profile(w http.ResponseWriter, r *http.Request) {
 		p.Account = acc
 		pic, _ := s.accounts.picture()
 		p.HasAvatar = len(pic) > 0
-		p.Member = p.Scoped && slices.ContainsFunc(acc.Orgs, func(o string) bool {
-			return strings.EqualFold(o, cfg.Org)
-		})
+		p.Orgs = chips(acc.Orgs, cfg.Org)
+		p.Member = p.Scoped && slices.ContainsFunc(p.Orgs, func(c orgChip) bool { return c.On })
 	}
 
 	now := time.Now()

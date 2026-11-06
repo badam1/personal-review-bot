@@ -6,7 +6,8 @@
   /* Catppuccin Mocha */
   :root { --base:#1e1e2e; --mantle:#181825; --crust:#11111b; --s0:#313244; --s1:#45475a; --s2:#585b70; --text:#cdd6f4;
           --sub:#a6adc8; --dim:#9399b2; --blue:#89b4fa; --lav:#b4befe; --green:#a6e3a1; --red:#f38ba8; --peach:#fab387;
-          --yellow:#f9e2af; --mauve:#cba6f7; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+          --yellow:#f9e2af; --mauve:#cba6f7; --green-dim:rgba(166, 227, 161, .16);
+          --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; background: var(--base); color: var(--text); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -35,6 +36,17 @@
   .nav a { display: flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 8px; color: var(--sub); font-size: 14px; font-weight: 500; }
   .nav a:hover { background: var(--s0); color: var(--text); text-decoration: none; }
   .nav a[aria-current=page] { background: var(--s0); color: var(--text); font-weight: 600; }
+  .me { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 3px 12px 3px 3px; border-radius: 999px;
+        background: var(--base); border: 1px solid var(--s0); color: var(--sub); font-size: 13px; font-weight: 500; }
+  .me:hover { background: var(--s0); color: var(--text); text-decoration: none; border-color: var(--s2); }
+  .me[aria-current=page] { background: var(--s0); color: var(--text); font-weight: 600; }
+  /* The picture lies over the initial, so a profile with no picture, or an /avatar that fails, shows the letter. */
+  .me .face { position: relative; width: 28px; height: 28px; flex: none; }
+  .me .face .noface, .me .face img { position: absolute; inset: 0; width: 28px; height: 28px; border-radius: 50%; }
+  .me .face .noface { display: grid; place-items: center; background: var(--s0); color: var(--sub);
+                      font-size: 12px; font-weight: 700; text-transform: uppercase; }
+  .me .face img { object-fit: cover; }
+  @media (max-width: 760px) { .me .at { display: none; } .me { padding: 3px; } }
   .status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .chip { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 999px; background: var(--base);
           border: 1px solid var(--s0); color: var(--text); font-size: 13px; }
@@ -245,7 +257,7 @@
   .who .nm { font-size: 20px; font-weight: 650; } .who .at { color: var(--sub); }
   .orgs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   .orgs span { background: var(--s0); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--sub); }
-  .orgs span.on { background: var(--green-dim, var(--s0)); color: var(--text); font-weight: 600; }
+  .orgs span.on { background: var(--green-dim); border: 1px solid var(--green); color: var(--green); font-weight: 600; padding: 1px 9px; }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: 14px; }
   .kv dt { color: var(--sub); } .kv dd { margin: 0; }
   .chart { width: 100%; height: auto; display: block; }
@@ -286,7 +298,6 @@
     <a href="/"{{if eq .Nav "reviews"}} aria-current="page"{{end}}>Reviews</a>
     <a href="/history"{{if eq .Nav "history"}} aria-current="page"{{end}}>History</a>
     <a href="/stats"{{if eq .Nav "stats"}} aria-current="page"{{end}}>Stats</a>
-    <a href="/profile"{{if eq .Nav "profile"}} aria-current="page"{{end}}>Profile</a>
   </nav>
   <div class="grow"></div>
   {{with header}}<div class="status">
@@ -300,6 +311,10 @@
       <span class="usage">5h <span class="meter"><span style="width: {{.FiveHour}}%"></span></span> <b>{{.FiveHour}}%</b></span>
       <span class="usage">week <span class="meter"><span style="width: {{.Week}}%"></span></span> <b>{{.Week}}%</b></span></span>{{end}}
     {{template "version" .}}
+    {{if .Login}}<a class="me" href="/profile"{{if eq $.Nav "profile"}} aria-current="page"{{end}}
+      title="The account the bot acts as: everything it posts goes out as @{{.Login}}"><span class="face"><span
+      class="noface" aria-hidden="true">{{slice .Login 0 1}}</span><img src="/avatar" alt="" width="28" height="28"></span>
+      <span class="at">acting as @{{.Login}}</span></a>{{end}}
   </div>{{end}}
 </header>{{end}}
 
@@ -771,7 +786,7 @@
         <div>
           <div class="nm">{{if .Account.Name}}{{.Account.Name}}{{else}}{{.Account.Login}}{{end}}</div>
           <div class="at">{{if .Account.HTMLURL}}<a href="{{.Account.HTMLURL}}" target="_blank" rel="noopener">@{{.Account.Login}}</a>{{else}}@{{.Account.Login}}{{end}}{{if .Account.Company}} · {{.Account.Company}}{{end}}{{if not .Account.Created.IsZero}} · on GitHub since {{.Account.Created.Format "Jan 2006"}}{{end}}</div>
-          {{if .Account.Orgs}}<div class="orgs">{{range .Account.Orgs}}<span{{if and $.Scoped (eq . $.Watched)}} class="on" title="The org this bot watches"{{end}}>{{.}}</span>{{end}}</div>{{end}}
+          {{if .Orgs}}<div class="orgs">{{range .Orgs}}<span{{if .On}} class="on" title="The org this bot watches"{{end}}>{{.Name}}</span>{{end}}</div>{{end}}
         </div>
       </div>
     </div>
@@ -796,17 +811,16 @@
   </section>
 
   <section class="sect" aria-labelledby="done"><h2 id="done" class="h2">Done under this account</h2>
-    <div class="tiles">
-      <div class="card tile"><div class="l">Reviews today</div><div class="v">{{.Today.Reviews}}</div><div class="all">{{money .Today.CostUSD}} spent</div></div>
-      <div class="card tile"><div class="l">Last 7 days</div><div class="v">{{.Week.Reviews}}</div><div class="all">{{money .Week.CostUSD}} · {{.Week.PRs}} PRs</div></div>
-      <div class="card tile"><div class="l">All time</div><div class="v">{{.All.Reviews}}</div><div class="all">{{money .All.CostUSD}} · {{.All.Approvals}} approvals</div></div>
-      <div class="card tile"><div class="l">Findings posted</div><div class="v">{{.All.Posted}}</div><div class="all">bot {{.All.BotPosted}} · you {{.All.YouPosted}}{{if .All.Wrong}} · {{.All.Wrong}} marked wrong{{end}}</div></div>
-      <div class="card tile"><div class="l">You dropped</div><div class="v">{{.All.Discarded}}</div><div class="all">verifier rejected {{.All.Rejected}}</div></div>
-      <div class="card tile"><div class="l">Per review</div><div class="v">{{money .All.PerReview}}</div><div class="all">last 7 days {{money .Week.PerReview}}</div></div>
-    </div>
+    <div class="card">
+      <p class="lede"><b>{{plural .All.Posted "finding" "findings"}}</b> posted under this name — {{.All.BotPosted}} without
+        asking, {{.All.YouPosted}} by you{{if .All.Wrong}}, {{.All.Wrong}} later marked wrong{{end}} — and
+        <b>{{plural .All.Approvals "approval" "approvals"}}</b>, over {{plural .All.Reviews "review" "reviews"}}
+        costing {{money .All.CostUSD}}. Today: {{plural .Today.Reviews "review" "reviews"}}, {{money .Today.CostUSD}}.</p>
+      <p><a class="btn small" href="/stats">Per reviewer, model, repo and day on Stats</a></p>
     {{if .HasUsage}}<p class="lede">Reviews run on your Claude plan: <b>{{pct .FiveHour}}</b> of the 5-hour limit
       (resets {{.FiveHourReset.Local.Format "15:04"}}) · <b>{{pct .Week7}}</b> of the week
       (resets {{.WeekReset.Local.Format "Mon 15:04"}}), read {{ago .UsageSeen}}.</p>{{end}}
+    </div>
   </section>
   <a class="spend" href="/stats">Full stats</a>
 </main>

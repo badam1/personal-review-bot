@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -48,6 +49,13 @@ func (c *Client) Account() (Account, error) {
 	return a, nil
 }
 
+const (
+	// avatarHostname is the one host GitHub serves avatars from. The wider githubusercontent.com suffix would also
+	// admit raw.githubusercontent.com and friends, which serve whatever a user put in a repository.
+	avatarHostname = "avatars.githubusercontent.com"
+	avatarMax      = 4 << 20 // the largest picture served, in bytes
+)
+
 // avatarHost reports whether raw is an address an avatar is served from. The address comes from the API rather
 // than from anyone's input, so this is a guard rather than a filter: it keeps a redirect or a changed field from
 // turning the fetch below into a request to somewhere else.
@@ -56,8 +64,12 @@ func avatarHost(raw string) bool {
 	if err != nil || u.Scheme != "https" {
 		return false
 	}
-	return u.Host == "githubusercontent.com" || strings.HasSuffix(u.Host, ".githubusercontent.com")
+	return u.Host == avatarHostname
 }
+
+// avatarPictures are the media types served as a picture. SVG is left out on purpose: it can carry script, and
+// serving it from the bot's own origin would put that script inside the page's origin rather than GitHub's.
+var avatarPictures = []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 // Avatar downloads the account's picture and returns it with its media type.
 //
@@ -86,13 +98,25 @@ func Avatar(ctx context.Context, rawURL string) ([]byte, string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("avatar: %s", resp.Status)
 	}
+	return picture(resp)
+}
+
+// picture reads a reply as a picture: one of the handful of types a browser draws without running anything, and
+// no larger than the cap.
+func picture(resp *http.Response) ([]byte, string, error) {
 	media, _, _ := strings.Cut(resp.Header.Get("Content-Type"), ";")
-	if !strings.HasPrefix(media, "image/") {
-		return nil, "", fmt.Errorf("avatar is not an image: %s", media)
+	media = strings.ToLower(strings.TrimSpace(media))
+	if !slices.Contains(avatarPictures, media) {
+		return nil, "", fmt.Errorf("avatar is not a picture: %s", media)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	// One byte over the cap is read so that a picture larger than it is refused rather than silently cut short:
+	// io.LimitReader stops without an error, and the half-picture would then be cached and served as a whole one.
+	b, err := io.ReadAll(io.LimitReader(resp.Body, avatarMax+1))
 	if err != nil {
 		return nil, "", err
+	}
+	if len(b) > avatarMax {
+		return nil, "", fmt.Errorf("avatar is larger than %d MB", avatarMax>>20)
 	}
 	return b, media, nil
 }

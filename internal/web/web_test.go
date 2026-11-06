@@ -399,3 +399,38 @@ func TestProfileWithoutGitHub(t *testing.T) {
 		}
 	}
 }
+
+// GitHub's org: search ignores case, so ORG=Acme really does watch acme. The chip saying which org is watched has
+// to agree with that, or the page marks nothing while claiming to watch one.
+func TestChips(t *testing.T) {
+	orgs := []string{"Acme", "umbrella", "Initech"}
+	cases := []struct {
+		name    string
+		watched []string
+		want    []bool
+	}{
+		{"exactly as written", []string{"Acme"}, []bool{true, false, false}},
+		{"in another case", []string{"ACME"}, []bool{true, false, false}},
+		{"the org in another case", []string{"UMBRELLA"}, []bool{false, true, false}},
+		{"no org set", []string{""}, []bool{false, false, false}},
+		{"none at all", nil, []bool{false, false, false}},
+		{"an org the account isn't in", []string{"other"}, []bool{false, false, false}},
+		{"several orgs, as #24 will pass them", []string{"acme", "INITECH"}, []bool{true, false, true}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := chips(orgs, c.watched...)
+			if len(got) != len(orgs) {
+				t.Fatalf("chips() returned %d chips, want %d", len(got), len(orgs))
+			}
+			for i, chip := range got {
+				if chip.Name != orgs[i] {
+					t.Errorf("chip %d is %q, want %q: the name must survive untouched", i, chip.Name, orgs[i])
+				}
+				if chip.On != c.want[i] {
+					t.Errorf("%q marked %v, want %v", chip.Name, chip.On, c.want[i])
+				}
+			}
+		})
+	}
+}
