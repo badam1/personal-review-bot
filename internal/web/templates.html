@@ -658,9 +658,12 @@
 
       {{if eq .R.Status "awaiting_you"}}<form id="decide" method="post" action="/r/{{.R.ID}}"><input type="hidden" name="csrf" value="{{.Token}}">
         {{if .Confirm}}<input type="hidden" name="anyway" value="1">{{end}}
-        {{/* Enter in a finding's checkbox would otherwise submit this form, and its first submit button posts to
-             GitHub. Implicit submission does nothing when the form's default button is disabled, so this is it. */}}
-        <button type="submit" disabled hidden tabindex="-1" aria-hidden="true"></button></form>
+        {{/* Enter in a finding's checkbox submits this form, and the button it presses is the first one that
+             works — which was Post selected. Disabling this one is not enough: Chrome passes over a disabled
+             default button and presses the next working submit button. A dialog-method submit does nothing outside
+             a <dialog>, so this one absorbs the Enter. It still fires the form's submit event, which nothing
+             listens for. */}}
+        <button type="submit" formmethod="dialog" hidden tabindex="-1" aria-hidden="true"></button></form>
         {{if .DesignPending}}<section class="sect tight" aria-labelledby="design" data-filtered>
           <h2 id="design" class="h2">Design concerns <span class="count design">{{len .DesignPending}}</span></h2>
           {{range .DesignPending}}<article class="card stack finding" data-finding data-agent="{{.Agent}}">

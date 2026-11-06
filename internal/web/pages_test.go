@@ -833,13 +833,19 @@ func TestEnterDoesNotPost(t *testing.T) {
 	// The checkboxes are there, so Enter has something to submit from.
 	want(t, page, `type="checkbox" form="decide"`)
 
-	first := strings.Index(page, `<button type="submit" disabled hidden`)
+	// Enter presses the first submit button that works, so that button has to be one that does nothing. Disabling
+	// it is not enough: Chrome passes over a disabled default button and presses the next one, which is why this
+	// insists on the attribute that holds rather than on there being a button at all.
+	first := strings.Index(page, `<button type="submit" formmethod="dialog" hidden`)
 	if first < 0 {
-		t.Fatal("the decide form has no disabled default button: Enter in a checkbox would post to GitHub")
+		t.Fatal("the decide form has no dialog-method default button: Enter in a checkbox would post to GitHub")
+	}
+	if end := strings.Index(page[first:], ">"); end >= 0 && strings.Contains(page[first:first+end], "disabled") {
+		t.Error("the default button is disabled, so Chrome skips it and presses Post selected instead")
 	}
 	for _, posts := range []string{`value="post"`, `value="approve"`, `value="post_approve"`, `value="rereview"`} {
 		if at := strings.Index(page, posts); at >= 0 && at < first {
-			t.Errorf("a button with %s comes before the disabled default button, so Enter would press it", posts)
+			t.Errorf("a button with %s comes before the dialog-method default button, so Enter would press it", posts)
 		}
 	}
 }
