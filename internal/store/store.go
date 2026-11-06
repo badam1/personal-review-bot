@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/badam1/personal-review-bot/internal/metrics"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -87,6 +89,7 @@ type Finding struct {
 	Severity        string
 	Title           string
 	Comment         string
+	AuthoredComment string // the bot's proposal, frozen before you could edit it ("" if from before this was recorded)
 	AgentConfidence int
 	Confidence      int // after verification
 	Verdict         string
@@ -101,6 +104,10 @@ type Finding struct {
 	RemindedSHA     string    // the PR's head when you last reminded the author it is still open ("" = never)
 	RemindedAt      time.Time // when
 }
+
+// Edited says whether you changed the bot's wording before posting (metrics.Unknown for a finding from before the
+// authored text was captured). The texts are kept raw; the measure is derived here, so it can change without a migration.
+func (f Finding) Edited() metrics.EditKind { return metrics.Classify(f.AuthoredComment, f.Comment) }
 
 // Follow-up statuses. Fixed, moot and declined are settled and not checked again.
 const (
@@ -150,7 +157,8 @@ CREATE TABLE IF NOT EXISTS findings (
   status TEXT NOT NULL, inline INTEGER NOT NULL DEFAULT 0, posted_url TEXT NOT NULL DEFAULT '',
   context TEXT NOT NULL DEFAULT '', wrong INTEGER NOT NULL DEFAULT 0, followup TEXT NOT NULL DEFAULT '',
   followup_note TEXT NOT NULL DEFAULT '', followup_review INTEGER NOT NULL DEFAULT 0,
-  reminded_sha TEXT NOT NULL DEFAULT '', reminded_at TEXT NOT NULL DEFAULT '');
+  reminded_sha TEXT NOT NULL DEFAULT '', reminded_at TEXT NOT NULL DEFAULT '',
+  authored_comment TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS runs (
   id INTEGER PRIMARY KEY, review_id INTEGER NOT NULL REFERENCES reviews (id), agent TEXT NOT NULL, model TEXT NOT NULL,
   findings INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, denials INTEGER NOT NULL DEFAULT 0,
@@ -192,6 +200,7 @@ func Open(path string) (*Store, error) {
 		{"findings", "followup_review", "INTEGER NOT NULL DEFAULT 0"},
 		{"findings", "reminded_sha", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "reminded_at", "TEXT NOT NULL DEFAULT ''"},
+		{"findings", "authored_comment", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := addColumn(db, c.table, c.column, c.def); err != nil {
 			db.Close()
@@ -592,12 +601,13 @@ func (s *Store) Decisions(threshold int) (time.Time, []DecisionRow, error) {
 }
 
 const findingCols = `id, review_id, agent, path, line, severity, title, comment, agent_confidence, confidence, verdict,
-  status, inline, posted_url, context, wrong, followup, followup_note, followup_review, reminded_sha, reminded_at`
+  status, inline, posted_url, context, wrong, followup, followup_note, followup_review, reminded_sha, reminded_at,
+  authored_comment`
 
 func (s *Store) AddFinding(f *Finding) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO findings (review_id, agent, path, line, severity, title, comment, agent_confidence,
-	  confidence, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		f.ReviewID, f.Agent, f.Path, f.Line, f.Severity, f.Title, f.Comment, f.AgentConfidence, f.Confidence, f.Status)
+	res, err := s.db.Exec(`INSERT INTO findings (review_id, agent, path, line, severity, title, comment, authored_comment,
+	  agent_confidence, confidence, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.ReviewID, f.Agent, f.Path, f.Line, f.Severity, f.Title, f.Comment, f.Comment, f.AgentConfidence, f.Confidence, f.Status)
 	if err != nil {
 		return 0, err
 	}
@@ -609,8 +619,17 @@ func (s *Store) UpdateFinding(f *Finding) error {
 	if f.Inline {
 		inline = 1
 	}
-	_, err := s.db.Exec(`UPDATE findings SET line = ?, comment = ?, confidence = ?, verdict = ?, status = ?, inline = ?,
-	  posted_url = ? WHERE id = ?`, f.Line, f.Comment, f.Confidence, f.Verdict, f.Status, inline, f.PostedURL, f.ID)
+	// authored_comment freezes the bot's proposal. A bot write keeps it in step with the comment; the two human
+	// decisions (Posted, Discarded) carry text you may have changed, so they leave it as the bot last wrote it — which
+	// is what lets us later tell a finding you posted word for word from one you reworded.
+	if f.Status == Posted || f.Status == Discarded {
+		_, err := s.db.Exec(`UPDATE findings SET line = ?, comment = ?, confidence = ?, verdict = ?, status = ?,
+		  inline = ?, posted_url = ? WHERE id = ?`, f.Line, f.Comment, f.Confidence, f.Verdict, f.Status, inline, f.PostedURL, f.ID)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE findings SET line = ?, comment = ?, authored_comment = ?, confidence = ?, verdict = ?,
+	  status = ?, inline = ?, posted_url = ? WHERE id = ?`,
+		f.Line, f.Comment, f.Comment, f.Confidence, f.Verdict, f.Status, inline, f.PostedURL, f.ID)
 	return err
 }
 
@@ -650,7 +669,7 @@ func (s *Store) SetReminded(id int64, sha string) error {
 func (s *Store) EarlierPosted(repo string, number int, before int64) ([]Finding, error) {
 	return s.queryFindings(`SELECT f.id, f.review_id, f.agent, f.path, f.line, f.severity, f.title, f.comment,
 	  f.agent_confidence, f.confidence, f.verdict, f.status, f.inline, f.posted_url, f.context, f.wrong, f.followup,
-	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at
+	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at, f.authored_comment
 	  FROM findings f JOIN reviews r ON r.id = f.review_id
 	  WHERE r.repo = ? AND r.number = ? AND r.id < ? AND r.dry_run = 0 AND f.status IN (?, ?) ORDER BY f.id`,
 		repo, number, before, AutoPosted, Posted)
@@ -676,7 +695,7 @@ func (s *Store) Findings(reviewID int64) ([]Finding, error) {
 func (s *Store) PriorFindings(repo string, number int, before int64) ([]Finding, error) {
 	return s.queryFindings(`SELECT f.id, f.review_id, f.agent, f.path, f.line, f.severity, f.title, f.comment,
 	  f.agent_confidence, f.confidence, f.verdict, f.status, f.inline, f.posted_url, f.context, f.wrong, f.followup,
-	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at
+	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at, f.authored_comment
 	  FROM findings f JOIN reviews r ON r.id = f.review_id
 	  WHERE r.repo = ? AND r.number = ? AND r.id < ? AND f.status IN (?, ?, ?, ?)
 	  ORDER BY f.id DESC LIMIT 50`, repo, number, before, AutoPosted, Posted, Discarded, Pending)
@@ -695,7 +714,7 @@ func (s *Store) queryFindings(query string, args ...any) ([]Finding, error) {
 		var reminded string
 		if err := rows.Scan(&f.ID, &f.ReviewID, &f.Agent, &f.Path, &f.Line, &f.Severity, &f.Title, &f.Comment,
 			&f.AgentConfidence, &f.Confidence, &f.Verdict, &f.Status, &inline, &f.PostedURL, &f.Context, &wrong,
-			&f.Followup, &f.FollowupNote, &f.FollowupReview, &f.RemindedSHA, &reminded); err != nil {
+			&f.Followup, &f.FollowupNote, &f.FollowupReview, &f.RemindedSHA, &reminded, &f.AuthoredComment); err != nil {
 			return nil, err
 		}
 		f.Inline, f.Wrong, f.RemindedAt = inline == 1, wrong == 1, parseTime(reminded)
