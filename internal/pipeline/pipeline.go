@@ -313,7 +313,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		case f.Verdict == "rejected":
 			f.Status = store.Rejected
 		case d.Cfg.AutoPosts(f.Verdict, f.Confidence, f.Severity):
-			f.Status = store.AutoPosted
+			f.Status = store.Pending // auto_posted only once GitHub has it: see postAuto
 			auto = append(auto, f)
 		default:
 			f.Status = store.Pending
@@ -335,13 +335,9 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 			posted = fmt.Sprintf("dry run: would post %d", len(auto))
 		} else {
 			stage("posting %d comment(s)", len(auto))
-			url, err := Post(d, r, "COMMENT", auto, nil)
-			if err != nil {
+			post := func(fs []store.Finding) (string, error) { return Post(d, r, "COMMENT", fs, nil) }
+			if err := postAuto(d, auto, post); err != nil {
 				return fail(fmt.Errorf("post review: %w", err))
-			}
-			for i := range auto {
-				auto[i].PostedURL = url
-				_ = d.Store.UpdateFinding(&auto[i])
 			}
 			posted = fmt.Sprintf("posted %d", len(auto))
 		}
@@ -576,6 +572,22 @@ func Answer(t gh.Thread, owner string) (gh.ThreadComment, bool) {
 		}
 	}
 	return gh.ThreadComment{}, false
+}
+
+// postAuto posts the findings the auto-post rule let through, and marks them auto_posted, with the review's address,
+// only once GitHub has them. Until then they stay pending: a post that fails (a rate limit, the network, a head that
+// moved) must not leave findings that read as comments the bot left, which a retry or a later re-review would follow
+// up on and offer reminders for.
+func postAuto(d Deps, auto []store.Finding, post func([]store.Finding) (string, error)) error {
+	url, err := post(auto)
+	if err != nil {
+		return err
+	}
+	for i := range auto {
+		auto[i].Status, auto[i].PostedURL = store.AutoPosted, url
+		_ = d.Store.UpdateFinding(&auto[i]) // they are on GitHub now: a failed write mustn't fail the review and post them again
+	}
+	return nil
 }
 
 // Post submits findings and reminders as one review. Every comment carries the watermark and its confidence;

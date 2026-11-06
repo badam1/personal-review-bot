@@ -207,6 +207,13 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("init database: %w", err)
 	}
+	// Findings used to be marked auto_posted before the post to GitHub; when it failed, the review failed but they kept
+	// the status with no address, and read as comments the bot left. They were never posted: they are pending.
+	if _, err := db.Exec(`UPDATE findings SET status = ? WHERE status = ? AND posted_url = ''
+	  AND review_id IN (SELECT id FROM reviews WHERE status = ?)`, Pending, AutoPosted, Failed); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("init database: %w", err)
+	}
 	return &Store{db}, nil
 }
 

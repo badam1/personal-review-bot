@@ -263,3 +263,33 @@ func TestOpenRewordsApprovals(t *testing.T) {
 		}
 	}
 }
+
+// Findings left auto_posted with no address by a post that failed are pending once the database opens; ones that were
+// posted keep their status.
+func TestOpenRepairsUnpostedFindings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reviews.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(reviewStatus, url string) int64 {
+		id, _ := s.Insert(&Review{Repo: "o/r", Number: 1, Status: Running})
+		fid, _ := s.AddFinding(&Finding{ReviewID: id, Agent: "logic", Severity: "low", Title: "t", Comment: "c", Status: Candidate})
+		_ = s.UpdateFinding(&Finding{ID: fid, Comment: "c", Confidence: 90, Status: AutoPosted, PostedURL: url})
+		_ = s.Finish(id, reviewStatus, "d", "", "")
+		return fid
+	}
+	failed := add(Failed, "")
+	posted := add(Done, "https://github.com/o/r/pull/1#pullrequestreview-1")
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if f, _ := s.Finding(failed); f.Status != Pending {
+		t.Errorf("an unposted finding on a failed review is %s, want pending", f.Status)
+	}
+	if f, _ := s.Finding(posted); f.Status != AutoPosted {
+		t.Errorf("a posted finding is %s, want auto_posted", f.Status)
+	}
+}
