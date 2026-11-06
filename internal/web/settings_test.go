@@ -173,7 +173,7 @@ func TestSaveSettingsRejects(t *testing.T) {
 	}{
 		{url.Values{"SAVE_AT": {"95"}, "MIN_AT": {"90"}}, "Cheapest from must be above Cheaper models from"},
 		{url.Values{"ADDR": {"0.0.0.0:12346"}}, "Address: must be 127.0.0.1"},
-		{url.Values{"ORG": {"acme/infra"}}, "Organisation: must be a GitHub organisation"},
+		{url.Values{"ORG": {"acme/infra"}}, "Organisations: must be a GitHub organisation"},
 		{url.Values{"AUTO_POST": {"", "low", "medium", "high"}}, "tick the confirmation under Post on its own"},
 		{url.Values{"WATERMARK": {"<img src=x>"}}, "Signature: must be 1 to 80 characters, without &lt; or &gt;"},
 	} {
@@ -343,5 +343,24 @@ func TestSettingsAccountSeveralOrgs(t *testing.T) {
 	want(t, page, "acme · watched", "This account isn't a member of initech")
 	if strings.Contains(page, "member of acme") {
 		t.Error("acme is named as missing though the account belongs to it")
+	}
+}
+
+// ORG is written in the form the page shows it back, so config.env and the field agree. Typed with spaces, saved
+// with commas; a name repeated in another case is kept once, as the daemon reads it.
+func TestSaveSettingsNormalisesORG(t *testing.T) {
+	for _, c := range []struct{ typed, want string }{
+		{"acme umbrella", "ORG=acme,umbrella\n"},
+		{"acme,  umbrella ", "ORG=acme,umbrella\n"},
+		{"acme,ACME", "ORG=acme\n"},
+		{" acme ", "ORG=acme\n"},
+	} {
+		s, dir := newSettingsSite(t)
+		if rec := s.post("/settings", url.Values{"ORG": {c.typed}}); rec.Code != http.StatusSeeOther {
+			t.Fatalf("ORG=%q: status %d", c.typed, rec.Code)
+		}
+		if env := fileText(t, filepath.Join(dir, "config.env")); !strings.Contains(env, c.want) {
+			t.Errorf("ORG typed %q: config.env has no %q:\n%s", c.typed, c.want, env)
+		}
 	}
 }

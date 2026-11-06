@@ -98,6 +98,11 @@ func ParseURL(u string) (string, int, error) {
 	if m == nil {
 		return "", 0, fmt.Errorf("not a GitHub PR URL: %s", u)
 	}
+	// A repository may hold dots, but "." and ".." are not names: the pair is joined into a path under the cache
+	// directory, where they would climb out of it.
+	if m[1] == "." || m[1] == ".." || m[2] == "." || m[2] == ".." {
+		return "", 0, fmt.Errorf("not a GitHub PR URL: %s", u)
+	}
 	n, _ := strconv.Atoi(m[3])
 	return m[1] + "/" + m[2], n, nil
 }

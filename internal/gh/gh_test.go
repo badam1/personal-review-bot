@@ -101,6 +101,8 @@ func TestParseURL(t *testing.T) {
 		{"another host borrowing the path", "https://elsewhere.example/github.com/acme/api/pull/42", "", 0, false},
 		{"a traversal as the owner", "https://github.com/../api/pull/42", "", 0, false},
 		{"a traversal as the repo", "https://github.com/acme/../../x/pull/42", "", 0, false},
+		{"the repo is itself ..", "https://github.com/acme/../pull/1", "", 0, false},
+		{"the repo is itself .", "https://github.com/acme/./pull/1", "", 0, false},
 		{"not a PR at all", "https://github.com/acme/api/issues/42", "", 0, false},
 	}
 	for _, c := range cases {

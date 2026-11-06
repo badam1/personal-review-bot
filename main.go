@@ -52,10 +52,6 @@ const usage = `personal-review-bot: reviews PRs where your review is requested d
 
 func main() {
 	cfg := config.Load()
-	if err := cfg.Validate(); err != nil {
-		fmt.Fprintln(os.Stderr, "personal-review-bot:", err)
-		os.Exit(2)
-	}
 	cmd, args := "tui", os.Args[1:]
 	if len(args) > 0 {
 		cmd, args = args[0], args[1:]
@@ -70,15 +66,15 @@ func main() {
 	case "status":
 		err = tui.PrintStatus(cfg, os.Stdout)
 	case "daemon":
-		err = runDaemon(ctx, cfg)
+		err = withORG(cfg, func() error { return runDaemon(ctx, cfg) })
 	case "update":
 		err = updateCmd(ctx, cfg, args)
 	case "review":
-		err = review(ctx, cfg, args)
+		err = withORG(cfg, func() error { return review(ctx, cfg, args) })
 	case "queue":
-		err = queue(cfg, args)
+		err = withORG(cfg, func() error { return queue(cfg, args) })
 	case "page":
-		err = page(ctx, cfg)
+		err = withORG(cfg, func() error { return page(ctx, cfg) })
 	case "agents":
 		err = agentsCmd(cfg, args, os.Stdout)
 	case "version", "--version":
@@ -93,6 +89,17 @@ func main() {
 		fmt.Fprintln(os.Stderr, "personal-review-bot:", err)
 		os.Exit(1)
 	}
+}
+
+// withORG runs a command that searches GitHub only when ORG can be used. ORG decides whose PRs are reviewed, so a
+// value that is not an organisation name has to stop these; it must not stop the rest. `version` and `help` are how
+// you find the setting, `update` is how you'd ship a fix for it, and a daemon that exits before it reads its command
+// is a restart loop under launchd's KeepAlive, which retries it forever.
+func withORG(cfg config.Config, run func() error) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	return run()
 }
 
 // newReview records a PR in the store with the given status.

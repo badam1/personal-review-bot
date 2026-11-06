@@ -96,7 +96,7 @@ type fileRow struct{ Name, Path, Full string }
 // editable are the settings the page saves, in the order it shows them, with how a save names them. UPDATE_REPO is
 // shown but not saved here: it decides where the code you run comes from, so it changes only with you at a shell.
 var editable = []struct{ name, label string }{
-	{"ORG", "Organisation"}, {"SKIP_DRAFTS", "Skip draft PRs"}, {"MAX_AGE_DAYS", "Leave quiet PRs alone after"},
+	{"ORG", "Organisations"}, {"SKIP_DRAFTS", "Skip draft PRs"}, {"MAX_AGE_DAYS", "Leave quiet PRs alone after"},
 	{"POLL_SECONDS", "Check GitHub every"}, {"PARALLEL", "Reviews at a time"}, {"AUTO_POST", "Post on its own"},
 	{"THRESHOLD", "Certainty needed"}, {"APPROVE_TEXT", "Approval message"}, {"WATERMARK", "Signature"},
 	{"SAVE_AT", "Cheaper models from"}, {"MIN_AT", "Cheapest from"}, {"AGENT_TIMEOUT_MINUTES", "Time limit per reviewer"},
@@ -299,6 +299,8 @@ func formValue(name string, sent []string) string {
 		last = strings.TrimSpace(sent[len(sent)-1])
 	}
 	switch name {
+	case "ORG": // several orgs, however they were typed, are written the way the page shows them back
+		return strings.Join(config.SplitOrgs(last), ",")
 	case "SKIP_DRAFTS", "UPDATE_CHECK": // a hidden 0 comes first, then the switch's 1 when it is on
 		if slices.Contains(sent, "1") {
 			return "1"
