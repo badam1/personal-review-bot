@@ -21,7 +21,8 @@ login.
    A **deep review** you ask for (below) runs any PR as if it were large, without these savings.
 2. **Reviews in parallel.** Logic, security, integration with other services, plus infra/rollout when infra files
    change; or your own set of reviewers (see [Customize](#customize-the-reviewers-and-prompts)). The reviewers run `claude -p` read-only inside a checkout of the PR head; they can read the other repos of
-   the org (with `gh search code` and `gh api`) but can't post anything.
+   the org (with `gh search code`, and `gh-read`, a GET of the GitHub API that takes one endpoint and no flags) but
+   can't post anything: `gh api` itself is denied, since a flag turns it into a write.
    On the first review of a medium or large PR, any PR touching an ADR, and every review you start yourself
    (Re-review, `r` in the TUI, `review`/`queue`), a **design reviewer** also judges how the PR solves its problem
    rather than its lines: the goal, fit with the repo's `AGENTS.md`/`CLAUDE.md`, its ADRs, `.claude/skills` practices

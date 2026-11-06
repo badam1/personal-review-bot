@@ -2,6 +2,9 @@ package agents
 
 import (
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -166,5 +169,56 @@ func TestBaseArgsIgnoreTheCheckout(t *testing.T) {
 	}
 	if !slices.Contains(baseArgs, "--strict-mcp-config") {
 		t.Errorf("baseArgs %v: want --strict-mcp-config", baseArgs)
+	}
+}
+
+// GitHub is read through gh-read alone: `gh api` is not allowed, and is denied outright.
+func TestReadOnlyTools(t *testing.T) {
+	allowed := readOnly[slices.Index(readOnly, "--allowedTools")+1 : slices.Index(readOnly, "--disallowedTools")]
+	if !slices.Contains(allowed, "Bash(gh-read *)") || slices.ContainsFunc(allowed, func(s string) bool { return strings.Contains(s, "gh api") }) {
+		t.Errorf("allowed %q: want gh-read and no gh api", allowed)
+	}
+	if denied := readOnly[slices.Index(readOnly, "--disallowedTools")+1:]; !slices.Contains(denied, "Bash(gh api *)") {
+		t.Errorf("denied %q: want gh api", denied)
+	}
+}
+
+// gh-read passes one endpoint to gh as a GET, after "--", and refuses anything else: a second argument, a flag
+// (attached or not), another host. A fake gh records what reaches it.
+func TestGhRead(t *testing.T) {
+	bin, err := commandDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := t.TempDir()
+	log := filepath.Join(fake, "calls")
+	script := "#!/bin/sh\nprintf '%s|' \"$@\" >> " + log + "\necho >> " + log + "\n"
+	if err := os.WriteFile(filepath.Join(fake, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fake+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cases := []struct {
+		args []string
+		ok   bool
+	}{
+		{[]string{"repos/o/r/contents/go.mod"}, true},
+		{[]string{"repos/o/r/labels -fname=x"}, true}, // one argument: an odd endpoint, never a flag
+		{nil, false},
+		{[]string{"repos/o/r/labels", "-fname=x"}, false},
+		{[]string{"repos/o/r/labels", "-X", "POST"}, false},
+		{[]string{"-XPOST"}, false},
+		{[]string{"--method=POST"}, false},
+		{[]string{"https://evil.example/x"}, false},
+	}
+	for _, c := range cases {
+		err := exec.Command(filepath.Join(bin, "gh-read"), c.args...).Run()
+		if (err == nil) != c.ok {
+			t.Errorf("gh-read %q: err %v, want ok=%v", c.args, err, c.ok)
+		}
+	}
+	calls, _ := os.ReadFile(log)
+	want := "api|--method|GET|--|repos/o/r/contents/go.mod|\napi|--method|GET|--|repos/o/r/labels -fname=x|\n"
+	if string(calls) != want {
+		t.Errorf("gh received:\n%s\nwant:\n%s", calls, want)
 	}
 }
