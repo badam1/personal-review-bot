@@ -782,6 +782,15 @@
     </div>
   </section>
 
+  <section class="sect" aria-labelledby="auton"><h2 id="auton" class="h2">Autonomy</h2>
+    <div class="tiles">
+      <div class="card tile"><div class="l">Posted as written</div><div class="v">{{.VerbatimPct}}%</div><div class="all">{{.Auton.Verbatim}} of {{.PostedKnown}} kept word for word · {{.Auton.Edited}} reworded</div></div>
+      <div class="card tile"><div class="l">Proven floor</div><div class="v">{{.FloorPct}}%</div><div class="all">{{.CleanAuto}} clean auto-post{{if ne .CleanAuto 1}}s{{end}} · ~{{.Need90}} for 90%</div></div>
+      <div class="card tile"><div class="l">Auto-posts</div><div class="v">{{.AutoTotal}}</div><div class="all">endorsed {{index .Auton.Downstream "endorsed"}} · disputed {{index .Auton.Downstream "disputed"}} · removed {{index .Auton.Downstream "removed"}} · quiet {{index .Auton.Downstream "quiet"}}</div></div>
+    </div>
+    <p class="lede">How much the bot carries on its own: how often a finding you posted went out in its words untouched, and what became of the ones it posted automatically. The floor is the error rate the auto-posts so far actually prove — the flattering rate is higher — and it climbs as clean posts accrue.</p>
+  </section>
+
   <section class="sect" aria-labelledby="perday"><h2 id="perday" class="h2">Spend per day · last 14 days</h2>
     <div class="card">
       <svg class="chart" viewBox="0 0 {{.Chart.Width}} {{.Chart.Height}}" role="img" aria-label="Spend per day over the last 14 days">

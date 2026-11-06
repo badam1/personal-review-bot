@@ -47,3 +47,20 @@ func TestSimilarity(t *testing.T) {
 		t.Error("similarity should never be NaN")
 	}
 }
+
+func TestWilson(t *testing.T) {
+	if lo, _, _ := Wilson(0, 0); lo != 0 {
+		t.Error("n=0 lower should be 0")
+	}
+	// 1-for-1 looks perfect but proves little; ~30 clean proves ~90%.
+	lo1, p1, _ := Wilson(1, 1)
+	if p1 != 1 || lo1 > 0.25 || lo1 < 0.15 {
+		t.Errorf("1/1: point %v lower %v (want point 1, lower ~0.21)", p1, lo1)
+	}
+	if n := CleanPostsFor(0.90); n < 28 || n > 40 {
+		t.Errorf("CleanPostsFor(0.90) = %d, want ~30-35", n)
+	}
+	if CleanPostsFor(0.95) <= CleanPostsFor(0.90) {
+		t.Error("a tighter target needs more posts")
+	}
+}

@@ -850,3 +850,27 @@ func TestPostedSignalsShow(t *testing.T) {
 		}
 	}
 }
+
+// The Stats page carries the autonomy section: verbatim rate, the proven floor, and the downstream mix of auto-posts.
+func TestStatsAutonomy(t *testing.T) {
+	s := newSite(t)
+	id := s.review(9, store.Done, "bot posted 1, you posted 1")
+	seed := func(status, authored, final, down string) {
+		fid, _ := s.st.AddFinding(&store.Finding{ReviewID: id, Agent: "logic", Severity: "low", Status: store.Candidate,
+			Path: "a.go", Line: 1, Comment: authored})
+		_ = s.st.UpdateFinding(&store.Finding{ID: fid, Status: store.Pending, Path: "a.go", Line: 1, Comment: authored})
+		_ = s.st.UpdateFinding(&store.Finding{ID: fid, Status: status, Path: "a.go", Line: 1, Comment: final, PostedURL: "u"})
+		if down != "" {
+			_ = s.st.SetDownstream(fid, down, "2026-01-01T00:00:00Z")
+		}
+	}
+	seed(store.Posted, "keep this", "keep this", "")           // verbatim, posted by you
+	seed(store.AutoPosted, "and this", "and this", "endorsed") // auto, held
+	seed(store.AutoPosted, "or that", "or that", "disputed")   // auto, pushed back on
+	_, page := s.get("/stats")
+	for _, want := range []string{"Autonomy", "Posted as written", "Proven floor", "disputed 1", "endorsed 1"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("stats page missing %q", want)
+		}
+	}
+}

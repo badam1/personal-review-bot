@@ -301,7 +301,20 @@ func seedDemo(st *store.Store, dbPath string, now time.Time) error {
 			"The cache key is the raw email, so any log line that dumps the key leaks it. Hash the key first.",
 			"The cache key is the raw email, so any log line that dumps the key leaks it. Hash the key first.",
 			"disputed", store.AutoPosted, 85),
-		st.Finish(sid, store.Done, "bot posted 1, you posted 2", "", ""),
+		// a few auto-posts that held, so the proven floor reads realistically rather than 0
+		post("logic", "low", "internal/account/cache.go", 58, "Error from the store is swallowed",
+			"The error from `store.Get` is dropped; a miss then looks like an empty account. Return it.",
+			"The error from `store.Get` is dropped; a miss then looks like an empty account. Return it.",
+			"endorsed", store.AutoPosted, 90),
+		post("integration", "low", "internal/account/cache.go", 63, "Metric name drifts from the others",
+			"`account.cache.hit` breaks the `svc.<area>.<event>` convention the dashboards group on. Rename it.",
+			"`account.cache.hit` breaks the `svc.<area>.<event>` convention the dashboards group on. Rename it.",
+			"endorsed", store.AutoPosted, 87),
+		post("infra", "low", "internal/account/cache.go", 90, "Cache built before the config is read",
+			"The cache is constructed in `init`, before flags are parsed, so the size flag is ignored. Build it in `main`.",
+			"The cache is constructed in `init`, before flags are parsed, so the size flag is ignored. Build it in `main`.",
+			"quiet", store.AutoPosted, 84),
+		st.Finish(sid, store.Done, "bot posted 4, you posted 2", "", ""),
 	)
 	if _, e := db.Exec(`UPDATE reviews SET created_at = ?, started_at = ?, finished_at = ? WHERE id = ?`,
 		dtime, dtime, now.Add(-100*time.Minute).UTC().Format(time.RFC3339), sid); e != nil {

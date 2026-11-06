@@ -605,6 +605,52 @@ func (s *Store) Decisions(threshold int) (time.Time, []DecisionRow, error) {
 	return parseTime(since), rows, q.Err()
 }
 
+// Autonomy is the measurement layer's read of how the bot is doing on its own: how often a finding you posted went
+// out in its words untouched, and what became of the findings it posted automatically. Dry runs are left out.
+type Autonomy struct {
+	Verbatim, Edited    int            // of findings you posted: kept word for word vs reworded
+	AutoClean, AutoHard int            // auto-posts that held vs ones later wrong, disputed or removed
+	Downstream          map[string]int // auto-post downstream signal → count ("" counted as "unchecked")
+}
+
+// Autonomy aggregates the posted findings. The verbatim/edited split is worked out in Go via metrics.Classify, so the
+// whitespace-tolerant comparison matches the dashboard exactly rather than a looser SQL one.
+func (s *Store) Autonomy() (Autonomy, error) {
+	a := Autonomy{Downstream: map[string]int{}}
+	rows, err := s.db.Query(`SELECT f.status, f.authored_comment, f.comment, f.downstream, f.wrong
+	  FROM findings f JOIN reviews r ON r.id = f.review_id
+	  WHERE f.status IN (?, ?) AND f.posted_url <> '' AND r.dry_run = 0`, Posted, AutoPosted)
+	if err != nil {
+		return a, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var status, authored, comment, down string
+		var wrong int
+		if err := rows.Scan(&status, &authored, &comment, &down, &wrong); err != nil {
+			return a, err
+		}
+		switch metrics.Classify(authored, comment) {
+		case metrics.Verbatim:
+			a.Verbatim++
+		case metrics.Edited:
+			a.Edited++
+		}
+		if status == AutoPosted {
+			if down == "" {
+				down = "unchecked"
+			}
+			a.Downstream[down]++
+			if wrong == 1 || down == "disputed" || down == "removed" {
+				a.AutoHard++
+			} else {
+				a.AutoClean++
+			}
+		}
+	}
+	return a, rows.Err()
+}
+
 const findingCols = `id, review_id, agent, path, line, severity, title, comment, agent_confidence, confidence, verdict,
   status, inline, posted_url, context, wrong, followup, followup_note, followup_review, reminded_sha, reminded_at,
   authored_comment, downstream, downstream_at`

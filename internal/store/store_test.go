@@ -328,3 +328,43 @@ func TestDownstreamQueue(t *testing.T) {
 		t.Errorf("Downstream = %q, want endorsed", f.Downstream)
 	}
 }
+
+func TestAutonomy(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rev, _ := s.Insert(&Review{Repo: "o/r", Number: 1, Status: Done})
+	post := func(status, authored, final, down string, wrong bool) {
+		id, _ := s.AddFinding(&Finding{ReviewID: rev, Agent: "logic", Severity: "low", Status: Candidate,
+			Path: "a.go", Line: 1, Comment: authored})
+		_ = s.UpdateFinding(&Finding{ID: id, Status: Pending, Path: "a.go", Line: 1, Comment: authored})
+		_ = s.UpdateFinding(&Finding{ID: id, Status: status, Path: "a.go", Line: 1, Comment: final, PostedURL: "u"})
+		if down != "" {
+			_ = s.SetDownstream(id, down, "2026-01-01T00:00:00Z")
+		}
+		if wrong {
+			_ = s.SetWrong(id, true)
+		}
+	}
+	post(Posted, "x", "x", "endorsed", false)     // verbatim, auto n/a
+	post(Posted, "x", "y reworded", "", false)    // edited
+	post(AutoPosted, "a", "a", "endorsed", false) // auto clean
+	post(AutoPosted, "b", "b", "disputed", false) // auto hard (disputed)
+	post(AutoPosted, "c", "c", "quiet", true)     // auto hard (wrong)
+
+	a, err := s.Autonomy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Verbatim != 4 || a.Edited != 1 { // 4 unchanged texts, 1 reworded
+		t.Errorf("verbatim/edited = %d/%d, want 4/1", a.Verbatim, a.Edited)
+	}
+	if a.AutoClean != 1 || a.AutoHard != 2 {
+		t.Errorf("auto clean/hard = %d/%d, want 1/2", a.AutoClean, a.AutoHard)
+	}
+	if a.Downstream["endorsed"] != 1 || a.Downstream["disputed"] != 1 || a.Downstream["quiet"] != 1 {
+		t.Errorf("downstream = %v", a.Downstream)
+	}
+}
