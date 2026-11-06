@@ -453,6 +453,14 @@ func (s *server) apply() {
 	running := s.cfg()
 	next := config.LoadFrom(running.ConfigDir)
 	next.WebAddr, next.StateDir, next.CacheDir = running.WebAddr, running.StateDir, running.CacheDir
+	// config.env is read from disk, and this page is not the only thing that writes it. ORG decides whose PRs are
+	// reviewed and goes straight into the search, so a value that is not an organisation name adds a qualifier of
+	// its own. Leaving the bad name out would widen the search to every org, which is the worse failure, so an
+	// unusable file leaves the running settings as they are.
+	if err := next.Validate(); err != nil {
+		s.d.Log("settings on disk not applied, still running the previous ones: %v", err)
+		return
+	}
 	s.d.Live.Set(next)
 }
 

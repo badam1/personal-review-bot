@@ -110,9 +110,11 @@ func ParseURL(u string) (string, int, error) {
 // searchPage is how many results one GitHub search returns; RequestedFromMe says when more matched.
 const searchPage = 50
 
-// requestedQuery is the search RequestedFromMe runs. The orgs reach it from ORG, which config.Validate has
-// already refused unless every one of them is an organisation name, so none can add a qualifier of its own. GitHub ORs a qualifier that is repeated, so several orgs
-// come out as "org:acme org:umbrella": a PR in either one. Kept apart from the call so it can be tested.
+// requestedQuery is the search RequestedFromMe runs. The orgs reach it from ORG, which is refused unless every
+// one of them is an organisation name — by config.Validate before a command that searches starts, and again
+// before settings edited on disk are applied — so none can add a qualifier of its own. GitHub ORs a qualifier
+// that is repeated, so several orgs come out as "org:acme org:umbrella": a PR in either one. Kept apart from the
+// call so it can be tested.
 func requestedQuery(login string, orgs []string) string {
 	q := "is:pr is:open archived:false user-review-requested:" + login
 	for _, org := range orgs {

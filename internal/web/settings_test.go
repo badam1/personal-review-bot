@@ -364,3 +364,25 @@ func TestSaveSettingsNormalisesORG(t *testing.T) {
 		}
 	}
 }
+
+// config.env can be edited by hand, and apply() reads it from disk. ORG goes straight into the GitHub search, so
+// a file that would widen the search past the orgs you set must not replace the settings already running.
+func TestApplyKeepsRunningSettingsWhenTheFileIsBad(t *testing.T) {
+	s, dir := newSettingsSite(t)
+	if err := config.Save(dir, map[string]string{"ORG": "acme"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.srv.apply()
+	if got := strings.Join(s.srv.cfg().Orgs, ","); got != "acme" {
+		t.Fatalf("ORG is %q before the hand edit, want acme", got)
+	}
+
+	// As a hand edit would leave it: a space makes "repo:someone/private" a second qualifier in the search.
+	if err := os.WriteFile(filepath.Join(dir, "config.env"), []byte("ORG=acme repo:someone/private\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.srv.apply()
+	if got := strings.Join(s.srv.cfg().Orgs, ","); got != "acme" {
+		t.Errorf("ORG is %q after the bad edit, want the running acme to be kept", got)
+	}
+}
