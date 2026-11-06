@@ -25,6 +25,7 @@ go test ./...
    ```sh
    gofmt -l .        # must print nothing
    go vet ./...
+   go vet -tags demo ./...
    go test ./...
    ```
 
@@ -56,6 +57,25 @@ See the `*_live_test.go` files for the others (`PERSONAL_REVIEW_BOT_LIVE_DESIGN`
 **Prompt and reviewer changes** (`internal/agents/prompts/`, `internal/agents/reviewers/`) change what gets posted
 on other people's PRs. Run a dry run or a live test on at least one real PR and say in the PR what changed in the
 output.
+
+## The demo page and the README's screenshots
+
+To see the page without GitHub or Claude, run the demo: a made-up org, `acme`, with reviews in every state (waiting
+for you, running, finished), on <http://localhost:12398>. It posts nothing and keeps nothing.
+
+```sh
+go run -tags demo ./cmd/demo
+```
+
+After a change to how the page looks, retake the README's screenshots from it (needs Chrome or Chromium; set `CHROME`
+to its path if it isn't in the usual place):
+
+```sh
+python3 scripts/screenshots.py   # rewrites docs/screenshots/
+```
+
+The demo's data is in `internal/web/demo.go`. Screenshots in this repo come only from it: nothing from a real org,
+repo, person or account.
 
 ## Releasing
 

@@ -34,7 +34,9 @@ jobs:
           fi
 
       - name: Vet
-        run: go vet ./...
+        run: |
+          go vet ./...
+          go vet -tags demo ./...  # the demo page (cmd/demo) isn't in the normal build, so check it here
 
       - name: Run tests
         run: go test ./...
