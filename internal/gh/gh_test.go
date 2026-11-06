@@ -28,3 +28,29 @@ func TestSaidIn(t *testing.T) {
 		}
 	}
 }
+
+// The avatar is fetched with a plain client, so the only thing standing between that fetch and an arbitrary
+// address is this check: the URL comes from the API, and the guard keeps a changed field or a redirect from
+// pointing it somewhere else.
+func TestAvatarHost(t *testing.T) {
+	cases := []struct {
+		name, url string
+		want      bool
+	}{
+		{"an avatar", "https://avatars.githubusercontent.com/u/1?v=4", true},
+		{"githubusercontent itself", "https://githubusercontent.com/u/1", true},
+		{"another githubusercontent subdomain", "https://raw.githubusercontent.com/a/b", true},
+		{"plain http", "http://avatars.githubusercontent.com/u/1", false},
+		{"somewhere else", "https://evil.example/u/1", false},
+		{"a lookalike suffix", "https://githubusercontent.com.evil.example/u/1", false},
+		{"a lookalike prefix", "https://avatars.githubusercontent.com.evil.example/u/1", false},
+		{"userinfo pointing elsewhere", "https://avatars.githubusercontent.com@evil.example/u/1", false},
+		{"empty", "", false},
+		{"not a URL", "://", false},
+	}
+	for _, c := range cases {
+		if got := avatarHost(c.url); got != c.want {
+			t.Errorf("%s: avatarHost(%q) = %v, want %v", c.name, c.url, got, c.want)
+		}
+	}
+}

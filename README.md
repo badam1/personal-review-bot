@@ -117,6 +117,10 @@ whether the daemon is watching GitHub, the plan's usage, and the version menu (u
 - **A PR's timeline** (`/pr/owner/repo/N`): every review of it, what started each, and what became of each finding.
 - **History** (`/history`): every review, filtered by repo, author or status; ignored PRs, with "Un-ignore".
 - **Stats** (`/stats`): spend, findings and their fate per reviewer, model, PR size and repo, spend per day, and the
+- **Profile** (`/profile`): the GitHub account the bot acts as — its picture, name, the organisations it belongs
+  to with the watched one marked — and, beside it, the rules it follows under that name: what gets posted without
+  asking, what always waits for you, the watermark it signs with, and what it has done and spent so far. The
+  picture is fetched by the bot and served from it, so the page asks GitHub for nothing while you read it.
   plan's usage.
 
 ## Updating

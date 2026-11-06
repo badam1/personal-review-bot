@@ -71,16 +71,17 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 }).ParseFS(files, "templates.html"))
 
 type server struct {
-	d       pipeline.Deps
-	token   string
-	hosts   []string
-	origins []string
-	fetch   func(repo string, number int) (gh.PR, error) // the PR as it is now: its head commit and labels
-	updates Updater                                      // nil: the page alone, which can't update
-	version string                                       // the running build's version
-	threads func(repo string, number int) ([]gh.Thread, error)
-	login   string // whose reviews these are: the owner of the bot's earlier comments
-	send    func(rev *store.Review, event string, fs []store.Finding, reminders []pipeline.Reminder) (string, error)
+	d        pipeline.Deps
+	token    string
+	hosts    []string
+	origins  []string
+	fetch    func(repo string, number int) (gh.PR, error) // the PR as it is now: its head commit and labels
+	updates  Updater                                      // nil: the page alone, which can't update
+	version  string                                       // the running build's version
+	threads  func(repo string, number int) ([]gh.Thread, error)
+	login    string // whose reviews these are: the owner of the bot's earlier comments
+	send     func(rev *store.Review, event string, fs []store.Finding, reminders []pipeline.Reminder) (string, error)
+	accounts *accountCache // the GitHub account the bot acts as, kept for an hour
 }
 
 // Updater is the daemon's side of updates: install the newest release, or look for one right away. Each says what it
@@ -98,7 +99,7 @@ func Serve(ctx context.Context, d pipeline.Deps, updates Updater) error {
 		return err
 	}
 	about = newAbout(d.Cfg)
-	s := &server{d: d, token: token, hosts: d.Cfg.AllowedHosts(), fetch: d.GH.GetPR, updates: updates, version: version.String(), threads: d.GH.ReviewThreads, login: d.GH.Login,
+	s := &server{d: d, token: token, accounts: &accountCache{}, hosts: d.Cfg.AllowedHosts(), fetch: d.GH.GetPR, updates: updates, version: version.String(), threads: d.GH.ReviewThreads, login: d.GH.Login,
 		send: func(rev *store.Review, event string, fs []store.Finding, rms []pipeline.Reminder) (string, error) {
 			return pipeline.Post(d, rev, event, fs, rms)
 		}}
@@ -123,6 +124,8 @@ func (s *server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /stats", s.stats)
+	mux.HandleFunc("GET /profile", s.profile)
+	mux.HandleFunc("GET /avatar", s.avatar)
 	mux.HandleFunc("GET /history", s.history)
 	mux.HandleFunc("GET /pr/{owner}/{name}/{number}", s.timeline)
 	mux.HandleFunc("POST /unignore", s.unignore)

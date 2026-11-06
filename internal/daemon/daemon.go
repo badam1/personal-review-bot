@@ -33,6 +33,8 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if auto == "" {
 		auto = "no severity"
 	}
+	// The TUI runs without a GitHub client, so the login is left here for it to read.
+	_ = st.SetMeta("login", client.Login)
 	log.Printf("personal-review-bot %s started for @%s (org %q, every %s, auto-post ≥ %d%% for %s, page %s)",
 		version.String(), client.Login, cfg.Org, cfg.PollInterval, cfg.Threshold, auto, cfg.WebURL())
 
