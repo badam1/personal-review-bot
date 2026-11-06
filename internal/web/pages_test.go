@@ -818,3 +818,28 @@ func TestLabelledButtons(t *testing.T) {
 	_, page = s.get("/pr/acme/infra/70")
 	want(t, page, button)
 }
+
+// Every control on a review joins the hidden "decide" form, whose first submit button is what Enter in a checkbox
+// would press. That must not be a button that posts to GitHub, so the form opens with a disabled one: implicit
+// submission does nothing when the default button is disabled.
+func TestEnterDoesNotPost(t *testing.T) {
+	s := newSite(t)
+	id := s.review(4, store.AwaitingYou, "1 need you")
+	fid, _ := s.st.AddFinding(&store.Finding{ReviewID: id, Agent: "logic", Severity: "medium", Path: "a.go", Line: 1,
+		Title: "Nil map", Comment: "c", Status: store.Pending})
+	_ = fid
+	_, page := s.get(fmt.Sprintf("/r/%d", id))
+
+	// The checkboxes are there, so Enter has something to submit from.
+	want(t, page, `type="checkbox" form="decide"`)
+
+	first := strings.Index(page, `<button type="submit" disabled hidden`)
+	if first < 0 {
+		t.Fatal("the decide form has no disabled default button: Enter in a checkbox would post to GitHub")
+	}
+	for _, posts := range []string{`value="post"`, `value="approve"`, `value="post_approve"`, `value="rereview"`} {
+		if at := strings.Index(page, posts); at >= 0 && at < first {
+			t.Errorf("a button with %s comes before the disabled default button, so Enter would press it", posts)
+		}
+	}
+}

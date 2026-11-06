@@ -657,7 +657,10 @@
       </section>{{end}}
 
       {{if eq .R.Status "awaiting_you"}}<form id="decide" method="post" action="/r/{{.R.ID}}"><input type="hidden" name="csrf" value="{{.Token}}">
-        {{if .Confirm}}<input type="hidden" name="anyway" value="1">{{end}}</form>
+        {{if .Confirm}}<input type="hidden" name="anyway" value="1">{{end}}
+        {{/* Enter in a finding's checkbox would otherwise submit this form, and its first submit button posts to
+             GitHub. Implicit submission does nothing when the form's default button is disabled, so this is it. */}}
+        <button type="submit" disabled hidden tabindex="-1" aria-hidden="true"></button></form>
         {{if .DesignPending}}<section class="sect tight" aria-labelledby="design" data-filtered>
           <h2 id="design" class="h2">Design concerns <span class="count design">{{len .DesignPending}}</span></h2>
           {{range .DesignPending}}<article class="card stack finding" data-finding data-agent="{{.Agent}}">
@@ -704,7 +707,7 @@
 
       {{if .Runs}}<section class="sect tight" aria-labelledby="how">
         <h2 id="how" class="h2">How it was reviewed</h2>
-        <div class="card list">{{range .Runs}}<div class="item runrow"{{if .Denials}} title="{{plural .Denials "tool call" "tool calls"}} outside its read-only tools (read, search, git log/show/diff/blame, gh api) were blocked; it carried on with those."{{end}}>
+        <div class="card list">{{range .Runs}}<div class="item runrow"{{if .Denials}} title="{{plural .Denials "tool call" "tool calls"}} outside its read-only tools (Read, Grep, Glob, gh search code, gh-read, git log/show/diff/blame) were blocked; it carried on with those."{{end}}>
           <div class="itemhead"><b>{{.Agent}}</b><span class="sub">{{.Model}}</span>{{template "run-result" .}}<span class="grow"></span>
             <span class="sub">{{dur .Duration}} · {{.Turns}} turns · {{money .CostUSD}}</span></div>
           {{if .Error}}<p class="bad">{{.Error}}</p>{{else if and .Checked (ne .Agent "design") (ne .Agent "summary")}}<p class="sub">{{ticks .Checked}}</p>{{end}}
