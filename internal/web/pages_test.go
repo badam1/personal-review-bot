@@ -329,7 +329,7 @@ func TestEarlierFindings(t *testing.T) {
 
 	_, page := s.get(fmt.Sprintf("/r/%d", again))
 	want(t, page, `<span class="count ok">1 fixed</span><span class="count open">1 still open</span><span class="count skip">1 not checked yet</span>`,
-		"fixed · Fixed in abc123: the map is made in New.", "still open · Still ignored at a.go:42.", `<span class="sub">not checked yet</span>`,
+		"fixed · Fixed in abc123: the map is made in New.", "still open · Still ignored at a.go:42.", `<p class="sub">not checked yet</p>`,
 		"1 high-severity finding(s) posted earlier are still open")
 
 	back := fmt.Sprintf("/r/%d", again)
@@ -561,7 +561,8 @@ func TestReminders(t *testing.T) {
 	}
 	want(t, page, `<form id="decide"`, "Still open at `aaa`: a.go:9 still returns nil.", "Only partly fixed at `aaa`:",
 		"Last reply: @dev: Doing it in a follow-up PR.", "resolved: reminding reopens it", "in the review body",
-		"you reminded the author at aaa", "Nothing new found, but 5 earlier finding(s) are still open", `value="post"`)
+		"you reminded the author at aaa", "Nothing new found, but 5 earlier finding(s) are still open", `value="post"`,
+		`title="Open the comment on GitHub"`, `title="Checked by a later review: open it"`)
 	if strings.Contains(page, fmt.Sprintf(`name="rm_%d"`, quiet+5)) {
 		t.Error("a fixed finding can't be reminded of")
 	}
@@ -775,4 +776,30 @@ func TestBarScript(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `classList.add("stuck")`) {
 		t.Errorf("bar.js: %d", rec.Code)
 	}
+}
+
+// Links that leave for GitHub are icon buttons with a label: the PR beside its title, on its card and in the lists,
+// and a posted comment beside its finding.
+func TestIconButtons(t *testing.T) {
+	s := newSite(t)
+	url := "https://github.com/acme/infra/pull/70"
+	id, _ := s.st.Insert(&store.Review{Repo: "acme/infra", Number: 70, URL: url, Title: "PR 70", Author: "dev",
+		HeadSHA: "aaa", Status: store.Running})
+	_ = s.st.Finish(id, store.AwaitingYou, "1 need you", "", "")
+	fid, _ := s.st.AddFinding(&store.Finding{ReviewID: id, Agent: "logic", Severity: "low", Path: "a.go", Line: 1,
+		Title: "Typo", Comment: "c", Status: store.Candidate})
+	_ = s.st.UpdateFinding(&store.Finding{ID: fid, Line: 1, Comment: "c", Confidence: 90, Status: store.AutoPosted,
+		PostedURL: url + "#discussion_r1"})
+
+	button := fmt.Sprintf(`href="%s" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">`, url)
+	_, page := s.get(fmt.Sprintf("/r/%d", id))
+	want(t, page, `<div class="titlerow"><h1>PR 70</h1><a class="ibtn big" `+button,
+		`<a class="ibtn" href="`+url+`#discussion_r1" target="_blank" rel="noopener" title="Open the comment on GitHub"`)
+	if strings.Contains(page, "View on GitHub") {
+		t.Error(`"View on GitHub" is an icon now`)
+	}
+	_, page = s.get("/")
+	want(t, page, `<a class="ibtn" `+button, `<a class="ilink" `+button)
+	_, page = s.get("/pr/acme/infra/70")
+	want(t, page, `<a class="ibtn big" `+button)
 }

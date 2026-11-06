@@ -131,6 +131,13 @@
   .btn.big { min-height: 44px; font-size: 15px; } .btn.small { min-height: 36px; padding: 0 14px; font-size: 13px; }
   .btn.tiny { min-height: 32px; padding: 0 10px; font-size: 12px; } .btn.wide { width: 100%; }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
+  /* A link that leaves for GitHub (or another review) is an icon; buttons that change something keep their words */
+  .ibtn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border-radius: 8px;
+          border: 1px solid var(--s1); color: var(--sub); background: transparent; }
+  .ibtn:hover { color: var(--text); background: var(--s0); border-color: var(--s2); text-decoration: none; }
+  .ibtn .ic { width: 16px; height: 16px; } .ibtn.big { width: 40px; height: 40px; } .ibtn.big .ic { width: 20px; height: 20px; }
+  .ilink { display: inline-flex; vertical-align: -2px; color: var(--sub); } .ilink:hover { color: var(--text); } .ilink .ic { width: 14px; height: 14px; }
+  .tail { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
   form.inline { display: inline; }
   textarea { width: 100%; padding: 10px 12px; border-radius: 8px; background: var(--base); border: 1px solid var(--s1); color: var(--text);
              font: inherit; font-size: 14px; resize: vertical; }
@@ -168,7 +175,7 @@
   /* A review */
   .crumbs { font-size: 13px; color: var(--sub); }
   .prhead { display: flex; flex-direction: column; gap: 10px; } .prhead h1 { font-size: 26px; line-height: 1.25; }
-  .prhead h1 a { color: var(--text); } .add { color: var(--green); } .del { color: var(--red); }
+  .titlerow { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; } .titlerow .ibtn { margin-top: 2px; } .add { color: var(--green); } .del { color: var(--red); }
   .cols { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px; }
   .maincol { flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
   .sidecol { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
@@ -177,8 +184,8 @@
   .lbl { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--sub); } .lbl.design { color: var(--mauve); }
   .list { padding: 0; } .list .item { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--s0); }
   .list .item:last-child { border-bottom: 0; }
-  .list .item.compact { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 12px 18px; font-size: 14px; }
-  .list .item.compact .sub { font-size: 13px; }
+  .list .item.settled { gap: 4px; padding: 12px 18px; font-size: 14px; } .list .item.settled > .sub { font-size: 13px; padding-left: 24px; }
+  .itemhead .tail { align-self: center; }
   .itemhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
   .sev { padding: 1px 8px; border-radius: 6px; background: var(--s0); color: var(--sub); font-size: 12px; font-weight: 650; white-space: nowrap; }
   .sev.high { color: var(--red); } .sev.medium, .sev.open { color: var(--peach); } .sev.low { color: var(--sub); } .sev.ok { color: var(--green); }
@@ -206,7 +213,7 @@
   .facts { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; padding: 18px; font-size: 13px; }
   .facts dt { color: var(--sub); } .facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
   .about p { font-size: 15px; }
-  .note code, .runrow code { font-family: var(--mono); font-size: .88em; background: var(--s0); padding: 1px 5px; border-radius: 4px; }
+  .note code, .runrow code, .list .item code { font-family: var(--mono); font-size: .88em; background: var(--s0); padding: 1px 5px; border-radius: 4px; }
   form#decide { display: none; } /* only its fields' owner: the fields and buttons sit where they're read */
   .approval { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 10px; background: var(--base); border: 1px solid var(--s0); }
   .approval .aline { display: flex; align-items: baseline; gap: 10px; font-size: 14px; } .approval .aline b { font-size: 22px; }
@@ -246,6 +253,11 @@
 {{define "icon-wait"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fab387" stroke-width="3" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke-dasharray="30 20"></circle></svg>{{end}}
 {{define "icon-todo"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a6adc8" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle></svg>{{end}}
 {{define "icon-alert"}}<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f38ba8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5v.5"></path></svg>{{end}}
+{{define "i-github"}}<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>{{end}}
+{{define "i-comment"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>{{end}}
+{{define "i-arrow"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>{{end}}
+{{define "gh-pr"}}<a class="ibtn" href="{{.}}" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">{{template "i-github"}}</a>{{end}}
+{{define "gh-comment"}}<a class="ibtn" href="{{.}}" target="_blank" rel="noopener" title="Open the comment on GitHub" aria-label="Open the comment on GitHub">{{template "i-comment"}}</a>{{end}}
 {{define "icon-down"}}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a6adc8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>{{end}}
 
 {{define "top"}}<header class="top">
@@ -329,7 +341,9 @@
   <tbody>{{range .}}{{$o := outcome .}}<tr>
     <td class="when">{{ago .CreatedAt}}</td>
     <td><div class="prcell"><a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
-      <span class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a> · @{{.Author}}{{with iteration .}} · {{.}}{{end}}</span></div></td>
+      <span class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
+        <a class="ilink" href="{{.URL}}" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">{{template "i-github"}}</a>
+        · @{{.Author}}{{with iteration .}} · {{.}}{{end}}</span></div></td>
     <td>{{if .Tier}}<span class="size {{sizeKind .Tier}}">{{.Tier}}</span>{{else if .Deep}}<span class="size deep">deep</span>{{else}}<span class="size">—</span>{{end}}{{if .DryRun}} <span class="tag">dry run</span>{{end}}</td>
     <td>{{with .Labels}}<div class="lstack">{{range .}}<span class="plabel {{labelKind .}}">{{.}}</span>{{end}}</div>{{else}}<span class="sub">—</span>{{end}}</td>
     <td class="n">{{if .CostUSD}}{{money .CostUSD}}{{else}}—{{end}}</td>
@@ -373,7 +387,7 @@
           <span>by <b>@{{.Author}}</b></span>{{with iteration .Review}}<span>{{.}}</span>{{end}}<span>{{ago .FinishedAt}}</span>{{template "labels" .Labels}}</div>
       </div>
       <div class="side">{{range .Badges}}<span class="badge {{.Kind}}">{{.Text}}</span>{{end}}<span class="cost">{{money .CostUSD}}</span>
-        <a class="btn primary" href="/r/{{.ID}}">Open</a></div>
+        {{template "gh-pr" .URL}}<a class="btn primary" href="/r/{{.ID}}">Open</a></div>
     </article>{{else}}<div class="empty">Nothing waiting for you.</div>{{end}}
   </section>
 
@@ -386,7 +400,7 @@
           <div class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
             <span>by <b>@{{.Author}}</b></span>{{if .Deep}}<span class="tag deep">deep review</span>{{end}}{{with iteration .}}<span>{{.}}</span>{{end}}{{template "labels" .Labels}}</div>
         </div>
-        <div class="meta">{{if .CostUSD}}<span>{{money .CostUSD}} so far</span>{{end}}</div>
+        <div class="meta">{{if .CostUSD}}<span>{{money .CostUSD}} so far</span>{{end}}{{template "gh-pr" .URL}}</div>
       </div>
       {{template "running-line" .}}
       {{template "steps" .}}
@@ -402,8 +416,8 @@
         <div class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
           <span class="mono err">{{clip .Error}}</span><span>{{ago .FinishedAt}}</span></div>
       </div>
-      <form method="post" action="/retry"><input type="hidden" name="csrf" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}">
-        <button class="btn quiet edge">Retry</button></form>
+      <div class="tail">{{template "gh-pr" .URL}}<form method="post" action="/retry"><input type="hidden" name="csrf" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}">
+        <button class="btn quiet edge">Retry</button></form></div>
     </article>{{end}}
     <p class="fine">A retry reviews the PR's latest commit, the same way the failed attempt would have.</p>
   </section>{{end}}
@@ -422,7 +436,7 @@
   <nav class="crumbs" aria-label="Breadcrumb">{{template "crumb-root" .Nav}} <a class="mono" href="{{timeline .R.Repo .R.Number}}"
     title="Every review of this PR">{{.R.Repo}}#{{.R.Number}}</a> <span aria-hidden="true">/</span> <span aria-current="page">{{.R.CreatedAt.Local.Format "Jan 2 15:04"}}</span></nav>
   <div class="prhead">
-    <h1><a href="{{.R.URL}}" target="_blank" rel="noopener">{{.R.Title}}</a></h1>
+    <div class="titlerow"><h1>{{.R.Title}}</h1>{{with .R.URL}}<a class="ibtn big" href="{{.}}" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">{{template "i-github"}}</a>{{end}}</div>
     <div class="meta">{{$o := outcome .R}}<span class="badge {{$o.Kind}}">{{$o.Text}}</span>
       <span>opened by <b>@{{.R.Author}}</b></span>
       <span><span class="add">+{{.R.Additions}}</span> <span class="del">−{{.R.Deletions}}</span> in {{.R.Files}} files</span>
@@ -467,18 +481,19 @@
         <h2 id="earlier" class="h2">Earlier findings {{range .EarlierBadges}}<span class="count {{.Kind}}">{{.Text}}</span>{{end}}</h2>
         <div class="card list">{{range .Earlier}}{{$f := .}}{{if .Remind}}
           <div class="item">
-            <div class="itemhead"><span class="sev open">{{followup .Finding}}</span><span class="ttl">{{.Title}}</span>{{if .Path}}<span class="where sub">{{.Path}}:{{.Line}}</span>{{end}}</div>
-            {{with .FollowupNote}}<p class="sub">{{.}}{{with $f.Remind}}{{if and .Thread (not .Answer)}} Nobody answered the thread.{{end}}{{end}}</p>{{end}}
+            <div class="itemhead"><span class="sev open">{{followup .Finding}}</span><span class="ttl">{{.Title}}</span>{{if .Path}}<span class="where sub">{{.Path}}:{{.Line}}</span>{{end}}
+              {{with .PostedURL}}<span class="tail">{{template "gh-comment" .}}</span>{{end}}</div>
+            {{with .FollowupNote}}<p class="sub">{{ticks .}}{{with $f.Remind}}{{if and .Thread (not .Answer)}} Nobody answered the thread.{{end}}{{end}}</p>{{end}}
             {{with .Remind}}<label class="check"><input type="checkbox" form="decide" name="rm_{{$f.ID}}"{{if .Ticked}} checked{{end}}> Remind the author
               {{if .Thread}}with a reply in its thread{{if .Resolved}} <span class="sub">(resolved: reminding reopens it)</span>{{end}}{{else}}in the review body{{end}}</label>
             {{with .Answer}}<div class="sub">Last reply: {{.}}</div>{{end}}
             {{with .Reminded}}<div class="sub">{{.}}</div>{{end}}
             <textarea form="decide" name="rt_{{$f.ID}}" rows="2" aria-label="Reminder for {{$f.Title}}">{{.Text}}</textarea>{{end}}
           </div>{{else}}
-          <div class="item compact">{{if eq (followupKind .Finding) "ok"}}{{template "icon-check"}}{{else}}<span class="dot {{followupKind .Finding}}"></span>{{end}}
-            <span>{{.Title}}</span><span class="sub">{{followup .Finding}}{{with .FollowupNote}} · {{.}}{{end}}</span>
-            {{if .Wrong}}<span class="tag bad">marked wrong</span>{{end}}{{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">the comment</a>{{end}}
-            {{if and .FollowupReview (ne .FollowupReview $.R.ID)}}<a href="/r/{{.FollowupReview}}">checked by another review</a>{{end}}
+          <div class="item settled"><div class="itemhead">{{if eq (followupKind .Finding) "ok"}}{{template "icon-check"}}{{else}}<span class="dot {{followupKind .Finding}}"></span>{{end}}
+            <span>{{.Title}}</span>{{if .Wrong}}<span class="tag bad">marked wrong</span>{{end}}
+            <span class="tail">{{if and .FollowupReview (ne .FollowupReview $.R.ID)}}<a class="ibtn" href="/r/{{.FollowupReview}}" title="Checked by a later review: open it" aria-label="Open the review that checked it">{{template "i-arrow"}}</a>{{end}}{{with .PostedURL}}{{template "gh-comment" .}}{{end}}</span></div>
+            <p class="sub">{{followup .Finding}}{{with .FollowupNote}} · {{ticks .}}{{end}}</p>
           </div>{{end}}{{end}}
         </div>
         {{with .ThreadsErr}}<div class="callout bad">Couldn't read the PR's review threads, so reminders go in the review body: {{.}}</div>{{end}}
@@ -516,7 +531,7 @@
       {{if .Auto}}<section class="sect tight" aria-labelledby="auto" data-filtered>
         <h2 id="auto" class="h2">Posted automatically</h2>
         {{range .Auto}}<div class="card mini" data-finding data-agent="{{.Agent}}">{{template "mini-what" .}}
-          <div class="acts">{{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">View on GitHub</a>{{end}}
+          <div class="acts">{{with .PostedURL}}{{template "gh-comment" .}}{{end}}
             {{if eq .Status "auto_posted"}}{{template "wrong" (wrongForm . $.Token)}}{{else}}<span class="tag">would post</span>{{end}}</div></div>{{end}}
         <p class="fine">The verifier confirmed these at a certainty and severity that post on their own (AUTO_POST, THRESHOLD).</p>
       </section>{{end}}
@@ -525,7 +540,7 @@
         <h2 id="old" class="h2">Your decisions</h2>
         {{range .Old}}<div class="card mini" data-finding data-agent="{{.Agent}}">{{template "mini-what" .}}
           <div class="acts"><span class="sub">{{fate .Finding}}</span>
-            {{if eq .Status "posted"}}{{if .PostedURL}}<a href="{{.PostedURL}}" target="_blank" rel="noopener">View on GitHub</a>{{end}}{{template "wrong" (wrongForm . $.Token)}}{{end}}</div></div>{{end}}
+            {{if eq .Status "posted"}}{{with .PostedURL}}{{template "gh-comment" .}}{{end}}{{template "wrong" (wrongForm . $.Token)}}{{end}}</div></div>{{end}}
       </section>{{end}}
 
       {{if .Rejected}}<details class="card" data-filtered><summary>{{plural (len .Rejected) "finding" "findings"}} the verifier rejected</summary>
@@ -696,7 +711,7 @@
   <div class="sect">
     <nav class="crumbs" aria-label="Breadcrumb">{{template "crumb-root" .Nav}} <span class="mono" aria-current="page">{{.Latest.Repo}}#{{.Latest.Number}}</span></nav>
     <div class="prhead">
-      <h1><a href="{{.Latest.URL}}" target="_blank" rel="noopener">{{.Latest.Title}}</a></h1>
+      <div class="titlerow"><h1>{{.Latest.Title}}</h1>{{with .Latest.URL}}<a class="ibtn big" href="{{.}}" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">{{template "i-github"}}</a>{{end}}</div>
       <div class="meta"><span>by <b>@{{.Latest.Author}}</b></span><span>{{plural (len .Entries) "review" "reviews"}}</span><span>{{money .Cost}}</span></div>
     </div>
   </div>
