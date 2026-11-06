@@ -492,7 +492,7 @@
 {{define "steps"}}<ol class="steps" aria-label="Progress" data-steps-for="{{.ID}}">{{range reviewSteps .}}<li class="{{.State}}"><span class="bar"></span><span>{{.Label}}</span></li>{{end}}</ol>{{end}}
 
 {{define "review-table"}}<div class="tbl-wrap"><table class="tbl">
-  <thead><tr><th scope="col">When</th><th scope="col">PR</th><th scope="col">Size</th><th scope="col">Risk</th><th scope="col" class="n">Cost</th><th scope="col">Outcome</th></tr></thead>
+  <thead><tr><th scope="col">When</th><th scope="col">PR</th><th scope="col">Size</th><th scope="col">{{labelsColumn}}</th><th scope="col" class="n">Cost</th><th scope="col">Outcome</th></tr></thead>
   <tbody>{{range .}}{{$o := outcome .}}<tr>
     <td class="when">{{ago .CreatedAt}}</td>
     <td><div class="prcell"><a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
@@ -1067,9 +1067,15 @@
     <div class="hd"><h2 id="h-page">This page</h2></div>
     {{with index .F "SHOW_LABELS"}}<div class="srow" data-row data-label="PR labels to show">
       <div class="what"><span class="slabel"><label for="s-SHOW_LABELS">PR labels to show</label>{{template "changed" .}}</span>
-        <p class="desc">Labels starting with these show in the lists' Risk column and on a review, coloured by the level they end in. Separate them with commas.</p></div>
+        <p class="desc">Labels starting with these show in a column of the lists and on a review, coloured by the level they end in. Separate them with commas.</p></div>
       <div class="ctl"><div class="inp{{if .Env}} locked{{end}}">{{if .Env}}{{template "i-lock"}}{{end}}<input class="field mono" id="s-SHOW_LABELS" name="SHOW_LABELS" value="{{commas .Value}}" placeholder="none" autocomplete="off" spellcheck="false"{{if .Env}} disabled{{end}}></div>
         {{if .Env}}{{template "set-note" .}}{{else}}<span class="hint">Default: {{.Shown}}{{if .Changed}}<button type="button" class="linkbtn" data-reset="SHOW_LABELS" data-value="{{commas .Default}}" hidden>{{template "i-reset"}}Reset to {{.Shown}}</button>{{end}}</span>{{end}}</div>
+    </div>{{end}}
+    {{with index .F "LABELS_TITLE"}}<div class="srow" data-row data-label="Column heading">
+      <div class="what"><span class="slabel"><label for="s-LABELS_TITLE">Column heading</label>{{template "changed" .}}</span>
+        <p class="desc">What the lists call the column of these labels. Empty names it after the word they share: risk/ and auto-risk/ make it Risk; labels with none in common make it Labels.</p></div>
+      <div class="ctl"><div class="inp{{if .Env}} locked{{end}}">{{if .Env}}{{template "i-lock"}}{{end}}<input class="field" id="s-LABELS_TITLE" name="LABELS_TITLE" value="{{.Value}}" placeholder="{{$.LabelsAuto}}" maxlength="30" autocomplete="off"{{if .Env}} disabled{{end}}></div>
+        {{if .Env}}{{template "set-note" .}}{{else}}<span class="hint">Default: named after the labels, now {{$.LabelsAuto}}{{if .Changed}}<button type="button" class="linkbtn" data-reset="LABELS_TITLE" data-value="" hidden>{{template "i-reset"}}Name it after the labels</button>{{end}}</span>{{end}}</div>
     </div>{{end}}
     {{with index .F "ADDR"}}<div class="srow" data-row data-label="Address">
       <div class="what"><span class="slabel"><label for="s-ADDR">Address</label><span class="pill restart">Needs a restart</span>{{template "changed" .}}</span>

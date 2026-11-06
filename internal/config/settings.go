@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/badam1/personal-review-bot/internal/atomicfile"
 )
@@ -36,6 +37,7 @@ var Defaults = map[string]string{
 	"UPDATE_CHECK":          "1",
 	"UPDATE_REPO":           "badam1/personal-review-bot",
 	"SHOW_LABELS":           "risk/,auto-risk/",
+	"LABELS_TITLE":          "",
 }
 
 // Values are the settings as config.env would write them: what the Settings page shows and compares a form with.
@@ -63,6 +65,7 @@ func (c Config) Values() map[string]string {
 		"UPDATE_CHECK":          flag(c.UpdateCheck),
 		"UPDATE_REPO":           c.UpdateRepo,
 		"SHOW_LABELS":           strings.Join(c.ShowLabels, ","),
+		"LABELS_TITLE":          c.LabelsTitle,
 	}
 }
 
@@ -133,6 +136,10 @@ func Check(name, value string) error {
 	case "SKIP_DRAFTS", "UPDATE_CHECK":
 		if !slices.Contains(onOff, value) {
 			return errors.New("must be 1 or 0")
+		}
+	case "LABELS_TITLE":
+		if utf8.RuneCountInString(value) > 30 {
+			return errors.New("must be at most 30 characters")
 		}
 	case "SHOW_LABELS":
 		for _, p := range list(value) {

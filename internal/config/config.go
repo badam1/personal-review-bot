@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Config struct {
@@ -30,6 +32,7 @@ type Config struct {
 	UpdateCheck  bool          // look for new releases every hour, to offer them on the page and in the TUI
 	UpdateRepo   string        // the GitHub repo releases come from
 	ShowLabels   []string      // prefixes of the PR labels shown beside its size, e.g. risk/
+	LabelsTitle  string        // the heading of the lists' column of those labels ("" = named after them)
 	ConfigDir    string        // config.env
 	StateDir     string        // SQLite database
 	CacheDir     string        // repo clones and per-review worktrees
@@ -66,6 +69,7 @@ func LoadFrom(dir string) Config {
 		UpdateCheck:  s.str("UPDATE_CHECK", Defaults["UPDATE_CHECK"]) == "1",
 		UpdateRepo:   s.str("UPDATE_REPO", Defaults["UPDATE_REPO"]),
 		ShowLabels:   list(s.str("SHOW_LABELS", Defaults["SHOW_LABELS"])),
+		LabelsTitle:  strings.TrimSpace(s.str("LABELS_TITLE", Defaults["LABELS_TITLE"])),
 		ConfigDir:    dir,
 		StateDir:     s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
 		CacheDir:     s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),
@@ -140,6 +144,27 @@ func (c Config) Shown(labels []string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// LabelsColumn is the heading of the lists' column of ShowLabels: LabelsTitle when it is set, else the word the
+// prefixes end in when they share it ("risk/" and "auto-risk/" give "Risk", "size/" gives "Size"), else "Labels".
+func (c Config) LabelsColumn() string {
+	if c.LabelsTitle != "" {
+		return c.LabelsTitle
+	}
+	word := ""
+	for _, p := range c.ShowLabels {
+		words := strings.FieldsFunc(strings.ToLower(p), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if len(words) == 0 || word != "" && words[len(words)-1] != word {
+			return "Labels"
+		}
+		word = words[len(words)-1]
+	}
+	if word == "" {
+		return "Labels"
+	}
+	first, size := utf8.DecodeRuneInString(word)
+	return string(unicode.ToUpper(first)) + word[size:]
 }
 
 // list splits a comma-separated setting, leaving out empty parts.

@@ -14,6 +14,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/gh"
+	"github.com/badam1/personal-review-bot/internal/store"
 )
 
 // newSettingsSite is a site with its own config directory, and the account seeded into the cache so the page
@@ -316,5 +317,28 @@ func TestSettingsNeedToken(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "config.env")); !os.IsNotExist(err) {
 		t.Error("config.env was written")
+	}
+}
+
+// The labels column's heading is saved like any setting; emptied, it is named after the labels again.
+func TestSettingsLabelsHeading(t *testing.T) {
+	s, dir := newSettingsSite(t)
+	_, page := s.get("/settings")
+	want(t, page, `name="LABELS_TITLE" value="" placeholder="Risk"`, "Default: named after the labels, now Risk")
+	if rec := s.post("/settings", url.Values{"LABELS_TITLE": {" Priority "}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if env := fileText(t, filepath.Join(dir, "config.env")); env != "LABELS_TITLE=Priority\n" {
+		t.Errorf("config.env: %q", env)
+	}
+	if got := s.srv.cfg().LabelsColumn(); got != "Priority" {
+		t.Errorf("the running heading is %q", got)
+	}
+	s.review(1, store.Done, "approved by you")
+	_, page = s.get("/history")
+	want(t, page, `<th scope="col">Priority</th>`)
+	s.post("/settings", url.Values{"LABELS_TITLE": {""}})
+	if env := fileText(t, filepath.Join(dir, "config.env")); env != "" {
+		t.Errorf("emptied, config.env still has %q", env)
 	}
 }
