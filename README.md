@@ -175,7 +175,8 @@ review. After editing the file by hand, restart the service (`./install.sh`).
 | `ORG` | empty: review requests from any org. Set it to only review PRs in that GitHub org; reviewers also search it for related repos (otherwise the PR repo's owner) |
 | `THRESHOLD` | `80`: auto-post a confirmed finding at or above this certainty |
 | `AUTO_POST` | `low,medium`: the severities posted without asking, once confirmed at `THRESHOLD`. High ones wait for you; `high` alone posts only those, `low,medium,high` everything, empty nothing. A misspelt word is left out. The stats page's "What became of findings, by score" table shows whether the rule fits. (The older `AUTO_SEVERITY`, "this severity or higher", still works when `AUTO_POST` isn't set.) |
-| `SHOW_LABELS` | `risk/,auto-risk/`: the PR labels shown in the lists' Risk column and beside the size on a review, by prefix (comma-separated; empty shows none). Coloured by the level they end in: `/high`, `/medium`, `/low` |
+| `SHOW_LABELS` | `risk/,auto-risk/`: the PR labels shown in a column of the lists and beside the size on a review, by prefix (comma-separated; empty shows none). Coloured by the level they end in: `/high`, `/medium`, `/low` |
+| `LABELS_TITLE` | empty: the heading of that column, named after the labels when they share a word (`risk/` and `auto-risk/` make it Risk, `size/` Size), otherwise Labels |
 | `APPROVE_TEXT` | `LGTM :+1:`: said with your first approval of a PR; a re-approval (after new commits dismissed it) goes without it; empty = approve without a comment |
 | `WATERMARK` | `🤖 personal-review-bot`: ends every comment the bot posts, followed by the certainty |
 | `SAVE_AT` | `75`: % of the Claude plan's 5-hour or weekly limit from which reviews use cheaper models at medium effort |

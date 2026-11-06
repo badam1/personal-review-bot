@@ -71,6 +71,7 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"clip":         func(s string) string { return clipText(s, 90) },
 	"plural":       plural,
 	"initial":      initial,
+	"labelsColumn": func() string { return labelsColumn() },
 	"commas":       func(s string) string { return strings.ReplaceAll(s, ",", ", ") },
 	"rangeMin":     func(v string) int { n, _ := strconv.Atoi(v); return min(50, n/5*5) },
 	"num": func(s setting, lo, hi int, unit string) numberField {
@@ -78,6 +79,13 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	},
 	"seg": func(s setting, c []choice) segField { return segField{S: s, C: c} },
 }).ParseFS(files, "templates.html"))
+
+// labelsColumn names the lists' column of PR labels (config.LabelsColumn). Serve points it at the running
+// settings, so a change on the Settings page shows on the next page load; tests and the default name the
+// default labels.
+var labelsColumn = func() string {
+	return config.Config{ShowLabels: strings.Split(config.Defaults["SHOW_LABELS"], ",")}.LabelsColumn()
+}
 
 // numberField and segField hand a settings row's template its setting and how to show it.
 type numberField struct {
@@ -145,6 +153,7 @@ func Serve(ctx context.Context, d pipeline.Deps, updates Updater) error {
 		s.origins = append(s.origins, "http://"+h)
 	}
 	header = s.headerView
+	labelsColumn = func() string { return s.cfg().LabelsColumn() }
 	srv := &http.Server{Addr: d.Cfg.WebAddr, Handler: s.guard(s.routes()), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()

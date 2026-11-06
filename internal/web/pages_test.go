@@ -43,7 +43,9 @@ func newSite(t *testing.T) *site {
 			return "", nil
 		}}
 	header = s.headerView
-	t.Cleanup(func() { header = nil })
+	defaultColumn := labelsColumn
+	labelsColumn = func() string { return s.cfg().LabelsColumn() }
+	t.Cleanup(func() { header, labelsColumn = nil, defaultColumn })
 	return &site{t: t, st: st, h: s.guard(s.routes()), srv: s}
 }
 
@@ -766,6 +768,14 @@ func TestRiskLabels(t *testing.T) {
 	_, page = s.get("/history")
 	want(t, page, `<th scope="col">Risk</th>`, `<div class="lstack"><span class="plabel high">auto-risk/high</span>`,
 		`<span class="ohead"><span class="dot need"></span><b>Needs you</b></span><span class="sub">no issues: approve?</span>`)
+
+	// The column is named after the labels shown, or as LABELS_TITLE says.
+	s.srv.d.Cfg.ShowLabels = []string{"size/"}
+	_, page = s.get("/history")
+	want(t, page, `<th scope="col">Size</th><th scope="col">Size</th>`)
+	s.srv.d.Cfg.LabelsTitle = "Priority"
+	_, page = s.get("/history")
+	want(t, page, `<th scope="col">Priority</th>`)
 }
 
 // Every page loads the bar's script, served from this origin like the others.
