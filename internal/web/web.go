@@ -397,10 +397,6 @@ type statsPage struct {
 	FiveHourResets, WeekResets time.Time
 	HasUsage                   bool
 	UsageSeen                  time.Time
-	Auton                      store.Autonomy
-	PostedKnown, VerbatimPct   int
-	CleanAuto, AutoTotal       int
-	FloorPct, Need90           int
 }
 
 func (s *server) autonomy(w http.ResponseWriter, r *http.Request) {
@@ -450,7 +446,7 @@ func (s *server) stats(w http.ResponseWriter, r *http.Request) {
 	st, now := s.d.Store, time.Now()
 	p := statsPage{Threshold: s.cfg().Threshold, SaveAt: s.cfg().SaveAt, MinAt: s.cfg().MinAt,
 		AutoPost: s.cfg().AutoPostSeverities()}
-	var errs [9]error
+	var errs [8]error
 	p.Week, errs[0] = st.Totals(now.AddDate(0, 0, -7))
 	p.All, errs[1] = st.Totals(time.Time{})
 	p.Days, errs[2] = st.DailySpend(14, now)
@@ -459,21 +455,10 @@ func (s *server) stats(w http.ResponseWriter, r *http.Request) {
 	p.Tiers, errs[5] = st.Tiers()
 	p.Models, errs[6] = st.Models()
 	p.Repos, errs[7] = st.Repos(10)
-	p.Auton, errs[8] = st.Autonomy()
 	if err := errors.Join(errs[:]...); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	p.PostedKnown = p.Auton.Verbatim + p.Auton.Edited
-	if p.PostedKnown > 0 {
-		p.VerbatimPct = int(math.Round(float64(p.Auton.Verbatim) / float64(p.PostedKnown) * 100))
-	}
-	p.CleanAuto, p.AutoTotal = p.Auton.AutoClean, p.Auton.AutoClean+p.Auton.AutoHard
-	if p.AutoTotal > 0 {
-		lo, _, _ := metrics.Wilson(p.Auton.AutoClean, p.AutoTotal)
-		p.FloorPct = int(math.Round(lo * 100))
-	}
-	p.Need90 = metrics.CleanPostsFor(0.90)
 	p.Chart = spendChart(p.Days)
 	if u, ok := pipeline.LoadUsage(st); ok {
 		p.HasUsage, p.UsageSeen, p.FiveHourResets, p.WeekResets = true, u.Seen, u.FiveHourResets, u.WeekResets
