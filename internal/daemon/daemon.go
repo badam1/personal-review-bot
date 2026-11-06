@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/downstream"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
@@ -71,6 +72,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	for {
 		cur := d.Current()
 		poll(cur)
+		pollDownstream(ctx, cur)
 		if cur.Cfg.PollInterval != interval { // changed on the Settings page
 			interval = cur.Cfg.PollInterval
 			tick.Reset(interval)
@@ -89,6 +91,44 @@ func Run(ctx context.Context, cfg config.Config) error {
 			update.Restarting(st, version.String())
 			return ErrRestart
 		case <-tick.C:
+		}
+	}
+}
+
+// How often a posted finding's downstream state is re-read, and how many to check per pass. The cutoff makes this
+// self-throttling: called every tick, PostedToCheck returns only findings not looked at within the window, so a quiet
+// run does nothing and a fresh post is picked up on the next tick.
+const (
+	downstreamEvery = 6 * time.Hour
+	downstreamBatch = 50
+)
+
+// ghDownstream adapts the GitHub client to downstream.Checker, the one seam onto the API.
+type ghDownstream struct{ c *gh.Client }
+
+func (g ghDownstream) Threads(_ context.Context, repo string, number int) ([]downstream.Thread, error) {
+	return g.c.ReviewThreadStates(repo, number)
+}
+
+// pollDownstream re-reads what became of the findings the bot posted (resolved, argued with, reacted to) and records
+// it, so the measurement layer can tell an auto-post that landed from one that didn't.
+func pollDownstream(ctx context.Context, d pipeline.Deps) {
+	before := time.Now().UTC().Add(-downstreamEvery).Format(time.RFC3339)
+	due, err := d.Store.PostedToCheck(before, downstreamBatch)
+	if err != nil {
+		log.Printf("downstream: %v", err)
+		return
+	}
+	if len(due) == 0 {
+		return
+	}
+	posted := make([]downstream.Posted, len(due))
+	for i, f := range due {
+		posted[i] = downstream.Posted{ID: f.ID, Repo: f.Repo, Number: f.Number, Path: f.Path, Line: f.Line}
+	}
+	for _, r := range downstream.Poll(ctx, posted, ghDownstream{d.GH}, log.Printf) {
+		if err := d.Store.SetDownstream(r.ID, string(r.Signal), r.At.Format(time.RFC3339)); err != nil {
+			log.Printf("downstream record %d: %v", r.ID, err)
 		}
 	}
 }

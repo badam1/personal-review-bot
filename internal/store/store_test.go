@@ -278,3 +278,53 @@ func TestAuthoredCommentProvenance(t *testing.T) {
 		t.Errorf("unchanged post: Edited() = %s, want verbatim", f2.Edited())
 	}
 }
+
+// PostedToCheck yields posted findings due for a downstream check, least-recently-checked first; SetDownstream records
+// the result and takes a finding out of the due set until it goes stale again.
+func TestDownstreamQueue(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rev, _ := s.Insert(&Review{Repo: "o/r", Number: 7, Status: Done})
+	mk := func(status, url string) int64 {
+		id, _ := s.AddFinding(&Finding{ReviewID: rev, Agent: "logic", Severity: "low", Status: Candidate,
+			Path: "a.go", Line: 10, Comment: "c"})
+		_ = s.UpdateFinding(&Finding{ID: id, Status: status, Path: "a.go", Line: 10, Comment: "c", PostedURL: url})
+		return id
+	}
+	posted := mk(Posted, "https://x/1")
+	auto := mk(AutoPosted, "https://x/2")
+	mk(Discarded, "") // never posted: not in the queue
+	mk(Pending, "")   // not posted yet: not in the queue
+
+	due, err := s.PostedToCheck("3000-01-01T00:00:00Z", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]bool{}
+	for _, p := range due {
+		got[p.ID] = true
+		if p.Repo != "o/r" || p.Number != 7 || p.Path != "a.go" || p.Line != 10 {
+			t.Errorf("finding %d carried wrong location: %+v", p.ID, p)
+		}
+	}
+	if !got[posted] || !got[auto] || len(due) != 2 {
+		t.Fatalf("due = %v, want exactly the two posted findings %d and %d", got, posted, auto)
+	}
+
+	// After a check, it drops out until the cutoff passes it again.
+	if err := s.SetDownstream(posted, "endorsed", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	due, _ = s.PostedToCheck("2025-01-01T00:00:00Z", 100) // cutoff before the check: already-checked one excluded
+	for _, p := range due {
+		if p.ID == posted {
+			t.Error("a finding checked after the cutoff should not be due again")
+		}
+	}
+	if f, _ := s.Finding(posted); f.Downstream != "endorsed" {
+		t.Errorf("Downstream = %q, want endorsed", f.Downstream)
+	}
+}
