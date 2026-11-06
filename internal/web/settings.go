@@ -22,29 +22,30 @@ import (
 // settingsPage is /settings: config.env's settings, the reviewers and prompts, and the account they all act as.
 // The settings form works without script; settings.js adds the unsaved-changes bar and the live previews.
 type settingsPage struct {
-	Token     string
-	Msg, At   string             // what the last save did, and the section it is about ("" = the top)
-	Err       string             // why the form wasn't saved; the page shows what was sent, to fix and save again
-	File      string             // config.env, with ~ for the home directory
-	F         map[string]setting // by name: ORG, THRESHOLD, …
-	Polls     []choice           // Check GitHub every
-	Parallel  []choice           // Reviews at a time
-	Sevs      []choice           // Post on its own
-	HighOn    bool               // high findings post on their own already, so it needs no confirmation
-	Account   accountView
-	Reviewers []reviewerRow
-	Adding    reviewerRow // the drawer that adds a reviewer
-	Prompts   []promptRow
-	Context   string // context.md
-	KitErr    string // the reviewers or prompts couldn't be read: the files to fix are named here
-	Open      string // a drawer to show open: one whose save failed
-	OpenErr   string // why it failed
-	Usage     int    // % of the fuller of the plan's limits now (-1: not known yet)
-	Mark      int    // where the bar marks it
-	Zones     zones  // the bar of which models reviews use as the plan fills
-	Moved     string // where a saved ADDR moves the page once the bot restarts ("": it is where it is)
-	Restart   string // the command that restarts the bot on this computer ("" = unknown)
-	Files     []fileRow
+	Token      string
+	Msg, At    string             // what the last save did, and the section it is about ("" = the top)
+	Err        string             // why the form wasn't saved; the page shows what was sent, to fix and save again
+	File       string             // config.env, with ~ for the home directory
+	F          map[string]setting // by name: ORG, THRESHOLD, …
+	Polls      []choice           // Check GitHub every
+	Parallel   []choice           // Reviews at a time
+	Sevs       []choice           // Post on its own
+	HighOn     bool               // high findings post on their own already, so it needs no confirmation
+	Account    accountView
+	Reviewers  []reviewerRow
+	Adding     reviewerRow // the drawer that adds a reviewer
+	Prompts    []promptRow
+	Context    string // context.md
+	KitErr     string // the reviewers or prompts couldn't be read: the files to fix are named here
+	Open       string // a drawer to show open: one whose save failed
+	OpenErr    string // why it failed
+	Usage      int    // % of the fuller of the plan's limits now (-1: not known yet)
+	Mark       int    // where the bar marks it
+	Zones      zones  // the bar of which models reviews use as the plan fills
+	LabelsAuto string // the labels column's heading when LABELS_TITLE is empty
+	Moved      string // where a saved ADDR moves the page once the bot restarts ("": it is where it is)
+	Restart    string // the command that restarts the bot on this computer ("" = unknown)
+	Files      []fileRow
 }
 
 // setting is one config.env setting as the page shows it.
@@ -100,7 +101,7 @@ var editable = []struct{ name, label string }{
 	{"POLL_SECONDS", "Check GitHub every"}, {"PARALLEL", "Reviews at a time"}, {"AUTO_POST", "Post on its own"},
 	{"THRESHOLD", "Certainty needed"}, {"APPROVE_TEXT", "Approval message"}, {"WATERMARK", "Signature"},
 	{"SAVE_AT", "Cheaper models from"}, {"MIN_AT", "Cheapest from"}, {"AGENT_TIMEOUT_MINUTES", "Time limit per reviewer"},
-	{"SHOW_LABELS", "PR labels to show"}, {"ADDR", "Address"}, {"UPDATE_CHECK", "Look for new releases"},
+	{"SHOW_LABELS", "PR labels to show"}, {"LABELS_TITLE", "Column heading"}, {"ADDR", "Address"}, {"UPDATE_CHECK", "Look for new releases"},
 }
 
 // shownDefault says each default in words, as the page writes it under the setting.
@@ -108,7 +109,7 @@ var shownDefault = map[string]string{
 	"ORG": "any org", "SKIP_DRAFTS": "on", "MAX_AGE_DAYS": "14 days", "POLL_SECONDS": "2 min", "PARALLEL": "2",
 	"AUTO_POST": "low and medium", "THRESHOLD": "80%", "APPROVE_TEXT": "LGTM :+1:", "WATERMARK": "🤖 personal-review-bot",
 	"SAVE_AT": "75%", "MIN_AT": "90%", "AGENT_TIMEOUT_MINUTES": "20 minutes", "SHOW_LABELS": "risk/, auto-risk/",
-	"ADDR": "127.0.0.1:12346", "UPDATE_CHECK": "on", "UPDATE_REPO": "badam1/personal-review-bot",
+	"LABELS_TITLE": "named after the labels", "ADDR": "127.0.0.1:12346", "UPDATE_CHECK": "on", "UPDATE_REPO": "badam1/personal-review-bot",
 }
 
 // promptWhat says what each prompt is for.
@@ -173,6 +174,7 @@ func (s *server) settingsPage(ctx context.Context, saved config.Config, values m
 	for _, sev := range []string{"low", "medium", "high"} {
 		p.Sevs = append(p.Sevs, choice{Value: sev, Label: strings.ToUpper(sev[:1]) + sev[1:], On: slices.Contains(on, sev)})
 	}
+	p.LabelsAuto = config.Config{ShowLabels: strings.Split(values["SHOW_LABELS"], ",")}.LabelsColumn()
 	if saved.WebAddr != s.listen && s.listen != "" {
 		p.Moved = saved.WebAddr
 	}

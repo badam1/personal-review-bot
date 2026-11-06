@@ -141,3 +141,27 @@ func TestCheckORGList(t *testing.T) {
 		}
 	}
 }
+
+// The lists' column of labels is named after them unless LABELS_TITLE names it.
+func TestLabelsColumn(t *testing.T) {
+	for _, c := range []struct {
+		labels []string
+		title  string
+		want   string
+	}{
+		{[]string{"risk/", "auto-risk/"}, "", "Risk"},
+		{[]string{"size/"}, "", "Size"},
+		{[]string{"team:"}, "", "Team"},
+		{[]string{"risk/", "size/"}, "", "Labels"},
+		{nil, "", "Labels"},
+		{[]string{"ärea/"}, "", "Ärea"},
+		{[]string{"risk/"}, "Danger", "Danger"},
+	} {
+		if got := (Config{ShowLabels: c.labels, LabelsTitle: c.title}).LabelsColumn(); got != c.want {
+			t.Errorf("%q, title %q: %q, want %q", c.labels, c.title, got, c.want)
+		}
+	}
+	if Check("LABELS_TITLE", strings.Repeat("x", 31)) == nil || Check("LABELS_TITLE", "") != nil {
+		t.Error("LABELS_TITLE takes up to 30 characters, or none")
+	}
+}
