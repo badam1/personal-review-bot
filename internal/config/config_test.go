@@ -171,3 +171,20 @@ func TestValidate(t *testing.T) {
 		}
 	}
 }
+
+// A GitHub organisation login is at most 39 characters. The shape pattern can't carry that bound: each step of it
+// takes a hyphen and a character, so a repetition count there would have allowed names twice as long.
+func TestValidOrgLength(t *testing.T) {
+	ok := []string{"a", "acme", strings.Repeat("a", 39), "a" + strings.Repeat("-b", 19)}
+	bad := []string{"", strings.Repeat("a", 40), "a" + strings.Repeat("-b", 38), "-acme", "acme-", "ac--me", "acme/x", "acme x"}
+	for _, s := range ok {
+		if !ValidOrg(s) {
+			t.Errorf("ValidOrg(%q) = false, want true (%d chars)", s, len(s))
+		}
+	}
+	for _, s := range bad {
+		if ValidOrg(s) {
+			t.Errorf("ValidOrg(%q) = true, want false (%d chars)", s, len(s))
+		}
+	}
+}

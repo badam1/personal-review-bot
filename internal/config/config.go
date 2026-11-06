@@ -76,9 +76,17 @@ func LoadFrom(dir string) Config {
 
 func (c Config) DBPath() string { return filepath.Join(c.StateDir, "reviews.db") }
 
-// orgName matches a GitHub organisation login: letters and digits, single hyphens between them, 39 at most.
+// orgName matches the shape of a GitHub organisation login: letters and digits with single hyphens between them.
 // Anything else would become a second qualifier in the search (a space starts one), so Validate refuses it.
-var orgName = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}$`)
+// The length is checked separately: each repetition here can take two characters, so a count on it would bound
+// the hyphens, not the name.
+var orgName = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9])*$`)
+
+// orgMax is the longest a GitHub organisation login can be.
+const orgMax = 39
+
+// ValidOrg reports whether s is usable as an org in the search ORG drives.
+func ValidOrg(s string) bool { return len(s) <= orgMax && orgName.MatchString(s) }
 
 // orgs reads ORG: one org or several, separated by commas or spaces. A space is as likely as a comma to be typed
 // between two names, and taking it would otherwise leave "acme umbrella" as one value, which reads as the org acme
@@ -104,7 +112,7 @@ func SplitOrgs(v string) []string {
 func (c Config) Validate() error {
 	var bad []string
 	for _, o := range c.Orgs {
-		if !orgName.MatchString(o) {
+		if !ValidOrg(o) {
 			bad = append(bad, strconv.Quote(o))
 		}
 	}

@@ -96,7 +96,7 @@ func Check(name, value string) error {
 	case "ORG":
 		// ORG takes several orgs, so each name is checked rather than the whole value.
 		for _, o := range SplitOrgs(value) {
-			if !orgName.MatchString(o) {
+			if !ValidOrg(o) {
 				return fmt.Errorf("must be a GitHub organisation's name: letters, digits and dashes;"+
 					" separate several with commas (%s is not one)", strconv.Quote(o))
 			}
