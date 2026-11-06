@@ -818,3 +818,35 @@ func TestLabelledButtons(t *testing.T) {
 	_, page = s.get("/pr/acme/infra/70")
 	want(t, page, button)
 }
+
+// The review page shows what became of a posted finding: an "edited" chip when you reworded it, and a downstream
+// chip (endorsed/disputed/removed) once GitHub has been checked. Quiet and unchecked show nothing.
+func TestPostedSignalsShow(t *testing.T) {
+	s := newSite(t)
+	id := s.review(5, store.Done, "you posted 2")
+	post := func(agent, authored, final, down string) {
+		fid, _ := s.st.AddFinding(&store.Finding{ReviewID: id, Agent: agent, Severity: "medium", Path: agent + ".go",
+			Line: 1, Status: store.Candidate, Comment: authored})
+		_ = s.st.UpdateFinding(&store.Finding{ID: fid, Status: store.Pending, Path: agent + ".go", Line: 1, Comment: authored})
+		_ = s.st.UpdateFinding(&store.Finding{ID: fid, Status: store.Posted, Path: agent + ".go", Line: 1, Comment: final,
+			PostedURL: "https://github.com/acme/infra/pull/5#r1"})
+		if down != "" {
+			_ = s.st.SetDownstream(fid, down, "2026-01-01T00:00:00Z")
+		}
+	}
+	post("logic", "the bot wording", "my own rewrite", "endorsed")  // edited + endorsed
+	post("security", "kept as written", "kept as written", "quiet") // verbatim + quiet: no chips
+
+	_, page := s.get(fmt.Sprintf("/r/%d", id))
+	if !strings.Contains(page, `>endorsed</span>`) {
+		t.Error("endorsed chip missing for the endorsed finding")
+	}
+	if n := strings.Count(page, `>edited</span>`); n != 1 {
+		t.Errorf("edited chip count = %d, want exactly 1 (only the reworded finding)", n)
+	}
+	for _, absent := range []string{`>disputed</span>`, `>removed</span>`} {
+		if strings.Contains(page, absent) {
+			t.Errorf("unexpected chip %s on a page with no such finding", absent)
+		}
+	}
+}
