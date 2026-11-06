@@ -263,6 +263,54 @@ func seedDemo(st *store.Store, dbPath string, now time.Time) error {
 		}
 	}
 
+	// A finished review that shows what became of posted findings — the "edited" and downstream chips the page now adds.
+	sid, serr := st.Insert(&store.Review{Repo: "acme/infra", Number: 231, URL: "https://github.com/acme/infra/pull/231",
+		Title: "Cache the account lookups", Author: "lena", HeadSHA: sha, Status: store.Running, Source: "auto"})
+	if serr != nil {
+		return serr
+	}
+	dtime := now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	post := func(agent, sev, path string, line int, title, authored, final, down, status string, cert int) error {
+		fid, e := st.AddFinding(&store.Finding{ReviewID: sid, Agent: agent, Severity: sev, Path: path, Line: line,
+			Title: title, Comment: authored, AgentConfidence: cert, Status: store.Candidate, Inline: path != ""})
+		if e != nil {
+			return e
+		}
+		e = st.UpdateFinding(&store.Finding{ID: fid, Line: line, Comment: final, Confidence: cert, Verdict: "confirmed",
+			Status: status, Inline: path != "", PostedURL: fmt.Sprintf("https://github.com/acme/infra/pull/231#r%d", fid)})
+		if down != "" {
+			e = errors.Join(e, st.SetDownstream(fid, down, dtime))
+		}
+		return e
+	}
+	showErr := errors.Join(
+		st.SetPlan(sid, "Cache the account lookups", "lena", sha, "medium", "sonnet → opus", "128 lines in 4 files", 128, 20, 4),
+		st.AddCost(sid, 0.63), st.SetLabels(sid, []string{"risk/medium"}),
+		// posted, you reworded it before sending, the author resolved it
+		post("logic", "medium", "internal/account/cache.go", 40, "The cache never expires",
+			"entries are kept forever",
+			"Entries live forever, so a renamed account keeps serving stale data. Add a short TTL, as the token cache does.",
+			"endorsed", store.Posted, 88),
+		// posted as the bot wrote it, nothing happened since
+		post("integration", "low", "internal/account/cache.go", 71, "Cache size is unbounded",
+			"The map grows without a cap; a burst of distinct ids can hold memory for the process's life.",
+			"The map grows without a cap; a burst of distinct ids can hold memory for the process's life.",
+			"quiet", store.Posted, 83),
+		// auto-posted, a colleague pushed back
+		post("security", "low", "internal/account/cache.go", 12, "Lookup key is the raw email",
+			"The cache key is the raw email, so any log line that dumps the key leaks it. Hash the key first.",
+			"The cache key is the raw email, so any log line that dumps the key leaks it. Hash the key first.",
+			"disputed", store.AutoPosted, 85),
+		st.Finish(sid, store.Done, "bot posted 1, you posted 2", "", ""),
+	)
+	if _, e := db.Exec(`UPDATE reviews SET created_at = ?, started_at = ?, finished_at = ? WHERE id = ?`,
+		dtime, dtime, now.Add(-100*time.Minute).UTC().Format(time.RFC3339), sid); e != nil {
+		showErr = errors.Join(showErr, e)
+	}
+	if showErr != nil {
+		return fmt.Errorf("showcase review: %w", showErr)
+	}
+
 	usage, err := json.Marshal(agents.Usage{FiveHour: 0.23, FiveHourResets: now.Add(3 * time.Hour), Week: 0.41,
 		WeekResets: now.Add(4 * 24 * time.Hour), Seen: now})
 	if err != nil {
