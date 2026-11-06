@@ -302,7 +302,7 @@ func TestIterationLabel(t *testing.T) {
 		t.Error("a first review carries no iteration label")
 	}
 	_, page = s.get("/")
-	want(t, page, "@dev · 2nd iteration · new commits</span>", `<span>2nd iteration · new commits</span>`)
+	want(t, page, "· @dev · 2nd iteration · new commits ·", `<span>2nd iteration · new commits</span>`)
 	_, page = s.get("/pr/acme/infra/12")
 	want(t, page, "<span>1st iteration</span>", "<span>2nd iteration</span>")
 }
@@ -367,7 +367,7 @@ func TestRetry(t *testing.T) {
 	_, page := s.get("/")
 	want(t, page, "Failed · last 7 days", "Retry all 3", fmt.Sprintf(`name="id" value="%d"`, one), "fetch PR: HTTP 502")
 	_, page = s.get(fmt.Sprintf("/r/%d", one))
-	want(t, page, `value="rereview">Retry</button>`)
+	want(t, page, `value="rereview">`, `</svg>Retry</button>`)
 
 	rec := s.post("/retry", url.Values{"id": {fmt.Sprint(one)}})
 	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || loc != "/" {
@@ -562,7 +562,7 @@ func TestReminders(t *testing.T) {
 	want(t, page, `<form id="decide"`, "Still open at `aaa`: a.go:9 still returns nil.", "Only partly fixed at `aaa`:",
 		"Last reply: @dev: Doing it in a follow-up PR.", "resolved: reminding reopens it", "in the review body",
 		"you reminded the author at aaa", "Nothing new found, but 5 earlier finding(s) are still open", `value="post"`,
-		`title="Open the comment on GitHub"`, `title="Checked by a later review: open it"`)
+		`</svg>View comment<svg class="ext"`, `title="The review that checked this finding">Later review<svg`)
 	if strings.Contains(page, fmt.Sprintf(`name="rm_%d"`, quiet+5)) {
 		t.Error("a fixed finding can't be reminded of")
 	}
@@ -636,7 +636,7 @@ func TestDeepReview(t *testing.T) {
 
 	done := s.review(41, store.Done, "you approved")
 	_, page = s.get(fmt.Sprintf("/r/%d", done))
-	want(t, page, `name="action" value="deep"`, `title="Review the PR again at its latest commit">Re-review</button>`)
+	want(t, page, `name="action" value="deep"`, `title="Review the PR again at its latest commit">`, `</svg>Re-review</button>`)
 	s.post(fmt.Sprintf("/r/%d", done), url.Values{"action": {"rereview"}})
 	if r, _ := s.st.Latest("acme/infra", 41); r.Deep {
 		t.Error("a plain re-review must not be deep")
@@ -778,9 +778,9 @@ func TestBarScript(t *testing.T) {
 	}
 }
 
-// Links that leave for GitHub are icon buttons with a label: the PR beside its title, on its card and in the lists,
-// and a posted comment beside its finding.
-func TestIconButtons(t *testing.T) {
+// Every button says what it does. A link that leaves for GitHub is an outlined button that names where it goes and
+// ends in ↗, and says to screen readers that it opens a new tab; in a table it is a link in words.
+func TestLabelledButtons(t *testing.T) {
 	s := newSite(t)
 	url := "https://github.com/acme/infra/pull/70"
 	id, _ := s.st.Insert(&store.Review{Repo: "acme/infra", Number: 70, URL: url, Title: "PR 70", Author: "dev",
@@ -791,15 +791,18 @@ func TestIconButtons(t *testing.T) {
 	_ = s.st.UpdateFinding(&store.Finding{ID: fid, Line: 1, Comment: "c", Confidence: 90, Status: store.AutoPosted,
 		PostedURL: url + "#discussion_r1"})
 
-	button := fmt.Sprintf(`href="%s" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">`, url)
+	button := fmt.Sprintf(`<a class="btn out" href="%s" target="_blank" rel="noopener">`, url)
 	_, page := s.get(fmt.Sprintf("/r/%d", id))
-	want(t, page, `<div class="titlerow"><h1>PR 70</h1><a class="ibtn big" `+button,
-		`<a class="ibtn" href="`+url+`#discussion_r1" target="_blank" rel="noopener" title="Open the comment on GitHub"`)
-	if strings.Contains(page, "View on GitHub") {
-		t.Error(`"View on GitHub" is an icon now`)
+	want(t, page, `<div class="titlerow"><h1>PR 70</h1>`+button, `Open on GitHub<svg class="ext"`, "(opens in a new tab)",
+		`<a class="btn tiny out" href="`+url+`#discussion_r1" target="_blank" rel="noopener">`, `</svg>View comment<svg class="ext"`,
+		`</svg>Mark as wrong</button>`)
+	for _, gone := range []string{"View on GitHub", "ibtn", "ilink"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("the page still has %q", gone)
+		}
 	}
 	_, page = s.get("/")
-	want(t, page, `<a class="ibtn" `+button, `<a class="ilink" `+button)
+	want(t, page, button, `>Open review</a>`, fmt.Sprintf(`<a class="glink" href="%s" target="_blank" rel="noopener">`, url), `</svg>GitHub<svg class="ext"`)
 	_, page = s.get("/pr/acme/infra/70")
-	want(t, page, `<a class="ibtn big" `+button)
+	want(t, page, button)
 }

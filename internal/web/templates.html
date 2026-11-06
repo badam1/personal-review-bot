@@ -97,6 +97,8 @@
   .card { background: var(--mantle); border: 1px solid var(--s0); border-radius: 12px; padding: 18px 20px; }
   .card.row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
   .card.row .main { flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .card.row .main .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .badges .cost { min-width: 0; text-align: left; }
+  .headrow > .btn { align-self: center; }
   .card.row .side { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
   .card.stack { display: flex; flex-direction: column; gap: 14px; }
   .card.failed { border-color: var(--s1); padding: 16px 20px; }
@@ -132,11 +134,16 @@
   .btn.tiny { min-height: 32px; padding: 0 10px; font-size: 12px; } .btn.wide { width: 100%; }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
   /* A link that leaves for GitHub (or another review) is an icon; buttons that change something keep their words */
-  .ibtn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border-radius: 8px;
-          border: 1px solid var(--s1); color: var(--sub); background: transparent; }
-  .ibtn:hover { color: var(--text); background: var(--s0); border-color: var(--s2); text-decoration: none; }
-  .ibtn .ic { width: 16px; height: 16px; } .ibtn.big { width: 40px; height: 40px; } .ibtn.big .ic { width: 20px; height: 20px; }
-  .ilink { display: inline-flex; vertical-align: -2px; color: var(--sub); } .ilink:hover { color: var(--text); } .ilink .ic { width: 14px; height: 14px; }
+  /* Every button says what it does; an icon only helps find it. A link that leaves for GitHub is outlined and ends in ↗. */
+  .btn .ic { width: 16px; height: 16px; flex: none; } .btn.tiny .ic { width: 14px; height: 14px; }
+  .btn .ext { width: 12px; height: 12px; flex: none; color: var(--sub); } .btn.tiny .ext { width: 10px; height: 10px; }
+  .btn.out { background: transparent; border: 1px solid var(--s1); color: var(--text); }
+  a.btn.out:hover { background: var(--s0); border-color: var(--s2); color: var(--text); text-decoration: none; }
+  .btn.small.out, .btn.small.icon { padding: 0 12px; } .btn.tiny { gap: 6px; }
+  .btn:focus-visible, .glink:focus-visible { outline: 2px solid var(--lav); outline-offset: 2px; }
+  .glink { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; } .glink .ic { width: 13px; height: 13px; } .glink .ext { width: 10px; height: 10px; }
+  .where .ext { display: inline-block; width: 10px; height: 10px; margin-left: 4px; vertical-align: -1px; } /* stays at the end of a path that wraps */
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .tail { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
   form.inline { display: inline; }
   textarea { width: 100%; padding: 10px 12px; border-radius: 8px; background: var(--base); border: 1px solid var(--s1); color: var(--text);
@@ -175,7 +182,7 @@
   /* A review */
   .crumbs { font-size: 13px; color: var(--sub); }
   .prhead { display: flex; flex-direction: column; gap: 10px; } .prhead h1 { font-size: 26px; line-height: 1.25; }
-  .titlerow { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; } .titlerow .ibtn { margin-top: 2px; } .add { color: var(--green); } .del { color: var(--red); }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; } .titlerow h1 { flex: 1 1 520px; } .add { color: var(--green); } .del { color: var(--red); }
   .cols { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px; }
   .maincol { flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
   .sidecol { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
@@ -256,8 +263,12 @@
 {{define "i-github"}}<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>{{end}}
 {{define "i-comment"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>{{end}}
 {{define "i-arrow"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>{{end}}
-{{define "gh-pr"}}<a class="ibtn" href="{{.}}" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">{{template "i-github"}}</a>{{end}}
-{{define "gh-comment"}}<a class="ibtn" href="{{.}}" target="_blank" rel="noopener" title="Open the comment on GitHub" aria-label="Open the comment on GitHub">{{template "i-comment"}}</a>{{end}}
+{{define "i-ext"}}<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"></path></svg><span class="vh"> (opens in a new tab)</span>{{end}}
+{{define "i-flag"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"></path></svg>{{end}}
+{{define "i-retry"}}<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>{{end}}
+{{define "gh-pr"}}<a class="btn out" href="{{.}}" target="_blank" rel="noopener">{{template "i-github"}}Open on GitHub{{template "i-ext"}}</a>{{end}}
+{{define "gh-pr-small"}}<a class="btn small out" href="{{.}}" target="_blank" rel="noopener">{{template "i-github"}}Open on GitHub{{template "i-ext"}}</a>{{end}}
+{{define "gh-comment"}}<a class="btn tiny out" href="{{.}}" target="_blank" rel="noopener">{{template "i-comment"}}View comment{{template "i-ext"}}</a>{{end}}
 {{define "icon-down"}}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a6adc8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>{{end}}
 
 {{define "top"}}<header class="top">
@@ -342,8 +353,8 @@
     <td class="when">{{ago .CreatedAt}}</td>
     <td><div class="prcell"><a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
       <span class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
-        <a class="ilink" href="{{.URL}}" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">{{template "i-github"}}</a>
-        · @{{.Author}}{{with iteration .}} · {{.}}{{end}}</span></div></td>
+        · @{{.Author}}{{with iteration .}} · {{.}}{{end}} ·
+        <a class="glink" href="{{.URL}}" target="_blank" rel="noopener">{{template "i-github"}}GitHub{{template "i-ext"}}</a></span></div></td>
     <td>{{if .Tier}}<span class="size {{sizeKind .Tier}}">{{.Tier}}</span>{{else if .Deep}}<span class="size deep">deep</span>{{else}}<span class="size">—</span>{{end}}{{if .DryRun}} <span class="tag">dry run</span>{{end}}</td>
     <td>{{with .Labels}}<div class="lstack">{{range .}}<span class="plabel {{labelKind .}}">{{.}}</span>{{end}}</div>{{else}}<span class="sub">—</span>{{end}}</td>
     <td class="n">{{if .CostUSD}}{{money .CostUSD}}{{else}}—{{end}}</td>
@@ -353,12 +364,12 @@
 
 {{define "code"}}{{if .Code}}<pre class="code">{{range .Code}}<span class="{{if .Added}}add{{end}}{{if .Target}} tgt{{end}}"><i>{{.N}}</i><b>{{if .Added}}+{{else}} {{end}}</b>{{.Text}}</span>{{end}}</pre>{{end}}{{end}}
 
-{{define "where"}}{{if .Path}}{{if .URL}}<a class="where" href="{{.URL}}" target="_blank" rel="noopener" title="Open this line on GitHub">{{.Path}}:{{.Line}}</a>{{else}}<span class="where sub">{{.Path}}:{{.Line}}</span>{{end}}{{end}}{{end}}
+{{define "where"}}{{if .Path}}{{if .URL}}<a class="where" href="{{.URL}}" target="_blank" rel="noopener" title="This line on GitHub">{{.Path}}:{{.Line}}{{template "i-ext"}}</a>{{else}}<span class="where sub">{{.Path}}:{{.Line}}</span>{{end}}{{end}}{{end}}
 
 {{define "wrong"}}<form class="inline" method="post" action="/f/{{.F.ID}}/wrong"><input type="hidden" name="csrf" value="{{.Token}}">
   <input type="hidden" name="back" value="/r/{{.F.ReviewID}}">{{if .F.Wrong}}<span class="tag bad">marked wrong</span>
   <button class="btn tiny" name="wrong" value="0">Undo</button>{{else}}<button class="btn tiny" name="wrong" value="1"
-  title="It was posted, but it was wrong: the stats count it, and re-reviews of this PR are told">Mark as wrong</button>{{end}}</form>{{end}}
+  title="It was posted, but it was wrong: the stats count it, and re-reviews of this PR are told">{{template "i-flag"}}Mark as wrong</button>{{end}}</form>{{end}}
 
 {{define "mini-what"}}<div class="what"><div class="head"><span class="sev {{.Severity}}">{{.Severity}}</span><span class="ttl" title="{{.Comment}}">{{.Title}}</span></div>
   <div class="meta">{{template "where" .}}<span>{{if .Confidence}}<b class="cert {{certKind .Confidence}}">{{.Confidence}}%</b> · {{end}}{{.Agent}}</span></div></div>{{end}}
@@ -385,9 +396,9 @@
         <a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
         <div class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
           <span>by <b>@{{.Author}}</b></span>{{with iteration .Review}}<span>{{.}}</span>{{end}}<span>{{ago .FinishedAt}}</span>{{template "labels" .Labels}}</div>
+        <div class="badges">{{range .Badges}}<span class="badge {{.Kind}}">{{.Text}}</span>{{end}}<span class="cost">{{money .CostUSD}}</span></div>
       </div>
-      <div class="side">{{range .Badges}}<span class="badge {{.Kind}}">{{.Text}}</span>{{end}}<span class="cost">{{money .CostUSD}}</span>
-        {{template "gh-pr" .URL}}<a class="btn primary" href="/r/{{.ID}}">Open</a></div>
+      <div class="side">{{template "gh-pr" .URL}}<a class="btn primary" href="/r/{{.ID}}">Open review</a></div>
     </article>{{else}}<div class="empty">Nothing waiting for you.</div>{{end}}
   </section>
 
@@ -398,9 +409,9 @@
         <div class="main">
           <a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
           <div class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
-            <span>by <b>@{{.Author}}</b></span>{{if .Deep}}<span class="tag deep">deep review</span>{{end}}{{with iteration .}}<span>{{.}}</span>{{end}}{{template "labels" .Labels}}</div>
+            <span>by <b>@{{.Author}}</b></span>{{if .Deep}}<span class="tag deep">deep review</span>{{end}}{{with iteration .}}<span>{{.}}</span>{{end}}{{template "labels" .Labels}}{{if .CostUSD}}<span>{{money .CostUSD}} so far</span>{{end}}</div>
         </div>
-        <div class="meta">{{if .CostUSD}}<span>{{money .CostUSD}} so far</span>{{end}}{{template "gh-pr" .URL}}</div>
+        {{template "gh-pr-small" .URL}}
       </div>
       {{template "running-line" .}}
       {{template "steps" .}}
@@ -417,7 +428,7 @@
           <span class="mono err">{{clip .Error}}</span><span>{{ago .FinishedAt}}</span></div>
       </div>
       <div class="tail">{{template "gh-pr" .URL}}<form method="post" action="/retry"><input type="hidden" name="csrf" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}">
-        <button class="btn quiet edge">Retry</button></form></div>
+        <button class="btn small icon">{{template "i-retry"}}Retry</button></form></div>
     </article>{{end}}
     <p class="fine">A retry reviews the PR's latest commit, the same way the failed attempt would have.</p>
   </section>{{end}}
@@ -436,7 +447,7 @@
   <nav class="crumbs" aria-label="Breadcrumb">{{template "crumb-root" .Nav}} <a class="mono" href="{{timeline .R.Repo .R.Number}}"
     title="Every review of this PR">{{.R.Repo}}#{{.R.Number}}</a> <span aria-hidden="true">/</span> <span aria-current="page">{{.R.CreatedAt.Local.Format "Jan 2 15:04"}}</span></nav>
   <div class="prhead">
-    <div class="titlerow"><h1>{{.R.Title}}</h1>{{with .R.URL}}<a class="ibtn big" href="{{.}}" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">{{template "i-github"}}</a>{{end}}</div>
+    <div class="titlerow"><h1>{{.R.Title}}</h1>{{with .R.URL}}{{template "gh-pr" .}}{{end}}</div>
     <div class="meta">{{$o := outcome .R}}<span class="badge {{$o.Kind}}">{{$o.Text}}</span>
       <span>opened by <b>@{{.R.Author}}</b></span>
       <span><span class="add">+{{.R.Additions}}</span> <span class="del">−{{.R.Deletions}}</span> in {{.R.Files}} files</span>
@@ -492,7 +503,7 @@
           </div>{{else}}
           <div class="item settled"><div class="itemhead">{{if eq (followupKind .Finding) "ok"}}{{template "icon-check"}}{{else}}<span class="dot {{followupKind .Finding}}"></span>{{end}}
             <span>{{.Title}}</span>{{if .Wrong}}<span class="tag bad">marked wrong</span>{{end}}
-            <span class="tail">{{if and .FollowupReview (ne .FollowupReview $.R.ID)}}<a class="ibtn" href="/r/{{.FollowupReview}}" title="Checked by a later review: open it" aria-label="Open the review that checked it">{{template "i-arrow"}}</a>{{end}}{{with .PostedURL}}{{template "gh-comment" .}}{{end}}</span></div>
+            <span class="tail">{{if and .FollowupReview (ne .FollowupReview $.R.ID)}}<a class="btn tiny" href="/r/{{.FollowupReview}}" title="The review that checked this finding">Later review{{template "i-arrow"}}</a>{{end}}{{with .PostedURL}}{{template "gh-comment" .}}{{end}}</span></div>
             <p class="sub">{{followup .Finding}}{{with .FollowupNote}} · {{ticks .}}{{end}}</p>
           </div>{{end}}{{end}}
         </div>
@@ -562,14 +573,14 @@
         <span class="lbl">Your decision</span>
         {{template "approval" .R}}
         {{$noApprove := or .Stale .Incomplete}}
-        {{if $noApprove}}<button class="btn primary big" form="decide" name="action" value="rereview">Re-review latest commit</button>{{end}}
+        {{if $noApprove}}<button class="btn primary big" form="decide" name="action" value="rereview">{{template "i-retry"}}Re-review latest commit</button>{{end}}
         {{if .Selectable}}<button class="btn primary big" form="decide" name="action" value="post" id="post"{{if .Stale}} disabled{{end}}>Post selected</button>
         <button class="btn approve big" form="decide" name="action" value="post_approve"{{if $noApprove}} disabled{{end}}>Post and approve</button>{{end}}
         <button class="btn approve-outline big" form="decide" name="action" value="approve"{{if $noApprove}} disabled{{end}}>Approve{{if .Selectable}} without comments{{end}}</button>
         {{if .ApproveText}}<p class="fine">Approving says “{{.ApproveText}}” the first time.</p>{{end}}
         <div class="rule"></div>
         <div class="grid2">
-          {{if not $noApprove}}<button class="btn" form="decide" name="action" value="rereview">Re-review</button>{{end}}
+          {{if not $noApprove}}<button class="btn" form="decide" name="action" value="rereview">{{template "i-retry"}}Re-review</button>{{end}}
           <button class="btn deep" form="decide" name="action" value="deep" title="Review it again at its latest commit as if it were large: Opus reviewers and verifier, the design review and the follow-up check, without the usage savings">Deep review</button>
           <button class="btn ghost" form="decide" name="action" value="skip" title="Leave this review as it is">Skip</button>
           <button class="btn ghost" form="decide" name="action" value="ignore" title="Ignore this PR from now on">Ignore PR</button>
@@ -580,7 +591,7 @@
         {{with .R.Decision}}<p>{{.}}</p>{{end}}
         {{template "approval" .R}}
         {{if and (ne .R.Status "queued") (ne .R.Status "running") (not .Newer)}}<form method="post" action="/r/{{.R.ID}}"><input type="hidden" name="csrf" value="{{.Token}}">
-          <div class="grid2">{{if eq .R.Status "failed"}}<button class="btn primary" name="action" value="rereview">Retry</button>{{else}}<button class="btn" name="action" value="rereview" title="Review the PR again at its latest commit">Re-review</button>{{end}}
+          <div class="grid2">{{if eq .R.Status "failed"}}<button class="btn primary" name="action" value="rereview">{{template "i-retry"}}Retry</button>{{else}}<button class="btn" name="action" value="rereview" title="Review the PR again at its latest commit">{{template "i-retry"}}Re-review</button>{{end}}
             <button class="btn deep" name="action" value="deep" title="Review it again at its latest commit as if it were large: Opus reviewers and verifier, the design review and the follow-up check, without the usage savings">Deep review</button></div></form>
         {{else if .Newer}}<p class="fine">A newer review of this PR exists.</p>{{else}}<p class="fine">It's being reviewed now.</p>{{end}}
       </div>{{end}}
@@ -711,7 +722,7 @@
   <div class="sect">
     <nav class="crumbs" aria-label="Breadcrumb">{{template "crumb-root" .Nav}} <span class="mono" aria-current="page">{{.Latest.Repo}}#{{.Latest.Number}}</span></nav>
     <div class="prhead">
-      <div class="titlerow"><h1>{{.Latest.Title}}</h1>{{with .Latest.URL}}<a class="ibtn big" href="{{.}}" target="_blank" rel="noopener" title="Open the PR on GitHub" aria-label="Open the PR on GitHub">{{template "i-github"}}</a>{{end}}</div>
+      <div class="titlerow"><h1>{{.Latest.Title}}</h1>{{with .Latest.URL}}{{template "gh-pr" .}}{{end}}</div>
       <div class="meta"><span>by <b>@{{.Latest.Author}}</b></span><span>{{plural (len .Entries) "review" "reviews"}}</span><span>{{money .Cost}}</span></div>
     </div>
   </div>
