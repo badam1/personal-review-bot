@@ -44,24 +44,30 @@ func Load() Config {
 	if dir == "" {
 		dir = filepath.Join(xdg("XDG_CONFIG_HOME", filepath.Join(home, ".config")), "personal-review-bot")
 	}
+	return LoadFrom(dir)
+}
+
+// LoadFrom reads the settings with dir as the config directory: what the Settings page reads back after it saves.
+func LoadFrom(dir string) Config {
+	home, _ := os.UserHomeDir()
 	s := settings(readEnvFile(filepath.Join(dir, "config.env")))
 	return Config{
 		Orgs:         orgs(s),
-		PollInterval: time.Duration(s.int("POLL_SECONDS", 120)) * time.Second,
-		Threshold:    s.int("THRESHOLD", 80),
+		PollInterval: time.Duration(s.int("POLL_SECONDS")) * time.Second,
+		Threshold:    s.int("THRESHOLD"),
 		AutoPost:     autoPost(s),
-		ApproveText:  s.str("APPROVE_TEXT", "LGTM :+1:"),
-		WebAddr:      s.str("ADDR", "127.0.0.1:12346"),
-		MaxParallel:  s.int("PARALLEL", 2),
-		AgentTimeout: time.Duration(s.int("AGENT_TIMEOUT_MINUTES", 20)) * time.Minute,
-		SaveAt:       s.int("SAVE_AT", 75),
-		MinAt:        s.int("MIN_AT", 90),
-		SkipDrafts:   s.str("SKIP_DRAFTS", "1") == "1",
-		MaxAge:       time.Duration(s.int("MAX_AGE_DAYS", 14)) * 24 * time.Hour,
-		Watermark:    s.str("WATERMARK", "🤖 personal-review-bot"),
-		UpdateCheck:  s.str("UPDATE_CHECK", "1") == "1",
-		UpdateRepo:   s.str("UPDATE_REPO", "badam1/personal-review-bot"),
-		ShowLabels:   list(s.str("SHOW_LABELS", "risk/,auto-risk/")),
+		ApproveText:  s.str("APPROVE_TEXT", Defaults["APPROVE_TEXT"]),
+		WebAddr:      s.str("ADDR", Defaults["ADDR"]),
+		MaxParallel:  s.int("PARALLEL"),
+		AgentTimeout: time.Duration(s.int("AGENT_TIMEOUT_MINUTES")) * time.Minute,
+		SaveAt:       s.int("SAVE_AT"),
+		MinAt:        s.int("MIN_AT"),
+		SkipDrafts:   s.str("SKIP_DRAFTS", Defaults["SKIP_DRAFTS"]) == "1",
+		MaxAge:       time.Duration(s.int("MAX_AGE_DAYS")) * 24 * time.Hour,
+		Watermark:    s.str("WATERMARK", Defaults["WATERMARK"]),
+		UpdateCheck:  s.str("UPDATE_CHECK", Defaults["UPDATE_CHECK"]) == "1",
+		UpdateRepo:   s.str("UPDATE_REPO", Defaults["UPDATE_REPO"]),
+		ShowLabels:   list(s.str("SHOW_LABELS", Defaults["SHOW_LABELS"])),
 		ConfigDir:    dir,
 		StateDir:     s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
 		CacheDir:     s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),
@@ -77,9 +83,13 @@ var orgName = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}$`)
 // orgs reads ORG: one org or several, separated by commas or spaces. A space is as likely as a comma to be typed
 // between two names, and taking it would otherwise leave "acme umbrella" as one value, which reads as the org acme
 // plus a free-text search for "umbrella". Duplicates, in any case, collapse.
-func orgs(s settings) []string {
+func orgs(s settings) []string { return SplitOrgs(s.str("ORG", Defaults["ORG"])) }
+
+// SplitOrgs reads an ORG value as the list it is. The Settings page checks what someone typed with it, so that
+// what it accepts and what the bot then searches cannot drift apart.
+func SplitOrgs(v string) []string {
 	var out []string
-	for _, o := range strings.FieldsFunc(s.str("ORG", ""), func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+	for _, o := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
 		if !slices.ContainsFunc(out, func(h string) bool { return strings.EqualFold(h, o) }) {
 			out = append(out, o)
 		}
@@ -243,11 +253,13 @@ func (s settings) lookup(name string) (string, bool) {
 	return v, ok
 }
 
-func (s settings) int(name string, def int) int {
+// int reads a whole-number setting; one that isn't a number is its default.
+func (s settings) int(name string) int {
 	if n, err := strconv.Atoi(s.str(name, "")); err == nil {
 		return n
 	}
-	return def
+	n, _ := strconv.Atoi(Defaults[name])
+	return n
 }
 
 // readEnvFile reads KEY=value lines (blank lines and # comments skipped, the PERSONAL_REVIEW_BOT_ prefix optional,

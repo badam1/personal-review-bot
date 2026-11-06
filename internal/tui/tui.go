@@ -44,6 +44,7 @@ type snapshot struct {
 	update         update.Release // a newer release ("" Version: none)
 	updateState    string         // what an update under way is doing
 	daemonVersion  string         // what the daemon last started as
+	login          string         // the GitHub account the daemon acts as, recorded when it started
 	updated        *update.Done   // an update that finished within the hour
 	err            error
 }
@@ -55,6 +56,7 @@ func load(st *store.Store) snapshot {
 		s.recent, s.err = st.Recent(10)
 	}
 	s.lastPoll, _ = time.Parse(time.RFC3339, st.Meta("last_poll"))
+	s.login = st.Meta("login")
 	s.usage, s.hasUsage = pipeline.LoadUsage(st)
 	now := time.Now()
 	if t, err := st.Totals(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())); err == nil {
@@ -252,7 +254,11 @@ func header(cfg config.Config, s snapshot, interactive bool, width, height int) 
 	if sev := cfg.AutoPostSeverities(); sev != "" {
 		rule = fmt.Sprintf("auto-post ≥ %d%% · %s", cfg.Threshold, sev)
 	}
-	lines := []string{titleStyle.Render(title) + " " + dim.Render(version.String()), daemon,
+	acting := ""
+	if s.login != "" {
+		acting = " " + dim.Render(actingAs(s.login, cfg.Orgs...))
+	}
+	lines := []string{titleStyle.Render(title) + " " + dim.Render(version.String()) + acting, daemon,
 		dim.Render(rule + " · " + cfg.WebURL())}
 	lines = append(lines, dim.Render(fmt.Sprintf("spend: today %s · 7 days %s", money(s.spentToday), money(s.spentWeek))))
 	if s.hasUsage {
@@ -407,4 +413,19 @@ func openURL(url, what string) string {
 		}
 	}
 	return "couldn't open a browser: " + url
+}
+
+// actingAs names the account reviews go out as, and the orgs it watches: "as @you in acme, umbrella". ORG takes
+// a list, so the header names all of them rather than only the first.
+func actingAs(login string, orgs ...string) string {
+	var watched []string
+	for _, o := range orgs {
+		if o != "" {
+			watched = append(watched, o)
+		}
+	}
+	if len(watched) == 0 {
+		return "as @" + login
+	}
+	return "as @" + login + " in " + strings.Join(watched, ", ")
 }

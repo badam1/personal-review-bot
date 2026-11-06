@@ -48,6 +48,19 @@ func TestRequestedQuery(t *testing.T) {
 	}
 }
 
+// The avatar is fetched with a plain client, so the only thing standing between that fetch and an arbitrary
+// address is this check: the URL comes from the API, and the guard keeps a changed field or a redirect from
+// pointing it somewhere else.
+// Only the picture types GitHub stores avatars as are served on: not SVG, which can carry script, nor HTML.
+func TestAvatarType(t *testing.T) {
+	for header, want := range map[string]bool{"image/png": true, "image/jpeg; charset=binary": true, " IMAGE/WEBP ": true,
+		"image/gif": true, "image/svg+xml": false, "text/html": false, "": false, "image/png-ish": false} {
+		if _, ok := avatarType(header); ok != want {
+			t.Errorf("avatarType(%q) = %v, want %v", header, ok, want)
+		}
+	}
+}
+
 // The watermark ends every comment the bot posts, so it is on the PR for anyone to copy: a comment only counts as
 // the bot's own when the account that posted it is the one the bot posts as.
 func TestByTheBot(t *testing.T) {
@@ -94,6 +107,30 @@ func TestParseURL(t *testing.T) {
 		repo, n, err := ParseURL(c.url)
 		if (err == nil) != c.ok || repo != c.repo || n != c.number {
 			t.Errorf("%s: got (%q, %d, %v), want (%q, %d, ok=%v)", c.name, repo, n, err, c.repo, c.number, c.ok)
+		}
+	}
+}
+
+func TestAvatarHost(t *testing.T) {
+	cases := []struct {
+		name, url string
+		want      bool
+	}{
+		{"an avatar", "https://avatars.githubusercontent.com/u/1?v=4", true},
+		{"githubusercontent itself", "https://githubusercontent.com/u/1", false},
+		{"raw files anyone can push", "https://raw.githubusercontent.com/a/b", false},
+		{"uploaded images", "https://user-images.githubusercontent.com/1/x.svg", false},
+		{"plain http", "http://avatars.githubusercontent.com/u/1", false},
+		{"somewhere else", "https://evil.example/u/1", false},
+		{"a lookalike suffix", "https://githubusercontent.com.evil.example/u/1", false},
+		{"a lookalike prefix", "https://avatars.githubusercontent.com.evil.example/u/1", false},
+		{"userinfo pointing elsewhere", "https://avatars.githubusercontent.com@evil.example/u/1", false},
+		{"empty", "", false},
+		{"not a URL", "://", false},
+	}
+	for _, c := range cases {
+		if got := avatarHost(c.url); got != c.want {
+			t.Errorf("%s: avatarHost(%q) = %v, want %v", c.name, c.url, got, c.want)
 		}
 	}
 }

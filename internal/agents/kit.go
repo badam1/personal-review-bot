@@ -105,9 +105,7 @@ func Load(dir string) (*Kit, error) {
 				return nil, fmt.Errorf("%s: %w", path, err)
 			}
 			if !enabled {
-				if known {
-					k.Disabled = append(k.Disabled, r)
-				}
+				k.Disabled = append(k.Disabled, r)
 				delete(defs, name)
 				continue
 			}

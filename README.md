@@ -119,6 +119,13 @@ whether the daemon is watching GitHub, the plan's usage, and the version menu (u
 - **History** (`/history`): every review, filtered by repo, author or status; ignored PRs, with "Un-ignore".
 - **Stats** (`/stats`): spend, findings and their fate per reviewer, model, PR size and repo, spend per day, and the
   plan's usage.
+- **Settings** (`/settings`, **Settings** in the bar): every [setting](#settings), the
+  [reviewers, prompts and `context.md`](#customize-the-reviewers-and-prompts), and the GitHub account it all goes
+  out as: its picture, name and organisations, the watched one marked. A save writes `config.env` and the files
+  beside it and applies from the next review, without a restart (only `ADDR` waits for one). Turning on posting
+  high findings without asking takes a confirmation, a setting set in the environment shows locked (the
+  environment wins), and a reviewer or prompt is checked before it is saved, so a typo can't stop a review. The
+  picture is fetched by the bot and served from it, so the page asks GitHub for nothing.
 
 ## Updating
 
@@ -159,7 +166,9 @@ WATERMARK=🤖 my-review-bot
 AUTO_POST=low
 ```
 
-Restart the service after changing it (`./install.sh`).
+The Settings page changes them for you: it rewrites only the lines you change (your comments stay; a `config.env`
+that is a symlink stays one, and the file it points to changes), and the running bot uses them from the next poll and
+review. After editing the file by hand, restart the service (`./install.sh`).
 
 | Name | Default |
 |---|---|
@@ -176,7 +185,7 @@ Restart the service after changing it (`./install.sh`).
 | `AGENT_TIMEOUT_MINUTES` | `20` per Claude run |
 | `SKIP_DRAFTS` | `1` |
 | `MAX_AGE_DAYS` | `14`: PRs with no activity (commits, comments, reviews, edits) for longer are skipped automatically; a skipped PR is reviewed once it sees activity again, and `r` in the TUI reviews it anyway; `0` = no limit |
-| `ADDR` | `127.0.0.1:12346`: the local page |
+| `ADDR` | `127.0.0.1:12346`: the local page, on `127.0.0.1` only; a new one takes a restart |
 | `UPDATE_CHECK` | `1`: look for new releases every hour; `0` = only when you ask (Check for updates, `u`, `personal-review-bot update`) |
 | `UPDATE_REPO` | `badam1/personal-review-bot`: where releases come from, for a fork that publishes its own (its release workflow must attest the binaries the same way) |
 | `STATE_DIR` | `~/.local/state/personal-review-bot` (`$XDG_STATE_HOME`): the SQLite database |
@@ -198,8 +207,11 @@ Everything the agents are told is in Markdown files you can change, in the confi
     └── design.md       replaces the built-in design prompt
 ```
 
-Start from the built-in files: `personal-review-bot agents export /tmp/prb` writes them out, with an example
-`context.md`. Copy only the files you change: a copied prompt no longer gets improvements from new versions.
+The Settings page edits them: a reviewer's **Edit** writes only what you change from the built-in one (and removes
+the file once nothing differs), **Customise** starts a prompt from the built-in text, and **Reset to built-in** deletes
+your file. To work on them by hand, start from the built-in files: `personal-review-bot agents export /tmp/prb`
+writes them out, with an example `context.md`. Copy only the files you change: a copied prompt no longer gets
+improvements from new versions.
 `personal-review-bot agents` shows what reviews will run with and checks your files. Changes apply from the next
 review, without a restart. A file that can't be used fails the review with its name and the problem, rather than
 reviewing without it.
