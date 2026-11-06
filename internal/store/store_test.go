@@ -230,3 +230,51 @@ func TestFailures(t *testing.T) {
 		t.Errorf("got %+v, want only review %d (o/r#1)", got, failed)
 	}
 }
+
+// Edit provenance: the bot's proposal is frozen when the verifier settles a finding, so a later human edit on post
+// doesn't erase it. This is what lets us tell a finding posted word for word from one reworded.
+func TestAuthoredCommentProvenance(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rev, err := s.Insert(&Review{Repo: "o/r", Number: 1, Status: AwaitingYou})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A reviewer proposes; the verifier refines the wording and settles it as Pending (both are bot writes).
+	id, err := s.AddFinding(&Finding{ReviewID: rev, Agent: "logic", Severity: "low", Status: Candidate,
+		Comment: "raw reviewer wording"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refined := "the bot's refined wording, as shown to you"
+	if err := s.UpdateFinding(&Finding{ID: id, Status: Pending, Comment: refined}); err != nil {
+		t.Fatal(err)
+	}
+
+	// You edit it and post it.
+	if err := s.UpdateFinding(&Finding{ID: id, Status: Posted, Comment: "my own rewrite", PostedURL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := s.Finding(id)
+	if f.AuthoredComment != refined {
+		t.Errorf("authored = %q, want the bot's settled proposal %q", f.AuthoredComment, refined)
+	}
+	if f.Comment != "my own rewrite" {
+		t.Errorf("comment = %q, want your edit", f.Comment)
+	}
+	if k := f.Edited(); k.String() != "edited" {
+		t.Errorf("Edited() = %s, want edited", k)
+	}
+
+	// A finding posted without a change reads as verbatim.
+	id2, _ := s.AddFinding(&Finding{ReviewID: rev, Agent: "logic", Severity: "low", Status: Candidate, Comment: "x"})
+	_ = s.UpdateFinding(&Finding{ID: id2, Status: Pending, Comment: "the bot said this"})
+	_ = s.UpdateFinding(&Finding{ID: id2, Status: Posted, Comment: "the bot said this", PostedURL: "u"})
+	if f2, _ := s.Finding(id2); f2.Edited().String() != "verbatim" {
+		t.Errorf("unchanged post: Edited() = %s, want verbatim", f2.Edited())
+	}
+}
