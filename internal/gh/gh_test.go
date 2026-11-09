@@ -155,3 +155,19 @@ func TestReadAvatar(t *testing.T) {
 		}
 	}
 }
+
+// GitHub's REST API calls a merged PR closed; the page tells them apart, and an open draft from an open PR.
+func TestPRState(t *testing.T) {
+	for _, c := range []struct {
+		state         string
+		merged, draft bool
+		want          string
+	}{
+		{"open", false, false, "open"}, {"open", false, true, "draft"}, {"closed", true, false, "merged"},
+		{"closed", false, false, "closed"}, {"closed", false, true, "closed"},
+	} {
+		if got := prState(c.state, c.merged, c.draft); got != c.want {
+			t.Errorf("prState(%q, merged %t, draft %t) = %q, want %q", c.state, c.merged, c.draft, got, c.want)
+		}
+	}
+}

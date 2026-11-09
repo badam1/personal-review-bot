@@ -35,6 +35,26 @@ type Deps struct {
 	Log   func(format string, args ...any)
 }
 
+// PRStatus is what the store keeps of a PR's state on GitHub.
+func PRStatus(pr gh.PR) store.PRStatus {
+	return store.PRStatus{State: pr.State, By: pr.MergedBy, ChangedAt: pr.ClosedAt}
+}
+
+// CloseOutIfOver moves a PR's reviews out of "Needs you" when the PR is merged or closed, and says how many it moved.
+func CloseOutIfOver(st *store.Store, repo string, number int, p store.PRStatus) (int64, error) {
+	closed := p.ChangedAt
+	if closed.IsZero() {
+		closed = time.Now()
+	}
+	switch p.State {
+	case store.PRMerged:
+		return st.CloseOut(repo, number, store.MergedFirst, closed)
+	case store.PRClosed:
+		return st.CloseOut(repo, number, store.ClosedFirst, closed)
+	}
+	return 0, nil
+}
+
 // Current returns d with the settings as they are now. The Settings page can change them while the daemon runs, so
 // each review, poll and page starts from Current rather than from the settings it was started with.
 func (d Deps) Current() Deps {
@@ -79,6 +99,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		return fail(fmt.Errorf("fetch PR: %w", err))
 	}
 	_ = d.Store.SetLabels(id, d.Cfg.Shown(pr.Labels))
+	_ = d.Store.SetPRStatus(r.Repo, r.Number, PRStatus(pr))
 	files, err := d.GH.Files(r.Repo, r.Number)
 	if err != nil {
 		return fail(fmt.Errorf("fetch files: %w", err))

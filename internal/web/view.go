@@ -332,7 +332,7 @@ func outcome(r store.Review) badge {
 		return badge{"Approved", "ok"}
 	case strings.Contains(d, "posted"), strings.Contains(d, "reminded"):
 		return badge{"Posted", "post"}
-	case strings.Contains(d, "skipped"), strings.Contains(d, "ignored"):
+	case strings.Contains(d, "skipped"), strings.Contains(d, "ignored"), d == store.MergedFirst, d == store.ClosedFirst:
 		return badge{"Skipped", "skip"}
 	}
 	return badge{"Done", "post"}

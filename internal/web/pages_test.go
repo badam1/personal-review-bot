@@ -849,3 +849,62 @@ func TestEnterDoesNotPost(t *testing.T) {
 		}
 	}
 }
+
+// Each list shows the PR's state on GitHub as GitHub's own icons do, a review shows it as a coloured pill, and
+// History filters by it.
+func TestPRStateShown(t *testing.T) {
+	s := newSite(t)
+	merged := s.review(1, store.Done, "approved by you")
+	open := s.review(2, store.Done, "you posted 1")
+	unknown := s.review(3, store.Done, "approved by you")
+	_ = s.st.SetPRStatus("acme/infra", 1, store.PRStatus{State: store.PRMerged, By: "lena", ChangedAt: time.Now().Add(-2 * time.Hour)})
+	_ = s.st.SetPRStatus("acme/infra", 2, store.PRStatus{State: store.PROpen})
+	_, page := s.get("/history")
+	want(t, page, `<span class="prstate merged" title="Merged 2h ago by @lena" role="img" aria-label="Merged 2h ago by @lena">`,
+		`<span class="prstate open" title="Open"`, `<select name="pr" aria-label="PR on GitHub">`)
+	if strings.Count(page, `class="prstate `) != 2 {
+		t.Errorf("review %d's PR was never checked, so it has no icon", unknown)
+	}
+	_, page = s.get(fmt.Sprintf("/r/%d", merged))
+	want(t, page, `<span class="prpill merged" title="Merged 2h ago by @lena">`, `Merged</span>`)
+	_, page = s.get("/pr/acme/infra/2")
+	want(t, page, `<span class="prpill open" title="Open">`)
+
+	_, page = s.get("/history?pr=merged")
+	want(t, page, fmt.Sprintf(`href="/r/%d"`, merged), `<option value="merged" selected>Merged</option>`)
+	if strings.Contains(page, fmt.Sprintf(`href="/r/%d"`, open)) {
+		t.Error("an open PR is listed among the merged ones")
+	}
+}
+
+// Opening a review whose PR was merged meanwhile takes it out of "Needs you" there and then, and the Reviews page
+// says so for a day.
+func TestReviewOfMergedPR(t *testing.T) {
+	s := newSite(t)
+	id := s.review(5, store.AwaitingYou, "1 need you")
+	s.srv.fetch = func(string, int) (gh.PR, error) {
+		return gh.PR{HeadSHA: "aaa", State: store.PRMerged, MergedBy: "lena", ClosedAt: time.Now()}, nil // after the review began
+	}
+	_, page := s.get(fmt.Sprintf("/r/%d", id))
+	want(t, page, `<span class="prpill merged"`, `<span class="badge skip">Skipped</span>`)
+	if strings.Contains(page, `<form id="decide"`) {
+		t.Error("the decision form is still offered on a merged PR")
+	}
+	if r, _ := s.st.Get(id); r.Status != store.Done || r.Decision != store.MergedFirst {
+		t.Errorf("review is %s %q", r.Status, r.Decision)
+	}
+	_, page = s.get("/")
+	want(t, page, `No longer waiting for you: merged or closed on GitHub before you decided.`,
+		fmt.Sprintf(`<a href="/r/%d">PR 5</a>`, id), "by @lena", "Nothing waiting for you.")
+
+	// A review you ask for once it's merged, of the merged code, still waits for you when you open it.
+	again := s.review(5, store.AwaitingYou, "1 need you")
+	s.srv.fetch = func(string, int) (gh.PR, error) {
+		return gh.PR{HeadSHA: "aaa", State: store.PRMerged, ClosedAt: time.Now().Add(-time.Hour)}, nil
+	}
+	_, page = s.get(fmt.Sprintf("/r/%d", again))
+	want(t, page, `<form id="decide"`)
+	if r, _ := s.st.Get(again); r.Status != store.AwaitingYou {
+		t.Errorf("a review started after the merge was closed out: %s %q", r.Status, r.Decision)
+	}
+}
