@@ -97,7 +97,7 @@ type fileRow struct{ Name, Path, Full string }
 // editable are the settings the page saves, in the order it shows them, with how a save names them. UPDATE_REPO is
 // shown but not saved here: it decides where the code you run comes from, so it changes only with you at a shell.
 var editable = []struct{ name, label string }{
-	{"ORG", "Organisation"}, {"SKIP_DRAFTS", "Skip draft PRs"}, {"MAX_AGE_DAYS", "Leave quiet PRs alone after"},
+	{"ORG", "Organisations"}, {"SKIP_DRAFTS", "Skip draft PRs"}, {"MAX_AGE_DAYS", "Leave quiet PRs alone after"},
 	{"POLL_SECONDS", "Check GitHub every"}, {"PARALLEL", "Reviews at a time"}, {"AUTO_POST", "Post on its own"},
 	{"THRESHOLD", "Certainty needed"}, {"APPROVE_TEXT", "Approval message"}, {"WATERMARK", "Signature"},
 	{"SAVE_AT", "Cheaper models from"}, {"MIN_AT", "Cheapest from"}, {"AGENT_TIMEOUT_MINUTES", "Time limit per reviewer"},
@@ -181,7 +181,7 @@ func (s *server) settingsPage(ctx context.Context, saved config.Config, values m
 	if s.updates == nil { // the page alone, started by hand: restarting it is up to you
 		p.Restart = ""
 	}
-	p.Account = s.account(ctx, values["ORG"])
+	p.Account = s.account(ctx, config.SplitOrgs(values["ORG"])...)
 
 	dir := saved.ConfigDir
 	p.Adding = reviewerRow{ReviewerEdit: agents.ReviewerEdit{Enabled: true}, New: true, Tag: "Yours", Models: modelChoices("")}
@@ -301,6 +301,8 @@ func formValue(name string, sent []string) string {
 		last = strings.TrimSpace(sent[len(sent)-1])
 	}
 	switch name {
+	case "ORG": // several orgs, however they were typed, are written the way the page shows them back
+		return strings.Join(config.SplitOrgs(last), ",")
 	case "SKIP_DRAFTS", "UPDATE_CHECK": // a hidden 0 comes first, then the switch's 1 when it is on
 		if slices.Contains(sent, "1") {
 			return "1"
@@ -453,6 +455,14 @@ func (s *server) apply() {
 	running := s.cfg()
 	next := config.LoadFrom(running.ConfigDir)
 	next.WebAddr, next.StateDir, next.CacheDir = running.WebAddr, running.StateDir, running.CacheDir
+	// config.env is read from disk, and this page is not the only thing that writes it. ORG decides whose PRs are
+	// reviewed and goes straight into the search, so a value that is not an organisation name adds a qualifier of
+	// its own. Leaving the bad name out would widen the search to every org, which is the worse failure, so an
+	// unusable file leaves the running settings as they are.
+	if err := next.Validate(); err != nil {
+		s.d.Log("settings on disk not applied, still running the previous ones: %v", err)
+		return
+	}
 	s.d.Live.Set(next)
 }
 

@@ -102,7 +102,7 @@ variable wins over the file, and the page shows that setting locked. After editi
 
 | Name | Default and meaning |
 |---|---|
-| `ORG` | empty: any org. Only review PRs in this GitHub org; reviewers search it for related repos |
+| `ORG` | empty: any org. Only review PRs in these GitHub orgs — one, or several as `acme,umbrella`; a value that isn't an organisation name is refused rather than searched for. Reviewers search one for related repos: the PR's own when you set it, otherwise the repo's owner |
 | `THRESHOLD` | `80`: how certain (%) a confirmed finding must be to post on its own |
 | `AUTO_POST` | `low,medium`: the severities that post on their own; `low,medium,high` for all, empty for none |
 | `APPROVE_TEXT` | `LGTM :+1:`: said with your first approval of a PR; empty approves without a comment |

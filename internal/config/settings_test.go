@@ -125,6 +125,23 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// ORG holds a list, so the Settings page has to accept one and refuse it on the strength of each name in it —
+// otherwise the page would reject a value the bot itself reads perfectly well.
+func TestCheckORGList(t *testing.T) {
+	// A space separates two names as a comma does, and an empty field is simply dropped, so a trailing comma
+	// and "acme umbrella" are both fine — that is the point of reading ORG as a list.
+	for _, v := range []string{"", "acme", "acme,umbrella", "acme, umbrella", "acme umbrella", "a,b,c", "acme,"} {
+		if err := Check("ORG", v); err != nil {
+			t.Errorf("ORG=%q: %v", v, err)
+		}
+	}
+	for _, v := range []string{"acme,um/brella", "acme,-bad", "acme,b--ad", "ok,this_one"} {
+		if err := Check("ORG", v); err == nil {
+			t.Errorf("ORG=%q passed", v)
+		}
+	}
+}
+
 // The lists' column of labels is named after them unless LABELS_TITLE names it.
 func TestLabelsColumn(t *testing.T) {
 	for _, c := range []struct {

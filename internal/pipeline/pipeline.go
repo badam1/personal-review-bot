@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -111,7 +112,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	defer ws.Cleanup()
 	in := agents.Input{Repo: r.Repo, Number: r.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Base: pr.BaseRef, Head: pr.HeadRef, Diff: diff, Dir: ws.Dir, HeadSHA: pr.HeadSHA, Effort: plan.Effort,
-		Owner: d.GH.Login, Org: relatedOrg(d.Cfg.Org, r.Repo)}
+		Owner: d.GH.Login, Org: relatedOrg(d.Cfg.Orgs, r.Repo)}
 	if prev, err := d.Store.PreviousComplete(r.Repo, r.Number, id); err == nil && prev != nil {
 		in.PrevSHA = prev.HeadSHA
 	}
@@ -400,12 +401,18 @@ func byModel(p triage.Plan) string {
 	return strings.Join(groups, ", ")
 }
 
-// relatedOrg is where reviewers look for the repos a PR affects: the configured org, else the PR repo's owner.
-func relatedOrg(org, repo string) string {
-	if org != "" {
-		return org
-	}
+// relatedOrg is the one org reviewers search for the repos a PR affects (the prompts take a single owner):
+// the PR's own owner when it is one of the configured orgs, so a PR is read against the org it belongs to;
+// the configured org when only one is set, which keeps a PR queued from outside it reading against yours;
+// else the PR repo's owner.
+func relatedOrg(orgs []string, repo string) string {
 	owner, _, _ := strings.Cut(repo, "/")
+	if slices.ContainsFunc(orgs, func(o string) bool { return strings.EqualFold(o, owner) }) {
+		return owner
+	}
+	if len(orgs) == 1 {
+		return orgs[0]
+	}
 	return owner
 }
 

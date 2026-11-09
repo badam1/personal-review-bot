@@ -96,8 +96,8 @@ not a setting
 	t.Setenv("PERSONAL_REVIEW_BOT_CONFIG_DIR", dir)
 	t.Setenv("PERSONAL_REVIEW_BOT_THRESHOLD", "85")
 	c := Load()
-	if c.Org != "acme" || c.Threshold != 85 || c.Watermark != "🤖 acme-bot" || c.ApproveText != "" || c.ConfigDir != dir {
-		t.Errorf("got org %q, threshold %d, watermark %q, approve text %q, config dir %q", c.Org, c.Threshold, c.Watermark,
+	if !slices.Equal(c.Orgs, []string{"acme"}) || c.Threshold != 85 || c.Watermark != "🤖 acme-bot" || c.ApproveText != "" || c.ConfigDir != dir {
+		t.Errorf("got orgs %q, threshold %d, watermark %q, approve text %q, config dir %q", c.Orgs, c.Threshold, c.Watermark,
 			c.ApproveText, c.ConfigDir)
 	}
 	if c.PollInterval.Seconds() != 120 {
@@ -119,5 +119,72 @@ func TestShownLabels(t *testing.T) {
 	t.Setenv("PERSONAL_REVIEW_BOT_SHOW_LABELS", "")
 	if got := Load().Shown(labels); got != nil {
 		t.Errorf("empty shows none: %q", got)
+	}
+}
+
+// ORG takes one org or several, comma-separated; blank parts drop out and OrgsLabel names what is watched.
+func TestOrgsSetting(t *testing.T) {
+	t.Setenv("PERSONAL_REVIEW_BOT_CONFIG_DIR", t.TempDir())
+	cases := []struct {
+		name, org string
+		want      []string
+		label     string
+	}{
+		{"unset", "", nil, "any"},
+		{"one org", "acme", []string{"acme"}, "acme"},
+		{"several orgs", "acme,umbrella", []string{"acme", "umbrella"}, "acme, umbrella"},
+		{"spaces and empty parts", " acme , , umbrella ", []string{"acme", "umbrella"}, "acme, umbrella"},
+		{"spaces instead of commas", "acme umbrella", []string{"acme", "umbrella"}, "acme, umbrella"},
+		{"the same org twice, in two cases", "acme,ACME", []string{"acme"}, "acme"},
+	}
+	for _, c := range cases {
+		t.Setenv("PERSONAL_REVIEW_BOT_ORG", c.org)
+		got := Load()
+		if !slices.Equal(got.Orgs, c.want) || got.OrgsLabel() != c.label {
+			t.Errorf("%s: got orgs %q (label %q), want %q (%q)", c.name, got.Orgs, got.OrgsLabel(), c.want, c.label)
+		}
+	}
+}
+
+// ORG decides whose PRs are reviewed, so a value that isn't an organisation name stops the command instead of
+// going into the search as a qualifier of its own.
+func TestValidate(t *testing.T) {
+	t.Setenv("PERSONAL_REVIEW_BOT_CONFIG_DIR", t.TempDir())
+	cases := []struct {
+		name, org string
+		ok        bool
+	}{
+		{"unset", "", true},
+		{"one org", "acme", true},
+		{"several orgs", "acme,umbrella-two", true},
+		{"digits and hyphens", "acme-2,3m", true},
+		{"a qualifier smuggled in", "acme is:draft", false},
+		{"a repo qualifier, which widens the search", "acme repo:someone/private", false},
+		{"a leading hyphen", "-acme", false},
+		{"a slash", "acme/api", false},
+		{"too long", strings.Repeat("a", 40), false},
+	}
+	for _, c := range cases {
+		t.Setenv("PERSONAL_REVIEW_BOT_ORG", c.org)
+		if err := Load().Validate(); (err == nil) != c.ok {
+			t.Errorf("%s: ORG=%q gave %v, want ok=%v", c.name, c.org, err, c.ok)
+		}
+	}
+}
+
+// A GitHub organisation login is at most 39 characters. The shape pattern can't carry that bound: each step of it
+// takes a hyphen and a character, so a repetition count there would have allowed names twice as long.
+func TestValidOrgLength(t *testing.T) {
+	ok := []string{"a", "acme", strings.Repeat("a", 39), "a" + strings.Repeat("-b", 19)}
+	bad := []string{"", strings.Repeat("a", 40), "a" + strings.Repeat("-b", 38), "-acme", "acme-", "ac--me", "acme/x", "acme x"}
+	for _, s := range ok {
+		if !ValidOrg(s) {
+			t.Errorf("ValidOrg(%q) = false, want true (%d chars)", s, len(s))
+		}
+	}
+	for _, s := range bad {
+		if ValidOrg(s) {
+			t.Errorf("ValidOrg(%q) = true, want false (%d chars)", s, len(s))
+		}
 	}
 }

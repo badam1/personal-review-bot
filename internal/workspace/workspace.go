@@ -43,10 +43,22 @@ func Prepare(ctx context.Context, cacheDir, repo string, number int, sha string)
 	l.Lock()
 	defer l.Unlock()
 
-	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
-		if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
+	// The clones hold private source, so the cache is the user's own to read. This runs before the clone check and
+	// not inside it, because MkdirAll sets the mode only on folders it creates: a cache left at 0755 by an earlier
+	// version has its repositories already, so the branch below is the one path that would never reach it.
+	if err := os.MkdirAll(filepath.Dir(repoDir), 0o700); err != nil {
+		return nil, err
+	}
+	// cacheDir is the one that matters — 0700 on it stops anyone else walking in, whatever the modes below it,
+	// and "work" is made by git with the umask rather than by us — but each folder we own is tightened as well.
+	for _, d := range []string{cacheDir, filepath.Join(cacheDir, "repos"), filepath.Dir(repoDir),
+		filepath.Join(cacheDir, "work")} {
+		if err := os.Chmod(d, 0o700); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
+	}
+
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
 		if err := git(ctx, "", "clone", "--quiet", "--filter=blob:none", "--no-checkout",
 			cloneURL(ghProtocol(ctx), repo), repoDir); err != nil {
 			return nil, err

@@ -134,7 +134,7 @@ func TestSaveSettings(t *testing.T) {
 		}
 	}
 	cfg := s.srv.cfg()
-	if cfg.Org != "acme" || cfg.Threshold != 85 || cfg.PollInterval != 5*time.Minute || cfg.SkipDrafts ||
+	if strings.Join(cfg.Orgs, ",") != "acme" || cfg.Threshold != 85 || cfg.PollInterval != 5*time.Minute || cfg.SkipDrafts ||
 		strings.Join(cfg.AutoPost, ",") != "low" || cfg.Watermark != "🤖 acme bot" {
 		t.Errorf("the running config: %+v", cfg)
 	}
@@ -174,7 +174,7 @@ func TestSaveSettingsRejects(t *testing.T) {
 	}{
 		{url.Values{"SAVE_AT": {"95"}, "MIN_AT": {"90"}}, "Cheapest from must be above Cheaper models from"},
 		{url.Values{"ADDR": {"0.0.0.0:12346"}}, "Address: must be 127.0.0.1"},
-		{url.Values{"ORG": {"acme/infra"}}, "Organisation: must be a GitHub organisation"},
+		{url.Values{"ORG": {"acme/infra"}}, "Organisations: must be a GitHub organisation"},
 		{url.Values{"AUTO_POST": {"", "low", "medium", "high"}}, "tick the confirmation under Post on its own"},
 		{url.Values{"WATERMARK": {"<img src=x>"}}, "Signature: must be 1 to 80 characters, without &lt; or &gt;"},
 	} {
@@ -317,6 +317,74 @@ func TestSettingsNeedToken(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "config.env")); !os.IsNotExist(err) {
 		t.Error("config.env was written")
+	}
+}
+
+// ORG holds a list now, so the Account section marks every org in it, not the first and not the joined string.
+// Matching ignores case, because GitHub's org: search does: ORG=ACME really does watch acme.
+func TestSettingsAccountSeveralOrgs(t *testing.T) {
+	s, _ := newSettingsSite(t)
+	if err := config.Save(s.srv.cfg().ConfigDir, map[string]string{"ORG": "ACME, umbrella"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	code, page := s.get("/settings")
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	want(t, page, "acme · watched", "umbrella · watched")
+	if strings.Contains(page, "isn't a member of") {
+		t.Error("the account belongs to both orgs, but the page says it is not a member")
+	}
+
+	// One watched org the account is in, one it isn't: only the missing one is named.
+	if err := config.Save(s.srv.cfg().ConfigDir, map[string]string{"ORG": "acme,initech"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, page = s.get("/settings")
+	want(t, page, "acme · watched", "This account isn't a member of initech")
+	if strings.Contains(page, "member of acme") {
+		t.Error("acme is named as missing though the account belongs to it")
+	}
+}
+
+// ORG is written in the form the page shows it back, so config.env and the field agree. Typed with spaces, saved
+// with commas; a name repeated in another case is kept once, as the daemon reads it.
+func TestSaveSettingsNormalisesORG(t *testing.T) {
+	for _, c := range []struct{ typed, want string }{
+		{"acme umbrella", "ORG=acme,umbrella\n"},
+		{"acme,  umbrella ", "ORG=acme,umbrella\n"},
+		{"acme,ACME", "ORG=acme\n"},
+		{" acme ", "ORG=acme\n"},
+	} {
+		s, dir := newSettingsSite(t)
+		if rec := s.post("/settings", url.Values{"ORG": {c.typed}}); rec.Code != http.StatusSeeOther {
+			t.Fatalf("ORG=%q: status %d", c.typed, rec.Code)
+		}
+		if env := fileText(t, filepath.Join(dir, "config.env")); !strings.Contains(env, c.want) {
+			t.Errorf("ORG typed %q: config.env has no %q:\n%s", c.typed, c.want, env)
+		}
+	}
+}
+
+// config.env can be edited by hand, and apply() reads it from disk. ORG goes straight into the GitHub search, so
+// a file that would widen the search past the orgs you set must not replace the settings already running.
+func TestApplyKeepsRunningSettingsWhenTheFileIsBad(t *testing.T) {
+	s, dir := newSettingsSite(t)
+	if err := config.Save(dir, map[string]string{"ORG": "acme"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.srv.apply()
+	if got := strings.Join(s.srv.cfg().Orgs, ","); got != "acme" {
+		t.Fatalf("ORG is %q before the hand edit, want acme", got)
+	}
+
+	// As a hand edit would leave it: a space makes "repo:someone/private" a second qualifier in the search.
+	if err := os.WriteFile(filepath.Join(dir, "config.env"), []byte("ORG=acme repo:someone/private\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.srv.apply()
+	if got := strings.Join(s.srv.cfg().Orgs, ","); got != "acme" {
+		t.Errorf("ORG is %q after the bad edit, want the running acme to be kept", got)
 	}
 }
 

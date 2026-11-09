@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,7 +17,7 @@ import (
 )
 
 type Config struct {
-	Org          string        // only review PRs in this GitHub org ("" = anywhere)
+	Orgs         []string      // only review PRs in these GitHub orgs (empty = anywhere)
 	PollInterval time.Duration // how often to ask GitHub for new review requests
 	Threshold    int           // verified certainty (0-100) at which a confirmed finding is posted without asking
 	AutoPost     []string      // severities posted without asking, from low to high (empty = none)
@@ -53,7 +54,7 @@ func LoadFrom(dir string) Config {
 	home, _ := os.UserHomeDir()
 	s := settings(readEnvFile(filepath.Join(dir, "config.env")))
 	return Config{
-		Org:          s.str("ORG", Defaults["ORG"]),
+		Orgs:         orgs(s),
 		PollInterval: time.Duration(s.int("POLL_SECONDS")) * time.Second,
 		Threshold:    s.int("THRESHOLD"),
 		AutoPost:     autoPost(s),
@@ -77,6 +78,61 @@ func LoadFrom(dir string) Config {
 }
 
 func (c Config) DBPath() string { return filepath.Join(c.StateDir, "reviews.db") }
+
+// orgName matches the shape of a GitHub organisation login: letters and digits with single hyphens between them.
+// Anything else would become a second qualifier in the search (a space starts one), so Validate refuses it.
+// The length is checked separately: each repetition here can take two characters, so a count on it would bound
+// the hyphens, not the name.
+var orgName = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9])*$`)
+
+// orgMax is the longest a GitHub organisation login can be.
+const orgMax = 39
+
+// ValidOrg reports whether s is usable as an org in the search ORG drives.
+func ValidOrg(s string) bool { return len(s) <= orgMax && orgName.MatchString(s) }
+
+// orgs reads ORG: one org or several, separated by commas or spaces. A space is as likely as a comma to be typed
+// between two names, and taking it would otherwise leave "acme umbrella" as one value, which reads as the org acme
+// plus a free-text search for "umbrella". Duplicates, in any case, collapse.
+func orgs(s settings) []string { return SplitOrgs(s.str("ORG", Defaults["ORG"])) }
+
+// SplitOrgs reads an ORG value as the list it is. The Settings page checks what someone typed with it, so that
+// what it accepts and what the bot then searches cannot drift apart.
+func SplitOrgs(v string) []string {
+	var out []string
+	for _, o := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+		if !slices.ContainsFunc(out, func(h string) bool { return strings.EqualFold(h, o) }) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// Validate reports a setting that would make the bot review the wrong PRs rather than simply not work, so the
+// command can stop instead of carrying on with it. ORG is the one that matters: it decides whose PRs are reviewed,
+// and a value that is not an organisation name ends up as another qualifier in the GitHub search, which can widen
+// what the bot picks up (a "repo:" of its own) or narrow it to nothing, neither of them visibly.
+func (c Config) Validate() error {
+	var bad []string
+	for _, o := range c.Orgs {
+		if !ValidOrg(o) {
+			bad = append(bad, strconv.Quote(o))
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("ORG: %s is not a GitHub organisation name; separate several with commas, e.g. ORG=acme,umbrella",
+			strings.Join(bad, ", "))
+	}
+	return nil
+}
+
+// OrgsLabel names the orgs being reviewed, for the log line: "acme", "acme, umbrella", or "any" when ORG is unset.
+func (c Config) OrgsLabel() string {
+	if len(c.Orgs) == 0 {
+		return "any"
+	}
+	return strings.Join(c.Orgs, ", ")
+}
 
 var severities = []string{"low", "medium", "high"}
 

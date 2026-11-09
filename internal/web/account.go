@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +16,7 @@ type accountView struct {
 	Login, Name, URL string
 	Avatar           bool      // the picture came down, so /avatar serves it
 	Orgs             []orgView // the organisations the account belongs to
-	NotMember        string    // the watched org, when the account isn't among its members
+	NotMember        string    // the watched orgs the account isn't among the members of
 	Err              string    // GitHub couldn't be asked; the login from start-up is still known
 }
 
@@ -65,8 +66,10 @@ func (a *accountCache) picture() ([]byte, string) {
 	return a.pic, a.picType
 }
 
-// account is the Account section, read from the cache (so GitHub is asked at most once an hour).
-func (s *server) account(ctx context.Context, org string) accountView {
+// account is the Account section, read from the cache (so GitHub is asked at most once an hour). It takes the
+// watched orgs one by one, since ORG holds a list: every one of them is marked, and each is matched ignoring
+// case, because GitHub's org: search does too.
+func (s *server) account(ctx context.Context, orgs ...string) accountView {
 	v := accountView{Login: s.login}
 	acc, err := s.accounts.get(ctx, s.d.GH)
 	if err != nil {
@@ -76,13 +79,20 @@ func (s *server) account(ctx context.Context, org string) accountView {
 	v.Login, v.Name, v.URL = acc.Login, acc.Name, acc.HTMLURL
 	pic, _ := s.accounts.picture()
 	v.Avatar = len(pic) > 0
-	member := false
-	for _, o := range acc.Orgs {
-		v.Orgs = append(v.Orgs, orgView{Name: o, Watched: strings.EqualFold(o, org)})
-		member = member || strings.EqualFold(o, org)
+	watched := func(name string) bool {
+		return slices.ContainsFunc(orgs, func(o string) bool { return o != "" && strings.EqualFold(o, name) })
 	}
-	if org != "" && len(acc.Orgs) > 0 && !member { // no orgs at all: gh may lack read:org, so it can't tell
-		v.NotMember = org
+	for _, o := range acc.Orgs {
+		v.Orgs = append(v.Orgs, orgView{Name: o, Watched: watched(o)})
+	}
+	if len(acc.Orgs) > 0 { // no orgs at all: gh may lack read:org, so it can't tell
+		var missing []string
+		for _, o := range orgs {
+			if o != "" && !slices.ContainsFunc(acc.Orgs, func(m string) bool { return strings.EqualFold(m, o) }) {
+				missing = append(missing, o)
+			}
+		}
+		v.NotMember = strings.Join(missing, ", ")
 	}
 	return v
 }
