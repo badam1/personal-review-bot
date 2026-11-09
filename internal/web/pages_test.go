@@ -818,3 +818,34 @@ func TestLabelledButtons(t *testing.T) {
 	_, page = s.get("/pr/acme/infra/70")
 	want(t, page, button)
 }
+
+// Every control on a review joins the hidden "decide" form, whose first submit button is what Enter in a checkbox
+// would press. That must not be a button that posts to GitHub, so the form opens with a disabled one: implicit
+// submission does nothing when the default button is disabled.
+func TestEnterDoesNotPost(t *testing.T) {
+	s := newSite(t)
+	id := s.review(4, store.AwaitingYou, "1 need you")
+	fid, _ := s.st.AddFinding(&store.Finding{ReviewID: id, Agent: "logic", Severity: "medium", Path: "a.go", Line: 1,
+		Title: "Nil map", Comment: "c", Status: store.Pending})
+	_ = fid
+	_, page := s.get(fmt.Sprintf("/r/%d", id))
+
+	// The checkboxes are there, so Enter has something to submit from.
+	want(t, page, `type="checkbox" form="decide"`)
+
+	// Enter presses the first submit button that works, so that button has to be one that does nothing. Disabling
+	// it is not enough: Chrome passes over a disabled default button and presses the next one, which is why this
+	// insists on the attribute that holds rather than on there being a button at all.
+	first := strings.Index(page, `<button type="submit" formmethod="dialog" hidden`)
+	if first < 0 {
+		t.Fatal("the decide form has no dialog-method default button: Enter in a checkbox would post to GitHub")
+	}
+	if end := strings.Index(page[first:], ">"); end >= 0 && strings.Contains(page[first:first+end], "disabled") {
+		t.Error("the default button is disabled, so Chrome skips it and presses Post selected instead")
+	}
+	for _, posts := range []string{`value="post"`, `value="approve"`, `value="post_approve"`, `value="rereview"`} {
+		if at := strings.Index(page, posts); at >= 0 && at < first {
+			t.Errorf("a button with %s comes before the dialog-method default button, so Enter would press it", posts)
+		}
+	}
+}
