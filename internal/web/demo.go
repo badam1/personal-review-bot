@@ -79,7 +79,7 @@ func Demo(ctx context.Context, addr, version string) error {
 			if err != nil || r == nil {
 				return gh.PR{}, errors.Join(err, errors.New("not in the demo"))
 			}
-			return gh.PR{HeadSHA: r.HeadSHA, Labels: r.Labels}, nil
+			return gh.PR{HeadSHA: r.HeadSHA, Labels: r.Labels, State: r.PR.State, MergedBy: r.PR.By, ClosedAt: r.PR.ChangedAt}, nil
 		},
 		threads: func(string, int) ([]gh.Thread, error) { return nil, nil },
 		send: func(*store.Review, string, []store.Finding, []pipeline.Reminder) (string, error) {
@@ -147,6 +147,9 @@ type demoReview struct {
 	findings       []demoFinding
 	runs           []store.Run
 	ago, took      time.Duration // when it started, and how long it ran (0: still running)
+	pr             string        // its state on GitHub: open, draft, merged or closed
+	prBy           string        // who merged it
+	prAgo          time.Duration // how long ago it was merged or closed
 }
 
 // seedDemo fills the store with the demo's reviews. The store stamps a review with the time it is written, so the
@@ -175,16 +178,28 @@ func seedDemo(st *store.Store, dbPath string, now time.Time) error {
 	reviews := []demoReview{
 		{repo: "acme/infra", number: 228, title: "Split the worker pool by queue", author: "lena", tier: "large",
 			models: "opus → opus", reasons: "risky paths: deploy/workers.tf · 640 lines in 14 files", add: 512, del: 128, n: 14,
-			cost: 5.92, status: store.Done, decision: "you posted 2", labels: []string{"risk/high"}, ago: 26 * time.Hour, took: 9 * time.Minute},
+			cost: 5.92, status: store.Done, decision: "you posted 2", labels: []string{"risk/high"}, ago: 26 * time.Hour, took: 9 * time.Minute,
+			pr: store.PRMerged, prBy: "lena", prAgo: 20 * time.Hour},
+		{repo: "acme/mobile", number: 70, title: "Try a native date picker", author: "sam", tier: "medium",
+			models: "sonnet → opus", reasons: "164 lines in 6 files", add: 150, del: 14, n: 6, cost: 0.66, status: store.Done,
+			decision: "you posted 1", labels: []string{"risk/low"}, ago: 22 * time.Hour, took: 3 * time.Minute,
+			pr: store.PRClosed, prAgo: 9 * time.Hour},
 		{repo: "acme/web", number: 981, title: "Lazy-load the analytics bundle", author: "marco", tier: "small",
 			models: "haiku → sonnet", reasons: "38 lines in 3 files", add: 30, del: 8, n: 3, cost: 0.21, status: store.Done,
-			decision: "approved by you", labels: []string{"risk/low"}, ago: 7 * time.Hour, took: 2 * time.Minute},
+			decision: "approved by you", labels: []string{"risk/low"}, ago: 7 * time.Hour, took: 2 * time.Minute,
+			pr: store.PRMerged, prBy: "marco", prAgo: 6 * time.Hour},
+		{repo: "acme/web", number: 975, title: "Move the date picker to the shared library", author: "sam", tier: "small",
+			models: "haiku → sonnet", reasons: "88 lines in 4 files", add: 61, del: 27, n: 4, cost: 0.12,
+			status: store.AwaitingYou, decision: "1 need you", labels: []string{"risk/low"}, ago: 6 * time.Hour, took: 2 * time.Minute,
+			pr: store.PRMerged, prBy: "marco", prAgo: 2 * time.Hour},
 		{repo: "acme/payments", number: 409, title: "Rename the refund status enum", author: "priya", tier: "medium",
 			models: "sonnet → opus", reasons: "212 lines in 9 files", add: 140, del: 72, n: 9, cost: 0.77, status: store.Done,
-			decision: "bot posted 1, you posted 1", labels: []string{"risk/medium"}, ago: 5 * time.Hour, took: 4 * time.Minute},
+			decision: "bot posted 1, you posted 1", labels: []string{"risk/medium"}, ago: 5 * time.Hour, took: 4 * time.Minute,
+			pr: store.PROpen},
 		{repo: "acme/mobile", number: 77, title: "Fix typos in the onboarding guide", author: "sam", tier: "small",
 			models: "haiku → sonnet", reasons: "docs only · 12 lines in 2 files", add: 6, del: 6, n: 2, cost: 0.04,
-			status: store.Done, decision: "approved by you", labels: []string{"auto-risk/low"}, ago: 3 * time.Hour, took: time.Minute},
+			status: store.Done, decision: "approved by you", labels: []string{"auto-risk/low"}, ago: 3 * time.Hour, took: time.Minute,
+			pr: store.PRMerged, prBy: "sam", prAgo: 2 * time.Hour},
 		{repo: "acme/web", number: 988, title: "Add dark mode to the account settings", author: "marco", tier: "small",
 			models: "haiku → sonnet", reasons: "96 lines in 5 files", add: 81, del: 15, n: 5, cost: 0.18, status: store.AwaitingYou,
 			decision: "no issues: approve?", labels: []string{"risk/low"},
@@ -193,7 +208,7 @@ func seedDemo(st *store.Store, dbPath string, now time.Time) error {
 			approvalReason: "Every changed component was rendered in both themes, and the stored preference is read once on load.",
 			runs: []store.Run{run("logic", "haiku", 0, 48, 0.03, "Read `ThemeToggle.tsx` and how the preference is stored."),
 				run("verifier", "sonnet", 0, 61, 0.09, ""), run("summary", "haiku", 0, 9, 0.01, "")},
-			ago: 70 * time.Minute, took: 3 * time.Minute},
+			ago: 70 * time.Minute, took: 3 * time.Minute, pr: store.PROpen},
 		{repo: "acme/payments", number: 412, title: "Retry card captures when the gateway times out", author: "priya",
 			tier: "medium", models: "sonnet → opus", reasons: "risky paths: internal/gateway/ · 286 lines in 7 files",
 			add: 231, del: 55, n: 7, cost: 1.42, status: store.AwaitingYou, decision: "2 need you", labels: []string{"risk/medium"},
@@ -216,10 +231,10 @@ func seedDemo(st *store.Store, dbPath string, now time.Time) error {
 				run("integration", "sonnet", 0, 160, 0.22, "Checked the gateway client's other callers in acme/billing."),
 				run(agents.DesignAgent, "opus", 1, 245, 0.41, "Compared with how refunds retry, and adr/0012."),
 				run("verifier", "opus", 2, 131, 0.21, ""), run("summary", "haiku", 0, 8, 0.01, "")},
-			ago: 35 * time.Minute, took: 6 * time.Minute},
+			ago: 35 * time.Minute, took: 6 * time.Minute, pr: store.PROpen},
 		{repo: "acme/infra", number: 231, title: "Move the queue workers to their own node pool", author: "lena", tier: "large",
 			models: "opus → opus", reasons: "risky paths: deploy/nodepools.tf · 734 lines in 18 files", add: 601, del: 133, n: 18,
-			cost: 2.10, status: store.Running, labels: []string{"risk/high"}, ago: 4 * time.Minute},
+			cost: 2.10, status: store.Running, labels: []string{"risk/high"}, ago: 4 * time.Minute, pr: store.PRDraft},
 	}
 
 	for _, r := range reviews {
@@ -260,6 +275,17 @@ func seedDemo(st *store.Store, dbPath string, now time.Time) error {
 			started.UTC().Format(time.RFC3339), started.UTC().Format(time.RFC3339), finished, id)
 		if err = errors.Join(err, serr); err != nil {
 			return fmt.Errorf("%s#%d: %w", r.repo, r.number, err)
+		}
+		if r.pr != "" {
+			pr := store.PRStatus{State: r.pr, By: r.prBy}
+			if pr.Over() {
+				pr.ChangedAt = now.Add(-r.prAgo)
+			}
+			// one merged while it waited for you leaves "Needs you", as the bot's check would take it out
+			_, cerr := pipeline.CloseOutIfOver(st, r.repo, r.number, pr)
+			if err = errors.Join(st.SetPRStatus(r.repo, r.number, pr), cerr); err != nil {
+				return fmt.Errorf("%s#%d: %w", r.repo, r.number, err)
+			}
 		}
 	}
 

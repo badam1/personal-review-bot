@@ -70,6 +70,7 @@ type Review struct {
 	CreatedAt      time.Time
 	StartedAt      time.Time
 	FinishedAt     time.Time
+	PR             PRStatus // the PR on GitHub as last checked; one row per PR, shared by its reviews
 }
 
 // Reran says whether the review is a re-review worth numbering: it ran (or will), it isn't a dry run, and it isn't
@@ -157,6 +158,9 @@ CREATE TABLE IF NOT EXISTS runs (
   duration_ms INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0, checked TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS ignored_prs (repo TEXT NOT NULL, number INTEGER NOT NULL, PRIMARY KEY (repo, number));
+CREATE TABLE IF NOT EXISTS prs (
+  repo TEXT NOT NULL, number INTEGER NOT NULL, state TEXT NOT NULL DEFAULT '', by TEXT NOT NULL DEFAULT '',
+  changed_at TEXT NOT NULL DEFAULT '', checked_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (repo, number));
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`
 
 func Open(path string) (*Store, error) {
@@ -267,17 +271,22 @@ func (s *Store) CSRFToken() (string, error) {
 const reviewCols = `id, repo, number, url, title, author, head_sha, status, stage, tier, models, additions, deletions,
   files, source, dry_run, deep, summary, about, approval, approval_reason, labels, decision, error, reasons, cost_usd, created_at, started_at, finished_at,
   (SELECT count(*) FROM reviews p WHERE p.repo = reviews.repo AND p.number = reviews.number AND p.id < reviews.id
-    AND p.tier <> '' AND p.dry_run = 0) + 1`
+    AND p.tier <> '' AND p.dry_run = 0) + 1,
+  coalesce((SELECT state || char(31) || by || char(31) || changed_at || char(31) || checked_at FROM prs
+    WHERE prs.repo = reviews.repo AND prs.number = reviews.number), '')`
 
 func scanReview(row interface{ Scan(...any) error }) (*Review, error) {
 	var r Review
 	var dry, deep int
-	var created, started, finished, labels string
+	var created, started, finished, labels, pr string
 	err := row.Scan(&r.ID, &r.Repo, &r.Number, &r.URL, &r.Title, &r.Author, &r.HeadSHA, &r.Status, &r.Stage, &r.Tier,
 		&r.Models, &r.Additions, &r.Deletions, &r.Files, &r.Source, &dry, &deep, &r.Summary, &r.About, &r.Approval, &r.ApprovalReason, &labels, &r.Decision, &r.Error,
-		&r.Reasons, &r.CostUSD, &created, &started, &finished, &r.Iteration)
+		&r.Reasons, &r.CostUSD, &created, &started, &finished, &r.Iteration, &pr)
 	if err != nil {
 		return nil, err
+	}
+	if f := strings.Split(pr, "\x1f"); len(f) == 4 {
+		r.PR = PRStatus{State: f[0], By: f[1], ChangedAt: parseTime(f[2]), CheckedAt: parseTime(f[3])}
 	}
 	r.DryRun, r.Deep, r.Labels = dry == 1, deep == 1, strings.Fields(labels)
 	r.CreatedAt, r.StartedAt, r.FinishedAt = parseTime(created), parseTime(started), parseTime(finished)
@@ -365,8 +374,9 @@ func (s *Store) ResetRunning() error {
 
 func (s *Store) Recent(n int) ([]Review, error) { return s.queryReviews(`ORDER BY id DESC LIMIT ?`, n) }
 
-// HistoryFilter narrows the review history; an empty field matches everything. Status "active" means queued or running.
-type HistoryFilter struct{ Repo, Author, Status string }
+// HistoryFilter narrows the review history; an empty field matches everything. Status "active" means queued or running;
+// PR is the PR's state on GitHub (open, draft, merged or closed).
+type HistoryFilter struct{ Repo, Author, Status, PR string }
 
 // History returns one page of reviews, newest first, and how many match in all.
 func (s *Store) History(f HistoryFilter, limit, offset int) ([]Review, int, error) {
@@ -383,6 +393,10 @@ func (s *Store) History(f HistoryFilter, limit, offset int) ([]Review, int, erro
 		where, args = where+" AND status IN (?, ?)", append(args, Queued, Running)
 	default:
 		where, args = where+" AND status = ?", append(args, f.Status)
+	}
+	if f.PR != "" {
+		where, args = where+" AND coalesce((SELECT state FROM prs WHERE prs.repo = reviews.repo AND prs.number = reviews.number), '') = ?",
+			append(args, f.PR)
 	}
 	var total int
 	if err := s.db.QueryRow(`SELECT count(*) FROM reviews `+where, args...).Scan(&total); err != nil {
@@ -484,6 +498,106 @@ func (s *Store) Supersede(repo string, number int, keep int64) error {
 	  WHERE repo = ? AND number = ? AND status = ? AND id < ?`,
 		Done, fmt.Sprintf("superseded by review %d", keep), now(), repo, number, AwaitingYou, keep)
 	return err
+}
+
+// ── PRs ──────────────────────────────────────────────────────────────────────
+
+// PRStatus is a PR's state on GitHub as last checked.
+type PRStatus struct {
+	State     string    // PROpen, PRDraft, PRMerged or PRClosed ("" = not checked yet)
+	By        string    // who merged it
+	ChangedAt time.Time // when it was merged or closed
+	CheckedAt time.Time
+}
+
+const (
+	PROpen   = "open"
+	PRDraft  = "draft"
+	PRMerged = "merged"
+	PRClosed = "closed"
+)
+
+// Over says whether the PR is merged or closed, so nothing on it waits for you any more.
+func (p PRStatus) Over() bool { return p.State == PRMerged || p.State == PRClosed }
+
+// SetPRStatus records what GitHub says about a PR now.
+func (s *Store) SetPRStatus(repo string, number int, p PRStatus) error {
+	changed := ""
+	if !p.ChangedAt.IsZero() {
+		changed = p.ChangedAt.UTC().Format(time.RFC3339)
+	}
+	_, err := s.db.Exec(`INSERT INTO prs (repo, number, state, by, changed_at, checked_at) VALUES (?, ?, ?, ?, ?, ?)
+	  ON CONFLICT (repo, number) DO UPDATE SET state = excluded.state, by = excluded.by, changed_at = excluded.changed_at,
+	  checked_at = excluded.checked_at`, repo, number, p.State, p.By, changed, now())
+	return err
+}
+
+// TouchPR notes that a PR was asked about without an answer (it was deleted, or access to it lost), so it is asked
+// again at the usual interval rather than on every check.
+func (s *Store) TouchPR(repo string, number int) error {
+	_, err := s.db.Exec(`INSERT INTO prs (repo, number, checked_at) VALUES (?, ?, ?)
+	  ON CONFLICT (repo, number) DO UPDATE SET checked_at = excluded.checked_at`, repo, number, now())
+	return err
+}
+
+// PRKey names a PR.
+type PRKey struct {
+	Repo   string
+	Number int
+}
+
+// PRsToCheck returns the PRs whose state is worth asking GitHub for again, most urgent first, at most limit: those
+// with a review waiting for you, last checked before waiting; then those reviewed since recent, last checked before
+// other. A merged or closed PR is never asked again: if it is reopened and you're asked again, the poll finds it.
+func (s *Store) PRsToCheck(waiting, other, recent time.Time, limit int) ([]PRKey, error) {
+	ts := func(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+	rows, err := s.db.Query(`SELECT r.repo, r.number FROM reviews r
+	  LEFT JOIN prs p ON p.repo = r.repo AND p.number = r.number
+	  WHERE coalesce(p.state, '') NOT IN (?, ?)
+	  GROUP BY r.repo, r.number
+	  HAVING max(r.status = ? AND coalesce(p.checked_at, '') < ?) = 1
+	      OR (max(r.created_at) >= ? AND coalesce(max(p.checked_at), '') < ?)
+	  ORDER BY max(r.status = ?) DESC, coalesce(max(p.checked_at), ''), max(r.id) DESC LIMIT ?`,
+		PRMerged, PRClosed, AwaitingYou, ts(waiting), ts(recent), ts(other), AwaitingYou, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PRKey
+	for rows.Next() {
+		var k PRKey
+		if err := rows.Scan(&k.Repo, &k.Number); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// What a review waiting for you says once its PR is merged or closed first.
+const (
+	MergedFirst = "merged before you decided"
+	ClosedFirst = "closed before you decided"
+)
+
+// CloseOut moves a PR's reviews out of "Needs you" once the PR is merged or closed (at closed): there is nothing left
+// to decide. Only reviews started before then: one you asked for afterwards, of the merged code, still waits for you.
+// Like Supersede, their undecided findings stay pending rather than counting as ones you dropped. It returns how
+// many reviews it closed.
+func (s *Store) CloseOut(repo string, number int, decision string, closed time.Time) (int64, error) {
+	res, err := s.db.Exec(`UPDATE reviews SET status = ?, stage = '', decision = ?, finished_at = ?
+	  WHERE repo = ? AND number = ? AND status = ? AND created_at <= ?`, Done, decision, now(), repo, number, AwaitingYou,
+		closed.UTC().Format(time.RFC3339))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// ClosedOut returns the reviews CloseOut moved out of "Needs you" since the given time, newest first.
+func (s *Store) ClosedOut(since time.Time) ([]Review, error) {
+	return s.queryReviews(`WHERE status = ? AND decision IN (?, ?) AND finished_at >= ? ORDER BY finished_at DESC`,
+		Done, MergedFirst, ClosedFirst, since.UTC().Format(time.RFC3339))
 }
 
 // ── runs ─────────────────────────────────────────────────────────────────────

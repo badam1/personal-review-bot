@@ -66,15 +66,17 @@ full your Claude plan is, and the version menu.
 
 ![A review: what the PR does, a design concern, a finding with its code, and your decision](docs/screenshots/review.png)
 
-- **Reviews**: what needs you, what is running and the step it's on, failed reviews to retry, and the latest ones.
+- **Reviews**: what needs you, what is running and the step it's on, failed reviews to retry, and the latest ones. A
+  PR that is merged or closed on GitHub before you decide leaves "Needs you" on its own, and the page says so.
 - **A review**: each finding with the code around it and the verifier's certainty. Tick what to post (and edit it),
   then post, approve, or both. A posted finding that turned out wrong can be marked wrong; later reviews are told.
 - **Re-reviews** count the earlier findings ("3 fixed, 1 still open") and let you remind the author of the open ones,
   in their threads.
 - **Deep review** reviews the PR again as if it were large (Opus, the design review, no savings), for a small PR that
   deserves more.
-- **History** has every review, filtered by repo, author or status; **Stats** has spend and what became of findings,
-  by reviewer, model, PR size and repo.
+- **History** has every review, with each PR's state on GitHub (open, draft, merged or closed, with GitHub's icons),
+  filtered by repo, author, status or that state; **Stats** has spend and what became of findings, by reviewer,
+  model, PR size and repo.
 - **Settings**: see [below](#settings).
 
 From a terminal:

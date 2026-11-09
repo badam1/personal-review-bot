@@ -71,6 +71,8 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"clip":         func(s string) string { return clipText(s, 90) },
 	"plural":       plural,
 	"initial":      initial,
+	"prTitle":      prTitle,
+	"prLabel":      prLabel,
 	"labelsColumn": func() string { return labelsColumn() },
 	"commas":       func(s string) string { return strings.ReplaceAll(s, ",", ", ") },
 	"rangeMin":     func(v string) int { n, _ := strconv.Atoi(v); return min(50, n/5*5) },
@@ -97,6 +99,31 @@ type numberField struct {
 type segField struct {
 	S setting
 	C []choice
+}
+
+// prLabel names a PR's state as GitHub's own badge does.
+func prLabel(state string) string {
+	switch state {
+	case store.PRDraft:
+		return "Draft"
+	case store.PRMerged:
+		return "Merged"
+	case store.PRClosed:
+		return "Closed"
+	}
+	return "Open"
+}
+
+// prTitle says a PR's state in a sentence, for a tooltip: "Merged 2h ago by @lena".
+func prTitle(p store.PRStatus) string {
+	t := prLabel(p.State)
+	if p.Over() && !p.ChangedAt.IsZero() {
+		t += " " + ago(p.ChangedAt)
+	}
+	if p.State == store.PRMerged && p.By != "" {
+		t += " by @" + p.By
+	}
+	return t
 }
 
 // initial is the first letter of a login, for an account without a picture.
@@ -292,7 +319,8 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 		earlier, _ := s.d.Store.EarlierPosted(rev.Repo, rev.Number, rev.ID)
 		cards[i] = waitingCard{rev, waitingBadges(rev, fs, earlier)}
 	}
-	s.render(w, "index", map[string]any{"Title": title, "Waiting": cards, "Active": active, "Recent": recent,
+	closedOut, _ := s.d.Store.ClosedOut(now.Add(-24 * time.Hour))
+	s.render(w, "index", map[string]any{"Title": title, "Waiting": cards, "Active": active, "Recent": recent, "ClosedOut": closedOut,
 		"Failed": failed, "Token": s.token, "Threshold": s.cfg().Threshold, "AutoPost": s.cfg().AutoPostSeverities(),
 		"Held": s.cfg().HeldSeverities(), "Msg": r.URL.Query().Get("msg"), "SpentToday": today.CostUSD,
 		"SpentWeek": week.CostUSD})
@@ -864,11 +892,25 @@ func (s *server) requeue(rev *store.Review, deep bool) (int64, bool, error) {
 
 // moved returns the PR's current head if it is no longer the commit rev reviewed, or "" if it is (or GitHub can't
 // be asked; it will refuse a stale review itself).
-// It also brings the labels up to date, since a labeler may add one after the review started.
+// It also brings the labels and the PR's state up to date, since a labeler may add one after the review started,
+// and the PR may have been merged or closed meanwhile.
 func (s *server) moved(rev *store.Review) string {
 	pr, err := s.fetch(rev.Repo, rev.Number)
 	if err != nil {
 		return ""
+	}
+	if pr.State != "" {
+		st := pipeline.PRStatus(pr)
+		_ = s.d.Store.SetPRStatus(rev.Repo, rev.Number, st)
+		rev.PR = st
+		// Merged or closed meanwhile: nothing is left to decide, so the review leaves "Needs you" now, as it would
+		// on the bot's next check, and the page shows it as such.
+		if n, err := pipeline.CloseOutIfOver(s.d.Store, rev.Repo, rev.Number, st); err == nil && n > 0 {
+			if again, err := s.d.Store.Get(rev.ID); err == nil {
+				*rev = *again
+			}
+			return ""
+		}
 	}
 	if labels := s.cfg().Shown(pr.Labels); !slices.Equal(labels, rev.Labels) {
 		_ = s.d.Store.SetLabels(rev.ID, labels)

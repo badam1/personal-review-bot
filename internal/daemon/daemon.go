@@ -64,6 +64,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	for i := range max(cfg.MaxParallel, maxWorkers) {
 		go worker(ctx, d, upd, i)
 	}
+	go watchPRs(ctx, d)
 
 	interval := cfg.PollInterval
 	tick := time.NewTicker(interval)
@@ -89,6 +90,60 @@ func Run(ctx context.Context, cfg config.Config) error {
 			update.Restarting(st, version.String())
 			return ErrRestart
 		case <-tick.C:
+		}
+	}
+}
+
+// How the state of the PRs on the page is kept current: often for those waiting for you, since one merged or closed
+// meanwhile leaves "Needs you", and now and then for the rest of the last month's, for the lists' icons. A merged or
+// closed PR isn't asked about again.
+const (
+	prCheckEvery   = time.Minute
+	prWaitingEvery = 10 * time.Minute
+	prOtherEvery   = time.Hour
+	prRecent       = 30 * 24 * time.Hour
+	prBatch        = 10 // GitHub calls per check, so a first run over a long history spreads over a few minutes
+)
+
+// watchPRs keeps the PRs' states current until ctx ends. It runs apart from the poll, so a slow GitHub can't hold
+// up new review requests.
+func watchPRs(ctx context.Context, d pipeline.Deps) {
+	tick := time.NewTicker(prCheckEvery)
+	defer tick.Stop()
+	for {
+		checkPRs(d.Current(), d.GH.GetPR, time.Now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+// checkPRs asks GitHub for the state of the PRs due a check and records it. A PR merged or closed while a review of
+// it waited for you leaves "Needs you".
+func checkPRs(d pipeline.Deps, get func(repo string, number int) (gh.PR, error), now time.Time) {
+	due, err := d.Store.PRsToCheck(now.Add(-prWaitingEvery), now.Add(-prOtherEvery), now.Add(-prRecent), prBatch)
+	if err != nil {
+		log.Printf("PR states: %v", err)
+		return
+	}
+	for _, k := range due {
+		pr, err := get(k.Repo, k.Number)
+		if err != nil {
+			log.Printf("%s#%d: couldn't read the PR's state: %v", k.Repo, k.Number, err)
+			_ = d.Store.TouchPR(k.Repo, k.Number)
+			continue
+		}
+		st := pipeline.PRStatus(pr)
+		if err := d.Store.SetPRStatus(k.Repo, k.Number, st); err != nil {
+			log.Printf("%s#%d: %v", k.Repo, k.Number, err)
+			continue
+		}
+		if n, err := pipeline.CloseOutIfOver(d.Store, k.Repo, k.Number, st); err != nil {
+			log.Printf("%s#%d: %v", k.Repo, k.Number, err)
+		} else if n > 0 {
+			log.Printf("%s#%d: %s before you decided, so it no longer needs you", k.Repo, k.Number, st.State)
 		}
 	}
 }
@@ -133,6 +188,7 @@ func poll(d pipeline.Deps) {
 	}
 	_ = d.Store.SetMeta("last_poll", time.Now().UTC().Format(time.RFC3339))
 	for _, pr := range prs {
+		_ = d.Store.SetPRStatus(pr.Repo, pr.Number, pipeline.PRStatus(pr)) // open or draft: the search finds only those
 		if (pr.Draft && d.Cfg.SkipDrafts) || d.Store.IsIgnored(pr.Repo, pr.Number) {
 			continue
 		}

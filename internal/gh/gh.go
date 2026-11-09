@@ -42,6 +42,22 @@ type PR struct {
 	RequestedAt time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time // last activity: pushed commits, comments, reviews, edits
+	State       string    // open, draft, merged or closed (store.PROpen …)
+	MergedBy    string    // who merged it
+	ClosedAt    time.Time // when it was merged or closed
+}
+
+// prState names a PR's state the way the page shows it: GitHub's REST API says "closed" for a merged PR too.
+func prState(state string, merged, draft bool) string {
+	switch {
+	case merged:
+		return "merged"
+	case state == "closed":
+		return "closed"
+	case draft:
+		return "draft"
+	}
+	return "open"
 }
 
 type File struct {
@@ -168,7 +184,8 @@ func (c *Client) RequestedFromMe(orgs []string) ([]PR, int, error) {
 		}
 		pr := PR{Repo: n.Repository.NameWithOwner, Number: n.Number, URL: n.URL, Title: n.Title,
 			Author: n.Author.Login, HeadSHA: n.HeadRefOid, Draft: n.IsDraft, Additions: n.Additions,
-			Deletions: n.Deletions, Files: n.ChangedFiles, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt}
+			Deletions: n.Deletions, Files: n.ChangedFiles, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
+			State: prState("open", false, n.IsDraft)} // the search asks for open PRs only
 		for _, ev := range n.TimelineItems.Nodes {
 			if ev.RequestedReviewer.Login == c.Login && ev.CreatedAt.After(pr.RequestedAt) {
 				pr.RequestedAt = ev.CreatedAt
@@ -312,13 +329,20 @@ func (c *Client) GetPR(repo string, number int) (PR, error) {
 		Base struct {
 			Ref string `json:"ref"`
 		} `json:"base"`
+		State    string                 `json:"state"`
+		Merged   bool                   `json:"merged"`
+		MergedBy struct{ Login string } `json:"merged_by"`
+		ClosedAt *time.Time             `json:"closed_at"`
 	}
 	if err := c.rest.Get(fmt.Sprintf("repos/%s/pulls/%d", repo, number), &p); err != nil {
 		return PR{}, err
 	}
 	pr := PR{Repo: repo, Number: number, URL: p.HTMLURL, Title: p.Title, Body: p.Body, Author: p.User.Login,
 		HeadSHA: p.Head.SHA, HeadRef: p.Head.Ref, BaseRef: p.Base.Ref, Draft: p.Draft, Additions: p.Additions,
-		Deletions: p.Deletions, Files: p.ChangedFiles}
+		Deletions: p.Deletions, Files: p.ChangedFiles, State: prState(p.State, p.Merged, p.Draft), MergedBy: p.MergedBy.Login}
+	if p.ClosedAt != nil {
+		pr.ClosedAt = *p.ClosedAt
+	}
 	for _, l := range p.Labels {
 		pr.Labels = append(pr.Labels, l.Name)
 	}

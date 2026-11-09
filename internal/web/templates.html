@@ -381,6 +381,18 @@
   .drawer .dfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 16px 28px; border-top: 1px solid var(--s0); }
   .drawer .dfoot .saved-as { flex: 1 1 160px; min-width: 0; color: var(--sub); font-size: 12px; }
 
+  /* A PR's state on GitHub, coloured as GitHub does: open green, draft grey, merged purple, closed red */
+  .prstate { display: inline-flex; flex: none; vertical-align: -3px; } .prstate .pri { width: 16px; height: 16px; }
+  .prstate.open { color: var(--green); } .prstate.draft { color: var(--dim); } .prstate.merged { color: var(--mauve); } .prstate.closed { color: var(--red); }
+  .prtitle { display: flex; align-items: flex-start; gap: 6px; } .prtitle .prstate { margin-top: 3px; }
+  .prpill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px 2px 8px; border-radius: 999px; font-size: 13px;
+            font-weight: 650; color: var(--crust); } .prpill .pri { width: 14px; height: 14px; }
+  .prpill.open { background: var(--green); } .prpill.draft { background: var(--s1); color: var(--text); }
+  .prpill.merged { background: var(--mauve); } .prpill.closed { background: var(--red); }
+  .closedout { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; border-radius: 10px; border: 1px dashed var(--s1); font-size: 14px; }
+  .closedout ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .closedout li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+
   /* The footer */
   .foot { border-top: 1px solid var(--s0); background: var(--mantle); }
   .foot .inner { max-width: 1120px; margin: 0 auto; padding: 24px 32px 32px; display: flex; flex-wrap: wrap; align-items: center;
@@ -409,6 +421,13 @@
 {{define "i-lock"}}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4"></path></svg>{{end}}
 {{define "i-x"}}<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>{{end}}
 {{define "i-tick"}}<svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"></path></svg>{{end}}
+{{define "i-pr-open"}}<svg class="pri" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.5"></circle><circle cx="6" cy="18.5" r="2.5"></circle><circle cx="18" cy="18.5" r="2.5"></circle><path d="M6 8v8M18 16V9a3 3 0 0 0-3-3h-4M13.5 3.5 11 6l2.5 2.5"></path></svg>{{end}}
+{{define "i-pr-draft"}}<svg class="pri" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.5"></circle><circle cx="6" cy="18.5" r="2.5"></circle><circle cx="18" cy="18.5" r="2.5"></circle><path d="M6 8v8M18 5.5v1M18 10v1.5"></path></svg>{{end}}
+{{define "i-pr-merged"}}<svg class="pri" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.5"></circle><circle cx="6" cy="18.5" r="2.5"></circle><circle cx="18" cy="13" r="2.5"></circle><path d="M6 8v8M6 8a7 7 0 0 0 7 5h2.5"></path></svg>{{end}}
+{{define "i-pr-closed"}}<svg class="pri" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.5"></circle><circle cx="6" cy="18.5" r="2.5"></circle><circle cx="18" cy="18.5" r="2.5"></circle><path d="M6 8v8M18 11v5M15.5 3.5l5 5M20.5 3.5l-5 5"></path></svg>{{end}}
+{{define "pr-icon-svg"}}{{if eq . "merged"}}{{template "i-pr-merged"}}{{else if eq . "closed"}}{{template "i-pr-closed"}}{{else if eq . "draft"}}{{template "i-pr-draft"}}{{else}}{{template "i-pr-open"}}{{end}}{{end}}
+{{define "pr-icon"}}{{with .State}}<span class="prstate {{.}}" title="{{prTitle $}}" role="img" aria-label="{{prTitle $}}">{{template "pr-icon-svg" .}}</span>{{end}}{{end}}
+{{define "pr-pill"}}{{with .State}}<span class="prpill {{.}}" title="{{prTitle $}}">{{template "pr-icon-svg" .}}{{prLabel .}}</span>{{end}}{{end}}
 {{define "gh-pr"}}<a class="btn out" href="{{.}}" target="_blank" rel="noopener">{{template "i-github"}}Open on GitHub{{template "i-ext"}}</a>{{end}}
 {{define "gh-pr-small"}}<a class="btn small out" href="{{.}}" target="_blank" rel="noopener">{{template "i-github"}}Open on GitHub{{template "i-ext"}}</a>{{end}}
 {{define "gh-comment"}}<a class="btn tiny out" href="{{.}}" target="_blank" rel="noopener">{{template "i-comment"}}View comment{{template "i-ext"}}</a>{{end}}
@@ -495,7 +514,7 @@
   <thead><tr><th scope="col">When</th><th scope="col">PR</th><th scope="col">Size</th><th scope="col">{{labelsColumn}}</th><th scope="col" class="n">Cost</th><th scope="col">Outcome</th></tr></thead>
   <tbody>{{range .}}{{$o := outcome .}}<tr>
     <td class="when">{{ago .CreatedAt}}</td>
-    <td><div class="prcell"><a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
+    <td><div class="prcell"><span class="prtitle">{{template "pr-icon" .PR}}<a class="ttl" href="/r/{{.ID}}">{{.Title}}</a></span>
       <span class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
         · @{{.Author}}{{with iteration .}} · {{.}}{{end}} ·
         <a class="glink" href="{{.URL}}" target="_blank" rel="noopener">{{template "i-github"}}GitHub{{template "i-ext"}}</a></span></div></td>
@@ -544,6 +563,9 @@
       </div>
       <div class="side">{{template "gh-pr" .URL}}<a class="btn primary" href="/r/{{.ID}}">Open review</a></div>
     </article>{{else}}<div class="empty">Nothing waiting for you.</div>{{end}}
+    {{with .ClosedOut}}<div class="closedout"><p class="sub">No longer waiting for you: merged or closed on GitHub before you decided.</p>
+      <ul>{{range .}}<li>{{template "pr-icon" .PR}}<a href="/r/{{.ID}}">{{.Title}}</a>
+        <span class="sub"><span class="mono">{{repoName .Repo}}#{{.Number}}</span> · {{prTitle .PR}}</span></li>{{end}}</ul></div>{{end}}
   </section>
 
   <div data-running-all>{{if .Active}}<section class="sect" id="running" aria-labelledby="running-h">
@@ -592,7 +614,7 @@
     title="Every review of this PR">{{.R.Repo}}#{{.R.Number}}</a> <span aria-hidden="true">/</span> <span aria-current="page">{{.R.CreatedAt.Local.Format "Jan 2 15:04"}}</span></nav>
   <div class="prhead">
     <div class="titlerow"><h1>{{.R.Title}}</h1>{{with .R.URL}}{{template "gh-pr" .}}{{end}}</div>
-    <div class="meta">{{$o := outcome .R}}<span class="badge {{$o.Kind}}">{{$o.Text}}</span>
+    <div class="meta">{{template "pr-pill" .R.PR}}{{$o := outcome .R}}<span class="badge {{$o.Kind}}">{{$o.Text}}</span>
       <span>opened by <b>@{{.R.Author}}</b></span>
       <span><span class="add">+{{.R.Additions}}</span> <span class="del">−{{.R.Deletions}}</span> in {{.R.Files}} files</span>
       {{with .R.Tier}}<span class="size {{sizeKind .}}">{{.}}</span>{{end}}{{template "labels" .R.Labels}}
@@ -849,7 +871,8 @@
       <select name="repo" aria-label="Repo"><option value="">all repos</option>{{range .Repos}}<option value="{{.}}"{{if eq . $.F.Repo}} selected{{end}}>{{repoName .}}</option>{{end}}</select>
       <select name="author" aria-label="Author"><option value="">all authors</option>{{range .Authors}}<option value="{{.}}"{{if eq . $.F.Author}} selected{{end}}>@{{.}}</option>{{end}}</select>
       <select name="status" aria-label="Status"><option value="">any status</option>{{range .Statuses}}<option value="{{index . 0}}"{{if eq (index . 0) $.F.Status}} selected{{end}}>{{index . 1}}</option>{{end}}</select>
-      <button class="btn">Filter</button>{{if or .F.Repo .F.Author .F.Status}}<a href="/history">clear</a>{{end}}
+      <select name="pr" aria-label="PR on GitHub"><option value="">any PR</option>{{range .PRStates}}<option value="{{.}}"{{if eq . $.F.PR}} selected{{end}}>{{prLabel .}}</option>{{end}}</select>
+      <button class="btn">Filter</button>{{if or .F.Repo .F.Author .F.Status .F.PR}}<a href="/history">clear</a>{{end}}
     </form></div>
   <section class="sect" aria-label="Reviews">
     {{if .Reviews}}{{template "review-table" .Reviews}}{{else}}<div class="empty">No reviews match.</div>{{end}}
@@ -873,7 +896,7 @@
     <nav class="crumbs" aria-label="Breadcrumb">{{template "crumb-root" .Nav}} <span class="mono" aria-current="page">{{.Latest.Repo}}#{{.Latest.Number}}</span></nav>
     <div class="prhead">
       <div class="titlerow"><h1>{{.Latest.Title}}</h1>{{with .Latest.URL}}{{template "gh-pr" .}}{{end}}</div>
-      <div class="meta"><span>by <b>@{{.Latest.Author}}</b></span><span>{{plural (len .Entries) "review" "reviews"}}</span><span>{{money .Cost}}</span></div>
+      <div class="meta">{{template "pr-pill" .Latest.PR}}<span>by <b>@{{.Latest.Author}}</b></span><span>{{plural (len .Entries) "review" "reviews"}}</span><span>{{money .Cost}}</span></div>
     </div>
   </div>
   {{if .Ignored}}<div class="callout warn">You ignore this PR, so the bot skips it.

@@ -233,6 +233,7 @@ func wrongForm(f findingView, token string) wrongData { return wrongData{f, toke
 
 type historyPage struct {
 	F                   store.HistoryFilter
+	PRStates            []string // the PR filter's choices
 	Reviews, Ignored    []store.Review
 	Repos, Authors      []string
 	Statuses            [][2]string
@@ -244,7 +245,8 @@ const historyPerPage = 50
 
 func (s *server) history(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	p := historyPage{F: store.HistoryFilter{Repo: q.Get("repo"), Author: q.Get("author"), Status: q.Get("status")}, Token: s.token,
+	p := historyPage{F: store.HistoryFilter{Repo: q.Get("repo"), Author: q.Get("author"), Status: q.Get("status"), PR: q.Get("pr")},
+		PRStates: []string{store.PROpen, store.PRDraft, store.PRMerged, store.PRClosed}, Token: s.token,
 		Statuses: [][2]string{{store.AwaitingYou, "🙋 needs you"}, {store.Done, "✅ done"}, {store.Failed, "⚠️ failed"},
 			{store.Ignored, "💤 skipped"}, {"active", "🔄 queued or running"}}}
 	p.Page, _ = strconv.Atoi(q.Get("page"))
@@ -263,7 +265,7 @@ func (s *server) history(w http.ResponseWriter, r *http.Request) {
 	p.Pages = max(1, (p.Total+historyPerPage-1)/historyPerPage)
 	link := func(n int) string {
 		v := url.Values{}
-		for k, val := range map[string]string{"repo": p.F.Repo, "author": p.F.Author, "status": p.F.Status} {
+		for k, val := range map[string]string{"repo": p.F.Repo, "author": p.F.Author, "status": p.F.Status, "pr": p.F.PR} {
 			if val != "" {
 				v.Set(k, val)
 			}
