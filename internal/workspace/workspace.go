@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Workspace struct {
@@ -101,13 +103,30 @@ func cloneURL(protocol, repo string) string {
 var credentials = []string{"-c", "credential.https://github.com.helper=", "-c",
 	"credential.https://github.com.helper=!gh auth git-credential"}
 
+// A connection that goes quiet when the laptop sleeps or changes networks still looks open, and git would wait on it
+// for good, holding the repository's lock and with it every review of that repository. So over HTTPS git gives up
+// below 1 KB/s for a minute, and over SSH the keepalives drop a connection after a minute without an answer.
+var stalls = []string{"-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=60"}
+
+const sshCommand = "ssh -o BatchMode=yes -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+
+// gitTimeout is the backstop for whatever the above misses. A PR's fetch takes seconds, and a first clone (blobs come
+// on demand) a few minutes at most.
+const gitTimeout = 15 * time.Minute
+
 func git(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", append(credentials[:len(credentials):len(credentials)], args...)...)
+	ctx, cancel := context.WithTimeoutCause(ctx, gitTimeout, fmt.Errorf("no answer in %v", gitTimeout))
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", slices.Concat(credentials, stalls, args)...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND="+sshCommand)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	cmd.WaitDelay = 2 * time.Second // a killed git can leave its ssh behind, still holding stderr
 	if err := cmd.Run(); err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			err = cause
+		}
 		return fmt.Errorf("git %s: %v: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
