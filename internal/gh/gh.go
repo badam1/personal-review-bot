@@ -77,19 +77,22 @@ type Comment struct {
 }
 
 func New() (*Client, error) {
-	rest, err := api.DefaultRESTClient()
+	t := transport()
+	rest, err := api.NewRESTClient(api.ClientOptions{Transport: t, Timeout: callTimeout})
 	if err != nil {
 		return nil, fmt.Errorf("GitHub login (run `gh auth login`): %w", err)
 	}
-	diff, err := api.NewRESTClient(api.ClientOptions{Headers: map[string]string{"Accept": "application/vnd.github.v3.diff"}})
+	diff, err := api.NewRESTClient(api.ClientOptions{Transport: t, Timeout: callTimeout,
+		Headers: map[string]string{"Accept": "application/vnd.github.v3.diff"}})
 	if err != nil {
 		return nil, err
 	}
-	gql, err := api.DefaultGraphQLClient()
+	gql, err := api.NewGraphQLClient(api.ClientOptions{Transport: t, Timeout: callTimeout})
 	if err != nil {
 		return nil, err
 	}
-	dl, err := api.NewHTTPClient(api.ClientOptions{Headers: map[string]string{"Accept": "application/octet-stream"}})
+	// No overall limit on a release download, which can be slow; a dead connection still fails on the transport's.
+	dl, err := api.NewHTTPClient(api.ClientOptions{Transport: t, Headers: map[string]string{"Accept": "application/octet-stream"}})
 	if err != nil {
 		return nil, err
 	}

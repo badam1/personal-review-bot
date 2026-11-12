@@ -66,15 +66,17 @@ func Run(ctx context.Context, cfg config.Config) error {
 	}
 	go watchPRs(ctx, d)
 
-	interval := cfg.PollInterval
-	tick := time.NewTicker(interval)
+	tick := time.NewTicker(pollCheckEvery)
 	defer tick.Stop()
+	var next time.Time
 	for {
 		cur := d.Current()
-		poll(cur)
-		if cur.Cfg.PollInterval != interval { // changed on the Settings page
-			interval = cur.Cfg.PollInterval
-			tick.Reset(interval)
+		// Round(0) drops the monotonic reading, so the times compare by the wall clock, which runs on while asleep.
+		if now := time.Now().Round(0); pollDue(now, next, cur.Cfg.PollInterval) {
+			next = now.Add(cur.Cfg.PollInterval)
+			if !poll(cur) {
+				next = now.Add(min(pollRetry, cur.Cfg.PollInterval))
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -92,6 +94,20 @@ func Run(ctx context.Context, cfg config.Config) error {
 		case <-tick.C:
 		}
 	}
+}
+
+// When to poll for review requests. Go's timers on a Mac don't count the time it sleeps, so a ticker of the poll
+// interval came up to an interval late after a wake, the bar saying "Not watching" meanwhile. Instead the loop looks
+// often and polls once the wall clock says one is due. A poll that failed is tried again sooner.
+const (
+	pollCheckEvery = 10 * time.Second
+	pollRetry      = 30 * time.Second
+)
+
+// pollDue says whether a poll planned for next is due at now: once its time has come, and at once when it is further
+// off than a whole interval (the clock was set back, or the interval shortened on the Settings page).
+func pollDue(now, next time.Time, interval time.Duration) bool {
+	return !now.Before(next) || next.Sub(now) > interval
 }
 
 // How the state of the PRs on the page is kept current: often for those waiting for you, since one merged or closed
@@ -180,11 +196,12 @@ func seed(d pipeline.Deps) error {
 	return d.Store.SetMeta("seeded", time.Now().UTC().Format(time.RFC3339))
 }
 
-func poll(d pipeline.Deps) {
+// poll queues the PRs that need a review, and says whether GitHub answered.
+func poll(d pipeline.Deps) bool {
 	prs, err := requested(d)
 	if err != nil {
 		log.Printf("poll: %v", err)
-		return
+		return false
 	}
 	_ = d.Store.SetMeta("last_poll", time.Now().UTC().Format(time.RFC3339))
 	for _, pr := range prs {
@@ -218,6 +235,7 @@ func poll(d pipeline.Deps) {
 		}
 		log.Printf("%s#%d: queued (%s, by @%s)", pr.Repo, pr.Number, source, pr.Author)
 	}
+	return true
 }
 
 // idle reports whether a PR has had no activity (commits, comments, reviews, edits) for longer than maxAge (0 = no

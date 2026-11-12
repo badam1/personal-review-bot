@@ -37,6 +37,28 @@ func TestIdle(t *testing.T) {
 	}
 }
 
+// A poll is due once its time has come by the wall clock, which runs on while the Mac sleeps; one planned further off
+// than an interval (the clock set back, the interval shortened) is due at once.
+func TestPollDue(t *testing.T) {
+	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		next time.Time
+		want bool
+	}{
+		{"the first poll", time.Time{}, true},
+		{"not yet", now.Add(time.Minute), false},
+		{"its time", now, true},
+		{"woke long after it", now.Add(-time.Hour), true},
+		{"further off than an interval", now.Add(5 * time.Minute), true},
+	}
+	for _, c := range cases {
+		if got := pollDue(now, c.next, 2*time.Minute); got != c.want {
+			t.Errorf("%s: due %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 func TestReviewReason(t *testing.T) {
 	now := time.Now()
 	reviewed := func(status, sha string, ago time.Duration) *store.Review {
