@@ -120,11 +120,18 @@ func review(ctx context.Context, cfg config.Config, args []string) error {
 	fs := flag.NewFlagSet("review", flag.ExitOnError)
 	dry := fs.Bool("dry-run", false, "post nothing, open nothing")
 	deep := fs.Bool("deep", false, "review it as if it were large: Opus, the design review, no usage savings")
+	ephemeral := fs.Bool("ephemeral", false, "keep no state: review in memory and leave nothing on disk (for CI / one-shot runs)")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: personal-review-bot review [--dry-run] [--deep] <PR-URL>")
+		return fmt.Errorf("usage: personal-review-bot review [--dry-run] [--deep] [--ephemeral] <PR-URL>")
 	}
-	st, err := store.Open(cfg.DBPath())
+	var st *store.Store
+	var err error
+	if *ephemeral {
+		st, err = store.OpenMemory() // one-shot: hold the review while it runs, leave nothing behind
+	} else {
+		st, err = store.Open(cfg.DBPath())
+	}
 	if err != nil {
 		return err
 	}
@@ -160,7 +167,9 @@ func review(ctx context.Context, cfg config.Config, args []string) error {
 		fmt.Printf("\n[%s] %d%% %s · %s:%d · %s (%s, %s)\n  %s\n", f.Status, f.Confidence, f.Verdict, f.Path, f.Line,
 			f.Title, f.Agent, f.Severity, f.Comment)
 	}
-	fmt.Printf("\nreview page: %s/r/%d (needs the daemon running)\n", cfg.WebURL(), id)
+	if !*ephemeral {
+		fmt.Printf("\nreview page: %s/r/%d (needs the daemon running)\n", cfg.WebURL(), id)
+	}
 	return nil
 }
 
