@@ -168,7 +168,20 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
+	return openDSN("file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
+}
+
+// OpenMemory opens an ephemeral, in-memory store for a one-shot review (a GitHub Action or other CI run): it holds the
+// review while it runs and is gone when the process exits, so nothing persists and no file or volume is needed. The
+// single open connection keeps the in-memory database alive for the life of the process.
+func OpenMemory() (*Store, error) {
+	return openDSN("file::memory:?_pragma=busy_timeout(5000)")
+}
+
+// openDSN opens the SQLite database at dsn, creates the schema, applies the migrations, and returns the store. Open and
+// OpenMemory differ only in the dsn — a file on disk, or in memory.
+func openDSN(dsn string) (*Store, error) {
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
