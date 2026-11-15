@@ -1,5 +1,13 @@
 package config
 
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+)
+
 // Channel is one slice of the bot's work: the repos it owns, reviewed with one Claude subscription, under one set of
 // review settings, and surfaced one way. See docs/portable-channels-scope.md for the design.
 //
@@ -66,4 +74,76 @@ func DefaultChannel(c Config) Channel {
 		Review: ReviewSettings{Threshold: c.Threshold, AutoPost: c.AutoPost},
 		// Repos, Claude, GitHub and Surface are left zero: owns every repo in Orgs, the ambient logins, the web UI.
 	}
+}
+
+// channelsSubdir is where per-channel config files live under the config directory. Each "<name>.env" there is one
+// channel, in the same KEY=value format as config.env, and the file name (without .env) is the channel's name.
+const channelsSubdir = "channels"
+
+// LoadChannels reads the channels for config directory dir, given the global config c (what config.env parsed to). Each
+// <name>.env under dir/channels is one channel; a key it omits is inherited from c, so a channel states only what
+// differs. When there is no channels directory, or it holds no .env files, the bot runs the single default channel —
+// today's behavior. Channels come back sorted by name. Unlike the global config, a channel file's values are read from
+// the file alone (no environment override): the environment configures the process, the files configure the channels.
+func LoadChannels(dir string, c Config) ([]Channel, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, channelsSubdir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Channel{DefaultChannel(c)}, nil
+		}
+		return nil, err
+	}
+	var chs []Channel
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".env") {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".env")
+		chs = append(chs, channelFrom(name, readEnvFile(filepath.Join(dir, channelsSubdir, e.Name())), c))
+	}
+	if len(chs) == 0 {
+		return []Channel{DefaultChannel(c)}, nil
+	}
+	slices.SortFunc(chs, func(a, b Channel) int { return strings.Compare(a.Name, b.Name) })
+	return chs, nil
+}
+
+// channelFrom builds one channel from a parsed <name>.env file, inheriting from the global config c anything the file
+// omits. Values are read straight from the file map m (not through settings.lookup), so a process-wide env var can't
+// leak into a channel. Auth and surface default to their zero values (the ambient logins, the web UI).
+func channelFrom(name string, m settings, c Config) Channel {
+	ch := Channel{
+		Name:    name,
+		Orgs:    c.Orgs,
+		Repos:   RepoMatch{Whitelist: list(m["REPOS_ALLOW"]), Blacklist: list(m["REPOS_DENY"])},
+		Claude:  ClaudeAuth{ConfigDir: m["CLAUDE_CONFIG_DIR"], OAuthTokenEnv: m["CLAUDE_OAUTH_TOKEN_ENV"], APIKeyEnv: m["ANTHROPIC_API_KEY_ENV"]},
+		GitHub:  GitHubAuth{TokenEnv: m["GITHUB_TOKEN_ENV"], App: m["GITHUB_APP"]},
+		Review:  ReviewSettings{Threshold: c.Threshold, AutoPost: c.AutoPost},
+		Surface: Surface{Notify: m["NOTIFY"]},
+	}
+	if v, ok := m["ORG"]; ok {
+		ch.Orgs = SplitOrgs(v)
+	}
+	if v, ok := m["THRESHOLD"]; ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			ch.Review.Threshold = n
+		}
+	}
+	if v, ok := m["AUTO_POST"]; ok {
+		ch.Review.AutoPost = severitiesOf(list(v))
+	}
+	return ch
+}
+
+// severitiesOf keeps only the known severities from a list, de-duplicated, so a stray or misspelt word in a channel's
+// AUTO_POST can only tighten the rule, never widen it — the same guarantee autoPost gives the global config.
+func severitiesOf(xs []string) []string {
+	var out []string
+	for _, x := range xs {
+		x = strings.ToLower(strings.TrimSpace(x))
+		if slices.Contains(severities, x) && !slices.Contains(out, x) {
+			out = append(out, x)
+		}
+	}
+	return out
 }
