@@ -1,8 +1,10 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/datarepo"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/store"
 	"github.com/badam1/personal-review-bot/internal/triage"
@@ -397,4 +400,87 @@ func TestRouteChannel(t *testing.T) {
 	if _, ok := (Deps{Router: noFallback}).RouteChannel("other/repo"); ok {
 		t.Error("other/repo should be unowned when no channel claims it")
 	}
+}
+
+// dataRepo makes a throwaway git-backed record store for the tests below, returning it with its work-tree path.
+func dataRepo(t *testing.T) (*datarepo.Store, string) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"config", "user.name", "t"}, {"config", "user.email", "t@e.x"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	dr, err := datarepo.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dr, dir
+}
+
+// skipReview is the idempotency gate: an automatic one-shot skips a head the data store already has, a human review
+// never does, and with no data store nothing is skipped.
+func TestSkipReview(t *testing.T) {
+	dr, _ := dataRepo(t)
+	if err := dr.Record(datarepo.Record{Repo: "o/r", Number: 1, SHA: "aaa", Decision: "approve"}); err != nil {
+		t.Fatal(err)
+	}
+	d := Deps{DataRepo: dr}
+	if !d.skipReview(&store.Review{Repo: "o/r", Number: 1, Source: "auto"}, "aaa") {
+		t.Error("auto re-run of a recorded head should skip")
+	}
+	if d.skipReview(&store.Review{Repo: "o/r", Number: 1, Source: "manual"}, "aaa") {
+		t.Error("a human review should never be skipped")
+	}
+	if d.skipReview(&store.Review{Repo: "o/r", Number: 1, Source: "auto"}, "bbb") {
+		t.Error("a new head is a new review, not a skip")
+	}
+	if (Deps{}).skipReview(&store.Review{Repo: "o/r", Number: 1, Source: "auto"}, "aaa") {
+		t.Error("with no data store, nothing is skipped")
+	}
+}
+
+// recordOutcome commits a durable record (labels and numbers only) when a data store is configured, skips a dry run,
+// and is a safe no-op without one.
+func TestRecordOutcome(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dr, repoDir := dataRepo(t)
+	d := Deps{Store: st, DataRepo: dr, Log: t.Logf}
+
+	id, _ := st.Insert(&store.Review{Repo: "o/r", Number: 7, HeadSHA: "abc123", Status: store.Running, Channel: "company"})
+	_ = st.AddCost(id, 0.25)
+	f := store.Finding{ReviewID: id, Agent: "security", Severity: "high", Title: "t", Comment: "c", Status: store.Candidate}
+	f.ID, _ = st.AddFinding(&f)
+	f.Status = store.AutoPosted
+	_ = st.UpdateFinding(&f)
+
+	recordOutcome(d, id, "posted 1")
+	if !dr.Reviewed("o/r", 7, "abc123") {
+		t.Fatal("a completed review should be recorded")
+	}
+	// The record carries the labels and numbers, not the finding text.
+	var rec datarepo.Record
+	if data, err := os.ReadFile(filepath.Join(repoDir, "records", "o", "r", "7", "abc123.json")); err != nil {
+		t.Fatal(err)
+	} else if err := json.Unmarshal(data, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Decision != "posted 1" || rec.CostUSD != 0.25 || rec.Channel != "company" ||
+		len(rec.Findings) != 1 || rec.Findings[0].Agent != "security" || rec.Findings[0].Status != store.AutoPosted {
+		t.Errorf("record = %+v", rec)
+	}
+
+	// A dry run posted nothing, so it records nothing — otherwise it would make a later real review skip.
+	dry, _ := st.Insert(&store.Review{Repo: "o/r", Number: 8, HeadSHA: "dry999", Status: store.Running, DryRun: true})
+	recordOutcome(d, dry, "dry run")
+	if dr.Reviewed("o/r", 8, "dry999") {
+		t.Error("a dry run should not be recorded")
+	}
+
+	// No data store: a no-op, no panic.
+	recordOutcome(Deps{Store: st, Log: t.Logf}, id, "posted 1")
 }

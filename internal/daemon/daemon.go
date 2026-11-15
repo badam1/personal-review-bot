@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/datarepo"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
@@ -40,8 +41,15 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	var dataRepo *datarepo.Store
+	if cfg.DataRepoDir != "" {
+		if dataRepo, err = datarepo.Open(cfg.DataRepoDir); err != nil {
+			return fmt.Errorf("data repo: %w", err)
+		}
+		log.Printf("recording review outcomes to %s", cfg.DataRepoDir)
+	}
 	d := pipeline.Deps{Cfg: cfg, Live: config.NewLive(cfg), Store: st, GH: client, Log: log.Printf,
-		Channels: channels, Router: router}
+		Channels: channels, Router: router, DataRepo: dataRepo}
 	auto := cfg.AutoPostSeverities()
 	if auto == "" {
 		auto = "no severity"

@@ -38,6 +38,7 @@ type Config struct {
 	StateDir      string        // SQLite database
 	CacheDir      string        // repo clones and per-review worktrees
 	ChannelSelect string        // CHANNELS: which of the configured channels this instance runs (empty = all)
+	DataRepoDir   string        // DATA_REPO: a git work tree where durable review records are committed (empty = none)
 }
 
 // Load reads the settings. The environment wins over config.env, so a one-off run can override the file.
@@ -76,6 +77,7 @@ func LoadFrom(dir string) Config {
 		StateDir:      s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
 		CacheDir:      s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),
 		ChannelSelect: s.str("CHANNELS", ""),
+		DataRepoDir:   s.str("DATA_REPO", ""),
 	}
 }
 

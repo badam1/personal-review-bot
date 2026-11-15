@@ -23,6 +23,7 @@ import (
 	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/daemon"
+	"github.com/badam1/personal-review-bot/internal/datarepo"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
@@ -103,7 +104,7 @@ func withORG(cfg config.Config, run func() error) error {
 }
 
 // newReview records a PR in the store with the given status.
-func newReview(st *store.Store, client *gh.Client, url, status string, dry, deep bool) (int64, error) {
+func newReview(st *store.Store, client *gh.Client, url, status, source string, dry, deep bool) (int64, error) {
 	repo, num, err := gh.ParseURL(url)
 	if err != nil {
 		return 0, err
@@ -113,7 +114,16 @@ func newReview(st *store.Store, client *gh.Client, url, status string, dry, deep
 		return 0, err
 	}
 	return st.Insert(&store.Review{Repo: repo, Number: num, URL: pr.URL, Title: pr.Title, Author: pr.Author,
-		HeadSHA: pr.HeadSHA, Status: status, Source: "manual", DryRun: dry, Deep: deep})
+		HeadSHA: pr.HeadSHA, Status: status, Source: source, DryRun: dry, Deep: deep})
+}
+
+// openDataRepo opens the durable record store when DATA_REPO names a git work tree, else returns nil so a run behaves
+// exactly as it did before: no records written, no idempotency gate.
+func openDataRepo(cfg config.Config) (*datarepo.Store, error) {
+	if cfg.DataRepoDir == "" {
+		return nil, nil
+	}
+	return datarepo.Open(cfg.DataRepoDir)
 }
 
 func review(ctx context.Context, cfg config.Config, args []string) error {
@@ -140,12 +150,22 @@ func review(ctx context.Context, cfg config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	id, err := newReview(st, client, fs.Arg(0), store.Running, *dry, *deep)
+	logger := log.New(os.Stderr, "", log.Ltime)
+	deps := pipeline.Deps{Cfg: cfg, Store: st, GH: client, Log: logger.Printf}
+	if deps.DataRepo, err = openDataRepo(cfg); err != nil {
+		return err
+	}
+	// An unattended one-shot (--ephemeral, as CI runs it) counts as automatic, so a re-run against the same commit is
+	// skipped once the data store has recorded it; a human review without --ephemeral stays "manual" and always runs.
+	source := "manual"
+	if *ephemeral {
+		source = "auto"
+	}
+	id, err := newReview(st, client, fs.Arg(0), store.Running, source, *dry, *deep)
 	if err != nil {
 		return err
 	}
-	logger := log.New(os.Stderr, "", log.Ltime)
-	if err := pipeline.Run(ctx, pipeline.Deps{Cfg: cfg, Store: st, GH: client, Log: logger.Printf}, id); err != nil {
+	if err := pipeline.Run(ctx, deps, id); err != nil {
 		return err
 	}
 	r, err := st.Get(id)
@@ -204,7 +224,7 @@ func queue(cfg config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	id, err := newReview(st, client, fs.Arg(0), store.Queued, false, *deep)
+	id, err := newReview(st, client, fs.Arg(0), store.Queued, "manual", false, *deep)
 	if err != nil {
 		return err
 	}

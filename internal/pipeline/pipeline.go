@@ -20,6 +20,7 @@ import (
 
 	"github.com/badam1/personal-review-bot/internal/agents"
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/datarepo"
 	"github.com/badam1/personal-review-bot/internal/diffmap"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/store"
@@ -35,6 +36,7 @@ type Deps struct {
 	Log      func(format string, args ...any)
 	Channels []config.Channel // the channels this instance runs; empty = just the default channel
 	Router   *config.Router   // routes a repo to its owning channel; nil = the default channel owns everything
+	DataRepo *datarepo.Store  // durable git-backed record of every review's outcome (nil = none; the default)
 }
 
 // PRStatus is what the store keeps of a PR's state on GitHub.
@@ -116,6 +118,14 @@ func (d Deps) RouteChannel(repo string) (name string, owned bool) {
 	return ch.Name, ok
 }
 
+// skipReview reports whether an automatic one-shot should skip because the data store already holds a record for this
+// PR at this exact head — idempotency for CI retries and duplicate webhook deliveries, which keeps a re-run from
+// posting the same review twice. An explicit human review (source "manual" / "re-request") is never skipped, and with
+// no data store configured nothing is.
+func (d Deps) skipReview(r *store.Review, sha string) bool {
+	return d.DataRepo != nil && r.Source == "auto" && d.DataRepo.Reviewed(r.Repo, r.Number, sha)
+}
+
 // Run reviews the PR behind review id. It records every outcome in the store and only returns an error for
 // failures it could not record.
 func Run(ctx context.Context, d Deps, id int64) (err error) {
@@ -162,6 +172,15 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	}
 	_ = d.Store.SetLabels(id, d.Cfg.Shown(pr.Labels))
 	_ = d.Store.SetPRStatus(r.Repo, r.Number, PRStatus(pr))
+
+	// Idempotency: a stateless one-shot (ephemeral / CI / webhook) can be re-run against the same commit — a CI retry,
+	// a duplicate webhook delivery. When the data store already holds a record for this exact head, an automatic run
+	// skips rather than review and post a second time. An explicit human review always proceeds (see skipReview).
+	if d.skipReview(r, pr.HeadSHA) {
+		d.Log("%s: already reviewed at %.7s (data store), skipping", tag, pr.HeadSHA)
+		return d.Store.Finish(id, store.Ignored, fmt.Sprintf("already reviewed at %.7s", pr.HeadSHA), "", "")
+	}
+
 	files, err := d.GH.Files(r.Repo, r.Number)
 	if err != nil {
 		return fail(fmt.Errorf("fetch files: %w", err))
@@ -452,6 +471,11 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	if followupFailed {
 		decision += ", follow-up check failed"
 	}
+
+	// The durable record, once the outcome is final: it survives the SQLite store (and gives the idempotency check
+	// above its answer on a later run). A no-op unless a data store is configured.
+	recordOutcome(d, id, decision)
+
 	if needsYou {
 		if err := d.Store.Finish(id, store.AwaitingYou, decision, summary, strings.Join(failed, "; ")); err != nil {
 			return err
@@ -464,6 +488,37 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	}
 	d.Log("%s: done: %s", tag, decision)
 	return d.Store.Finish(id, store.Done, decision, summary, strings.Join(failed, "; "))
+}
+
+// recordOutcome appends this review's durable record to the git data store when one is configured (D6): labels and
+// numbers only, one commit per review. A dry run records nothing — it posted nothing, and a record would wrongly make
+// a later real review skip as already done. A failure to record is logged, never fatal: the review already happened,
+// and the SQLite store stays the source of truth.
+func recordOutcome(d Deps, id int64, decision string) {
+	if d.DataRepo == nil {
+		return
+	}
+	r, err := d.Store.Get(id)
+	if err != nil {
+		d.Log("record: load review %d: %v", id, err)
+		return
+	}
+	if r.DryRun {
+		return
+	}
+	fs, err := d.Store.Findings(id)
+	if err != nil {
+		d.Log("%s#%d: record: load findings: %v", r.Repo, r.Number, err)
+		return
+	}
+	rec := datarepo.Record{Repo: r.Repo, Number: r.Number, SHA: r.HeadSHA, At: time.Now(), Decision: decision,
+		CostUSD: r.CostUSD, Channel: r.Channel}
+	for _, f := range fs {
+		rec.Findings = append(rec.Findings, datarepo.Finding{Agent: f.Agent, Severity: f.Severity, Status: f.Status})
+	}
+	if err := d.DataRepo.Record(rec); err != nil {
+		d.Log("%s#%d: record: %v", r.Repo, r.Number, err)
+	}
 }
 
 // byModel lists the reviewers by the model they run on, e.g. "logic, go-tests (haiku), security (sonnet)".
