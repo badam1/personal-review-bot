@@ -51,10 +51,13 @@ multi-subscription — on a laptop or server, with a single GitHub account.
 Construct the `gh` client per channel with its identity; a token channel uses its own token instead of the ambient
 login. *Optional for a single-GitHub-account user (one token covers all their orgs) — needed for the general case.*
 
-**Phase 5 — pluggable state + derive idempotency from the PR (D5).**
-Put the store behind an interface (`local file` today; `external/volume`; `none`). Derive "already reviewed this
-SHA?" and "what did my last review cover?" from the bot's own watermarked comments on the PR, so correctness no
-longer needs the store. Prepares stateless on-demand and hardens service mode.
+**Phase 5 — pluggable state (D5) + a git data store (D6).**
+Store backends: `none` (ephemeral/in-memory, done — `OpenMemory`), `local file` (today), `external DB`, and a **git
+data repo** the bot auto-commits durable outcome records to (verbatim/downstream labels, cost, decision, reviewed
+SHA — labels and numbers only, private repo, serialized pushes). The git store closes the ephemeral-analytics gap
+(a CI run commits its record) and provides **idempotency** from its "reviewed `owner/repo#N` at `sha`" records —
+which supersedes the fragile PR-derived last-SHA approach originally planned here (the bot posts as the user's own
+account, and the watermark is not always in a review's body). Operational / in-flight state stays in SQLite.
 
 **Phase 6 — on-demand mode + container (run anywhere).**
 A one-shot entrypoint: given a PR ref (a GitHub Actions event, or a CLI arg), review it with the owning channel,

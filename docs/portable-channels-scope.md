@@ -173,6 +173,32 @@ Per channel: `surface: { web: { bind, auth }, notify: { slack | webhook | … } 
 - **Honest limitation:** the Stats/metrics views are a service-mode feature. Pure on-demand reviews fine but
   won't build trend views unless pointed at a store.
 
+**D6 — A git "data store" for durable analytics (refines D5), which also gives idempotency.**
+The pluggable store gains a third backend beside `local file` and `external DB`: a **git data repo** the bot
+auto-commits to, Backlog.md-style — durable, versioned, and shareable with no database server (a team reads the
+repo; an individual clones it). The D5 split holds: operational / in-flight state (reviews running, stages, the
+queue) stays in SQLite — it churns per review and is written concurrently, so git would be noise and push races.
+Only the **durable outcome records** go to git: per review, the verbatim/edited label, the downstream signal, cost,
+decision, and the reviewed SHA — slow, append-mostly, one commit per review.
+
+Why it earns its place:
+- **It closes the ephemeral-analytics gap.** A stateless CI run reviews the PR, then commits its outcome record to
+  the data repo, so analytics accumulate in git even though the compute kept nothing — "run anywhere" and "keep the
+  dashboard" stop being a trade-off.
+- **Idempotency for free.** A durable "reviewed `owner/repo#N` at `sha`" record answers "did I already do this?"
+  without deriving it from the PR — so it **supersedes the hard part of P5.2** (reading the last-reviewed SHA back
+  off GitHub, which is fragile because the bot posts as the user's own account and the watermark is not always in a
+  review's body).
+
+Guardrails (so it stays safe):
+- **Labels and numbers only, never sensitive text or code.** The classifications are labels; cost and decision are
+  numbers. Raw finding text and code snippets stay on GitHub (the posted comments); the data repo is **private**.
+- **Serialize the commits** (a commit queue, or rebase-and-push like Backlog.md's post-commit hook) so two reviews
+  finishing together do not collide on push. One commit per review, or batched snapshots if that is too noisy.
+
+So D5's store options read: **none / local file / git data repo / external DB**, with operational state always in
+SQLite.
+
 ## Rough shape of the work (not yet planned in detail)
 
 - Load config from a git-checked-out file set; introduce the **channel** model + routing

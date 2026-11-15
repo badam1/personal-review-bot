@@ -64,20 +64,29 @@ with no behavior change unless the task says otherwise.
     user — one token already covers all their orgs.)*
   - Depends on: P0.2
 
-### P5 — Pluggable state + PR-derived idempotency (D5)
-- [ ] **P5.1 — Store behind an interface.** Implementations: `local file` (today), `external/volume`, `none`.
-  - Outcome: the store is swappable; current SQLite behavior and migrations preserved.
+### P5 — Pluggable state (D5) + git data store (D6)
+- [x] **P5.1 — Ephemeral store for one-shot runs.** `store.OpenMemory` opens the schema in memory; `local file` and
+  `external/volume` are the same SQLite at a different path, so no store *interface* was needed.
+  - Outcome: a one-shot run keeps state in memory and leaves nothing on disk; file store unchanged. ✅ committed.
   - Depends on: —
-- [ ] **P5.2 — Derive idempotency + re-review from the PR.** "Already reviewed this SHA?" and "last reviewed commit"
-  come from the bot's own watermarked comments.
-  - Outcome: a run is idempotent and can re-review incrementally without the store.
+- [ ] **P5.3 — Git data store (D6).** A store backend that auto-commits durable outcome records (verbatim/downstream
+  labels, cost, decision, reviewed SHA — labels and numbers only) to a **private** git data repo, Backlog.md-style,
+  with serialized pushes; operational state stays in SQLite.
+  - Outcome: analytics are durable, versioned, and shareable with no DB server; a CI run commits its record so
+    analytics accumulate even from ephemeral compute; the "reviewed `owner/repo#N` at `sha`" records give idempotency.
   - Depends on: P5.1
+- [ ] **P5.2 — Incremental re-review (idempotency via D6).** Know "already reviewed this SHA?" and "last reviewed
+  commit" without local state. **D6 supersedes the hard part**: take these from the git data store's records rather
+  than deriving them off the PR (fragile — the bot posts as the user's own account, and the watermark is not always in
+  a review's body). Pure CI idempotency can also be handled at deploy time (Actions `concurrency`), so this narrows to
+  *incremental* re-review (a cost optimization).
+  - Outcome: a re-review covers only what changed, with no local state.
+  - Depends on: P5.3
 
 ### P6 — On-demand mode + container  ⭐ Milestone B
-- [ ] **P6.1 — One-shot entrypoint.** Given a PR ref (CLI arg or an Actions event), review it with the owning
-  channel, post, exit; `state = none`.
-  - Outcome: a single `review <repo> <pr>` run reviews once and exits cleanly, no daemon, no volume.
-  - Depends on: P1.2, P2.1, P5.2
+- [x] **P6.1 — One-shot entrypoint.** `review --ephemeral <PR-URL>` reviews one PR in an in-memory store and exits.
+  - Outcome: a single run reviews once and exits cleanly, no daemon, no volume. ✅ committed.
+  - Depends on: P1.2, P2.1, P5.1
 - [ ] **P6.2 — Container image.** Keep the binary.
   - Outcome: an image runs the bot unattended with all creds from env; a published build.
   - Depends on: P6.1
