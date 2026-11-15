@@ -137,6 +137,38 @@ func TestRecordUnchangedIsNoop(t *testing.T) {
 	}
 }
 
+// LastReviewed returns the most recent recorded head for a PR, ignoring the one about to be reviewed — the "last
+// reviewed commit" that drives an incremental re-review with no local state.
+func TestLastReviewed(t *testing.T) {
+	dir := initRepo(t)
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const repo, num = "o/r", 3
+	if _, ok := s.LastReviewed(repo, num, ""); ok {
+		t.Error("a PR with no records has no last reviewed commit")
+	}
+	base := time.Unix(1_700_000_000, 0).UTC()
+	if err := s.Record(Record{Repo: repo, Number: num, SHA: "sha-a", At: base, Decision: "approve"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Record(Record{Repo: repo, Number: num, SHA: "sha-b", At: base.Add(time.Hour), Decision: "changes"}); err != nil {
+		t.Fatal(err)
+	}
+	if sha, ok := s.LastReviewed(repo, num, ""); !ok || sha != "sha-b" {
+		t.Errorf("LastReviewed = %q,%v, want sha-b,true (newest At)", sha, ok)
+	}
+	// Reviewing again at sha-b: its own record is ignored, so the previous distinct commit comes back.
+	if sha, ok := s.LastReviewed(repo, num, "sha-b"); !ok || sha != "sha-a" {
+		t.Errorf("LastReviewed(except sha-b) = %q,%v, want sha-a,true", sha, ok)
+	}
+	// A different PR shares nothing.
+	if _, ok := s.LastReviewed(repo, 999, ""); ok {
+		t.Error("an unrelated PR has no last reviewed commit")
+	}
+}
+
 // A repo or ref with path-ish characters can't escape the records tree.
 func TestRecordPathStaysInTree(t *testing.T) {
 	got := recordPath("../../etc/pass", 1, "../../../x")

@@ -218,6 +218,14 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	if prev, err := d.Store.PreviousComplete(r.Repo, r.Number, id); err == nil && prev != nil {
 		in.PrevSHA = prev.HeadSHA
 	}
+	// Incremental re-review without local state: when SQLite holds no earlier review (an ephemeral / one-shot run), take
+	// the last reviewed commit from the data store, so the re-review still covers only what changed since. The data store
+	// keeps no finding text, so Prior context stays empty here — this narrows to the incremental diff (P5.2 / D6).
+	if in.PrevSHA == "" && d.DataRepo != nil {
+		if prev, ok := d.DataRepo.LastReviewed(r.Repo, r.Number, pr.HeadSHA); ok {
+			in.PrevSHA = prev
+		}
+	}
 
 	// The discussion so far: intentional choices, answers to earlier comments, what's resolved.
 	stage("reading the conversation")

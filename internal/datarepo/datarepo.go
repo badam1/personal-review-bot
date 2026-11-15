@@ -66,6 +66,37 @@ func (s *Store) Reviewed(repo string, number int, sha string) bool {
 	return err == nil
 }
 
+// LastReviewed returns the head SHA of the most recent record for this PR, ignoring except (the head about to be
+// reviewed), so a re-review on stateless compute can focus on what changed since — the "last reviewed commit" without
+// any local state. ok is false when the PR has no earlier record. Records hold no finding text, so this only yields
+// the commit, not the earlier findings.
+func (s *Store) LastReviewed(repo string, number int, except string) (sha string, ok bool) {
+	owner, name, _ := strings.Cut(repo, "/")
+	dir := filepath.Join(s.dir, "records", safe(owner), safe(name), strconv.Itoa(number))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	var latest time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var rec Record
+		if json.Unmarshal(data, &rec) != nil || rec.SHA == "" || rec.SHA == except {
+			continue
+		}
+		if rec.At.After(latest) {
+			latest, sha, ok = rec.At, rec.SHA, true
+		}
+	}
+	return sha, ok
+}
+
 // Record writes rec and commits it. It is serialized, and a record whose content is unchanged makes no commit, so
 // re-recording the same outcome is a safe no-op.
 func (s *Store) Record(rec Record) error {
