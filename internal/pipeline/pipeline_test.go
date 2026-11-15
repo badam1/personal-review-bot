@@ -359,3 +359,42 @@ func TestPostAuto(t *testing.T) {
 		}
 	}
 }
+
+// PollOrgs is the de-duplicated union of the channels' orgs, searches everywhere if any channel reviews anywhere, and
+// falls back to the global config when no channels are set.
+func TestPollOrgs(t *testing.T) {
+	d := Deps{Channels: []config.Channel{{Name: "a", Orgs: []string{"acme", "shared"}}, {Name: "b", Orgs: []string{"SHARED", "me"}}}}
+	if got, want := d.PollOrgs(), []string{"acme", "shared", "me"}; !slices.Equal(got, want) {
+		t.Errorf("PollOrgs = %v, want %v (union, de-duplicated)", got, want)
+	}
+	anywhere := Deps{Channels: []config.Channel{{Name: "a", Orgs: []string{"acme"}}, {Name: "catchall"}}}
+	if got := anywhere.PollOrgs(); got != nil {
+		t.Errorf("PollOrgs = %v, want nil (a channel reviews anywhere)", got)
+	}
+	none := Deps{Cfg: config.Config{Orgs: []string{"only"}}}
+	if got := none.PollOrgs(); !slices.Equal(got, []string{"only"}) {
+		t.Errorf("PollOrgs = %v, want [only] (the default channel's orgs)", got)
+	}
+}
+
+// RouteChannel names the owning channel, reports an unowned repo, and treats a nil router as "the default owns all".
+func TestRouteChannel(t *testing.T) {
+	r, err := config.NewRouter([]config.Channel{{Name: "company", Orgs: []string{"acme"}}, {Name: "fallback"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Deps{Router: r}
+	if name, ok := d.RouteChannel("acme/web"); !ok || name != "company" {
+		t.Errorf("acme/web -> %q,%v want company,true", name, ok)
+	}
+	if name, ok := d.RouteChannel("stranger/thing"); !ok || name != "fallback" {
+		t.Errorf("stranger/thing -> %q,%v want fallback,true", name, ok)
+	}
+	if name, ok := (Deps{}).RouteChannel("any/repo"); !ok || name != "" {
+		t.Errorf("nil router -> %q,%v want \"\",true (default owns all)", name, ok)
+	}
+	noFallback, _ := config.NewRouter([]config.Channel{{Name: "company", Orgs: []string{"acme"}}})
+	if _, ok := (Deps{Router: noFallback}).RouteChannel("other/repo"); ok {
+		t.Error("other/repo should be unowned when no channel claims it")
+	}
+}

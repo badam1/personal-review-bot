@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
@@ -28,7 +29,19 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	d := pipeline.Deps{Cfg: cfg, Live: config.NewLive(cfg), Store: st, GH: client, Log: log.Printf}
+	channels, err := config.LoadChannels(cfg.ConfigDir, cfg)
+	if err != nil {
+		return fmt.Errorf("channels: %w", err)
+	}
+	if channels, err = config.SelectChannels(channels, cfg.ChannelSelect); err != nil {
+		return err
+	}
+	router, err := config.NewRouter(channels)
+	if err != nil {
+		return err
+	}
+	d := pipeline.Deps{Cfg: cfg, Live: config.NewLive(cfg), Store: st, GH: client, Log: log.Printf,
+		Channels: channels, Router: router}
 	auto := cfg.AutoPostSeverities()
 	if auto == "" {
 		auto = "no severity"
@@ -37,6 +50,13 @@ func Run(ctx context.Context, cfg config.Config) error {
 	_ = st.SetMeta("login", client.Login)
 	log.Printf("personal-review-bot %s started for @%s (orgs %s, every %s, auto-post ≥ %d%% for %s, page %s)",
 		version.String(), client.Login, cfg.OrgsLabel(), cfg.PollInterval, cfg.Threshold, auto, cfg.WebURL())
+	if len(channels) > 1 || (len(channels) == 1 && channels[0].Name != "default") {
+		var names []string
+		for _, ch := range channels {
+			names = append(names, ch.Name)
+		}
+		log.Printf("channels: %s", strings.Join(names, ", "))
+	}
 
 	if err := st.ResetRunning(); err != nil {
 		return err
@@ -169,7 +189,7 @@ func checkPRs(d pipeline.Deps, get func(repo string, number int) (gh.PR, error),
 // requested lists the open review requests addressed to you, and says so when GitHub matched more than one
 // search returns: the ones left out are never reviewed, and watching several orgs makes that likelier.
 func requested(d pipeline.Deps) ([]gh.PR, error) {
-	prs, total, err := d.GH.RequestedFromMe(d.Channel().Orgs)
+	prs, total, err := d.GH.RequestedFromMe(d.PollOrgs())
 	if err != nil {
 		return nil, err
 	}
@@ -186,8 +206,12 @@ func seed(d pipeline.Deps) error {
 		return err
 	}
 	for _, pr := range prs {
+		channel, owned := d.RouteChannel(pr.Repo)
+		if !owned {
+			continue
+		}
 		if _, err := d.Store.Insert(&store.Review{Repo: pr.Repo, Number: pr.Number, URL: pr.URL, Title: pr.Title,
-			Author: pr.Author, HeadSHA: pr.HeadSHA, Status: store.Ignored, Source: "auto",
+			Author: pr.Author, HeadSHA: pr.HeadSHA, Status: store.Ignored, Source: "auto", Channel: channel,
 			Decision: "requested before personal-review-bot started (press r in the TUI to review)"}); err != nil {
 			return err
 		}
@@ -209,6 +233,10 @@ func poll(d pipeline.Deps) bool {
 		if (pr.Draft && d.Cfg.SkipDrafts) || d.Store.IsIgnored(pr.Repo, pr.Number) {
 			continue
 		}
+		channel, owned := d.RouteChannel(pr.Repo)
+		if !owned {
+			continue // no channel this instance runs owns this repo
+		}
 		last, err := d.Store.Latest(pr.Repo, pr.Number)
 		if err != nil {
 			log.Printf("%s#%d: %v", pr.Repo, pr.Number, err)
@@ -218,7 +246,7 @@ func poll(d pipeline.Deps) bool {
 			if last == nil { // record it once, so it shows in the TUI and can be reviewed with r
 				days := int(d.Cfg.MaxAge.Hours() / 24)
 				_, _ = d.Store.Insert(&store.Review{Repo: pr.Repo, Number: pr.Number, URL: pr.URL, Title: pr.Title,
-					Author: pr.Author, HeadSHA: pr.HeadSHA, Status: store.Ignored, Source: idleSkip,
+					Author: pr.Author, HeadSHA: pr.HeadSHA, Status: store.Ignored, Source: idleSkip, Channel: channel,
 					Decision: fmt.Sprintf("no activity for %d days (press r in the TUI to review)", days)})
 				log.Printf("%s#%d: skipped, no activity since %s", pr.Repo, pr.Number, lastActivity(pr).Format("2006-01-02"))
 			}
@@ -229,7 +257,7 @@ func poll(d pipeline.Deps) bool {
 			continue
 		}
 		if _, err := d.Store.Insert(&store.Review{Repo: pr.Repo, Number: pr.Number, URL: pr.URL, Title: pr.Title,
-			Author: pr.Author, HeadSHA: pr.HeadSHA, Status: store.Queued, Source: source}); err != nil {
+			Author: pr.Author, HeadSHA: pr.HeadSHA, Status: store.Queued, Source: source, Channel: channel}); err != nil {
 			log.Printf("queue %s#%d: %v", pr.Repo, pr.Number, err)
 			continue
 		}

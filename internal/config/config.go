@@ -17,26 +17,27 @@ import (
 )
 
 type Config struct {
-	Orgs         []string      // only review PRs in these GitHub orgs (empty = anywhere)
-	PollInterval time.Duration // how often to ask GitHub for new review requests
-	Threshold    int           // verified certainty (0-100) at which a confirmed finding is posted without asking
-	AutoPost     []string      // severities posted without asking, from low to high (empty = none)
-	ApproveText  string        // said with your first approval of a PR ("" = approve without a comment)
-	WebAddr      string        // confirmation page; 127.0.0.1 only
-	MaxParallel  int           // reviews running at the same time
-	AgentTimeout time.Duration // per Claude run
-	SaveAt       int           // % of the Claude plan's 5-hour or weekly limit from which reviews use cheaper models
-	MinAt        int           // % from which they use the cheapest, at low effort, without the design review
-	SkipDrafts   bool
-	MaxAge       time.Duration // don't review PRs automatically that have had no activity for this long (0 = no limit)
-	Watermark    string        // footer on every comment the bot posts, followed by the finding's confidence
-	UpdateCheck  bool          // look for new releases every hour, to offer them on the page and in the TUI
-	UpdateRepo   string        // the GitHub repo releases come from
-	ShowLabels   []string      // prefixes of the PR labels shown beside its size, e.g. risk/
-	LabelsTitle  string        // the heading of the lists' column of those labels ("" = named after them)
-	ConfigDir    string        // config.env
-	StateDir     string        // SQLite database
-	CacheDir     string        // repo clones and per-review worktrees
+	Orgs          []string      // only review PRs in these GitHub orgs (empty = anywhere)
+	PollInterval  time.Duration // how often to ask GitHub for new review requests
+	Threshold     int           // verified certainty (0-100) at which a confirmed finding is posted without asking
+	AutoPost      []string      // severities posted without asking, from low to high (empty = none)
+	ApproveText   string        // said with your first approval of a PR ("" = approve without a comment)
+	WebAddr       string        // confirmation page; 127.0.0.1 only
+	MaxParallel   int           // reviews running at the same time
+	AgentTimeout  time.Duration // per Claude run
+	SaveAt        int           // % of the Claude plan's 5-hour or weekly limit from which reviews use cheaper models
+	MinAt         int           // % from which they use the cheapest, at low effort, without the design review
+	SkipDrafts    bool
+	MaxAge        time.Duration // don't review PRs automatically that have had no activity for this long (0 = no limit)
+	Watermark     string        // footer on every comment the bot posts, followed by the finding's confidence
+	UpdateCheck   bool          // look for new releases every hour, to offer them on the page and in the TUI
+	UpdateRepo    string        // the GitHub repo releases come from
+	ShowLabels    []string      // prefixes of the PR labels shown beside its size, e.g. risk/
+	LabelsTitle   string        // the heading of the lists' column of those labels ("" = named after them)
+	ConfigDir     string        // config.env
+	StateDir      string        // SQLite database
+	CacheDir      string        // repo clones and per-review worktrees
+	ChannelSelect string        // CHANNELS: which of the configured channels this instance runs (empty = all)
 }
 
 // Load reads the settings. The environment wins over config.env, so a one-off run can override the file.
@@ -54,26 +55,27 @@ func LoadFrom(dir string) Config {
 	home, _ := os.UserHomeDir()
 	s := settings(readEnvFile(filepath.Join(dir, "config.env")))
 	return Config{
-		Orgs:         orgs(s),
-		PollInterval: time.Duration(s.int("POLL_SECONDS")) * time.Second,
-		Threshold:    s.int("THRESHOLD"),
-		AutoPost:     autoPost(s),
-		ApproveText:  s.str("APPROVE_TEXT", Defaults["APPROVE_TEXT"]),
-		WebAddr:      s.str("ADDR", Defaults["ADDR"]),
-		MaxParallel:  s.int("PARALLEL"),
-		AgentTimeout: time.Duration(s.int("AGENT_TIMEOUT_MINUTES")) * time.Minute,
-		SaveAt:       s.int("SAVE_AT"),
-		MinAt:        s.int("MIN_AT"),
-		SkipDrafts:   s.str("SKIP_DRAFTS", Defaults["SKIP_DRAFTS"]) == "1",
-		MaxAge:       time.Duration(s.int("MAX_AGE_DAYS")) * 24 * time.Hour,
-		Watermark:    s.str("WATERMARK", Defaults["WATERMARK"]),
-		UpdateCheck:  s.str("UPDATE_CHECK", Defaults["UPDATE_CHECK"]) == "1",
-		UpdateRepo:   s.str("UPDATE_REPO", Defaults["UPDATE_REPO"]),
-		ShowLabels:   list(s.str("SHOW_LABELS", Defaults["SHOW_LABELS"])),
-		LabelsTitle:  strings.TrimSpace(s.str("LABELS_TITLE", Defaults["LABELS_TITLE"])),
-		ConfigDir:    dir,
-		StateDir:     s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
-		CacheDir:     s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),
+		Orgs:          orgs(s),
+		PollInterval:  time.Duration(s.int("POLL_SECONDS")) * time.Second,
+		Threshold:     s.int("THRESHOLD"),
+		AutoPost:      autoPost(s),
+		ApproveText:   s.str("APPROVE_TEXT", Defaults["APPROVE_TEXT"]),
+		WebAddr:       s.str("ADDR", Defaults["ADDR"]),
+		MaxParallel:   s.int("PARALLEL"),
+		AgentTimeout:  time.Duration(s.int("AGENT_TIMEOUT_MINUTES")) * time.Minute,
+		SaveAt:        s.int("SAVE_AT"),
+		MinAt:         s.int("MIN_AT"),
+		SkipDrafts:    s.str("SKIP_DRAFTS", Defaults["SKIP_DRAFTS"]) == "1",
+		MaxAge:        time.Duration(s.int("MAX_AGE_DAYS")) * 24 * time.Hour,
+		Watermark:     s.str("WATERMARK", Defaults["WATERMARK"]),
+		UpdateCheck:   s.str("UPDATE_CHECK", Defaults["UPDATE_CHECK"]) == "1",
+		UpdateRepo:    s.str("UPDATE_REPO", Defaults["UPDATE_REPO"]),
+		ShowLabels:    list(s.str("SHOW_LABELS", Defaults["SHOW_LABELS"])),
+		LabelsTitle:   strings.TrimSpace(s.str("LABELS_TITLE", Defaults["LABELS_TITLE"])),
+		ConfigDir:     dir,
+		StateDir:      s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
+		CacheDir:      s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),
+		ChannelSelect: s.str("CHANNELS", ""),
 	}
 }
 

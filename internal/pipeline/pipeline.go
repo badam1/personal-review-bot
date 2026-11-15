@@ -34,6 +34,7 @@ type Deps struct {
 	GH       *gh.Client
 	Log      func(format string, args ...any)
 	Channels []config.Channel // the channels this instance runs; empty = just the default channel
+	Router   *config.Router   // routes a repo to its owning channel; nil = the default channel owns everything
 }
 
 // PRStatus is what the store keeps of a PR's state on GitHub.
@@ -81,6 +82,38 @@ func (d Deps) channelFor(r *store.Review) config.Channel {
 		}
 	}
 	return config.DefaultChannel(d.Cfg)
+}
+
+// PollOrgs is the union of the orgs of the channels this instance runs — the scope the service-mode poll searches. If
+// any channel reviews anywhere (no orgs), the poll searches everywhere. With no channels configured it is the default
+// channel's orgs (today's ORG).
+func (d Deps) PollOrgs() []string {
+	chs := d.Channels
+	if len(chs) == 0 {
+		chs = []config.Channel{config.DefaultChannel(d.Cfg)}
+	}
+	var out []string
+	for _, ch := range chs {
+		if len(ch.Orgs) == 0 {
+			return nil // this channel reviews anywhere, so the poll must search everywhere
+		}
+		for _, o := range ch.Orgs {
+			if !slices.ContainsFunc(out, func(x string) bool { return strings.EqualFold(x, o) }) {
+				out = append(out, o)
+			}
+		}
+	}
+	return out
+}
+
+// RouteChannel names the channel that owns repo, and whether any channel this instance runs owns it. With no router
+// (a bare Deps, as in tests) the default channel owns everything.
+func (d Deps) RouteChannel(repo string) (name string, owned bool) {
+	if d.Router == nil {
+		return "", true
+	}
+	ch, ok := d.Router.ChannelFor(repo)
+	return ch.Name, ok
 }
 
 // Run reviews the PR behind review id. It records every outcome in the store and only returns an error for
