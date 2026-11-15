@@ -69,18 +69,21 @@ with no behavior change unless the task says otherwise.
   `external/volume` are the same SQLite at a different path, so no store *interface* was needed.
   - Outcome: a one-shot run keeps state in memory and leaves nothing on disk; file store unchanged. ✅ committed.
   - Depends on: —
-- [ ] **P5.3 — Git data store (D6).** A store backend that auto-commits durable outcome records (verbatim/downstream
-  labels, cost, decision, reviewed SHA — labels and numbers only) to a **private** git data repo, Backlog.md-style,
-  with serialized pushes; operational state stays in SQLite.
+- [x] **P5.3 — Git data store (D6).** A store backend that auto-commits durable outcome records (verbatim/downstream
+  labels, cost, decision, reviewed SHA — labels and numbers only) to a **private** git data repo, Backlog.md-style;
+  the bot only commits — pushing is the data repo's own post-commit hook, as Backlog.md does — so operational state
+  stays in SQLite and no unverified push code ships.
   - Outcome: analytics are durable, versioned, and shareable with no DB server; a CI run commits its record so
-    analytics accumulate even from ephemeral compute; the "reviewed `owner/repo#N` at `sha`" records give idempotency.
+    analytics accumulate even from ephemeral compute; the "reviewed `owner/repo#N` at `sha`" records give idempotency
+    (`skipReview` skips an automatic re-run of a recorded head). ✅ committed (PR #51).
   - Depends on: P5.1
-- [ ] **P5.2 — Incremental re-review (idempotency via D6).** Know "already reviewed this SHA?" and "last reviewed
+- [x] **P5.2 — Incremental re-review (idempotency via D6).** Know "already reviewed this SHA?" and "last reviewed
   commit" without local state. **D6 supersedes the hard part**: take these from the git data store's records rather
   than deriving them off the PR (fragile — the bot posts as the user's own account, and the watermark is not always in
   a review's body). Pure CI idempotency can also be handled at deploy time (Actions `concurrency`), so this narrows to
   *incremental* re-review (a cost optimization).
-  - Outcome: a re-review covers only what changed, with no local state.
+  - Outcome: a re-review covers only what changed, with no local state — the pipeline fills `PrevSHA` from
+    `datarepo.LastReviewed` when SQLite has no history. ✅ committed (PR #51).
   - Depends on: P5.3
 
 ### P6 — On-demand mode + container  ⭐ Milestone B
