@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
+	"github.com/badam1/personal-review-bot/internal/downstream"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
@@ -65,6 +66,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		go worker(ctx, d, upd, i)
 	}
 	go watchPRs(ctx, d)
+	go watchDownstream(ctx, d)
 
 	tick := time.NewTicker(pollCheckEvery)
 	defer tick.Stop()
@@ -162,6 +164,90 @@ func checkPRs(d pipeline.Deps, get func(repo string, number int) (gh.PR, error),
 			log.Printf("%s#%d: %s before you decided, so it no longer needs you", k.Repo, k.Number, st.State)
 		}
 	}
+}
+
+// How often what became of a posted finding is read: findings are checked off the poll loop, in small batches, and one
+// read within downstreamFresh is left for later. A finding stops being checked once its PR is merged or closed, or once
+// its review is older than downstreamWindow, so the work can't grow with every finding the bot ever posts.
+const (
+	downstreamCheckEvery = time.Minute
+	downstreamFresh      = 6 * time.Hour
+	downstreamWindow     = 90 * 24 * time.Hour
+	downstreamBatch      = 10 // one GitHub call per PR in the batch, so a first run spreads over a few minutes
+)
+
+// watchDownstream reads what became of posted findings on GitHub until ctx ends. Like watchPRs it runs apart from the
+// poll, so a slow GitHub can't hold up new review requests.
+func watchDownstream(ctx context.Context, d pipeline.Deps) {
+	tick := time.NewTicker(downstreamCheckEvery)
+	defer tick.Stop()
+	for {
+		checkDownstream(d.Current(), d.GH.ReviewThreads, time.Now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+// checkDownstream reads the review threads of the PRs whose posted findings are due a check, matches each finding to
+// the bot's own thread with pipeline.MatchThread (so a colleague's thread on the same line is never taken for it), and
+// records what became of it. Findings are grouped by PR, one fetch each; a PR that can't be read is logged and its
+// findings wait their turn with any signal already seen kept, rather than being erased to unknown.
+func checkDownstream(d pipeline.Deps, threadsOf func(repo string, number int) ([]gh.Thread, error), now time.Time) {
+	before := now.Add(-downstreamFresh).UTC().Format(time.RFC3339)
+	since := now.Add(-downstreamWindow).UTC().Format(time.RFC3339)
+	due, err := d.Store.PostedToCheck(before, since, downstreamBatch)
+	if err != nil {
+		log.Printf("downstream: %v", err)
+		return
+	}
+	at := now.UTC().Format(time.RFC3339)
+	type key struct {
+		repo   string
+		number int
+	}
+	groups := map[key][]store.PostedFinding{}
+	var order []key
+	for _, pf := range due {
+		k := key{pf.Repo, pf.Number}
+		if _, seen := groups[k]; !seen {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], pf)
+	}
+	for _, k := range order {
+		threads, err := threadsOf(k.repo, k.number)
+		if err != nil {
+			log.Printf("downstream %s#%d: %v", k.repo, k.number, err)
+			for _, pf := range groups[k] {
+				_ = d.Store.SetDownstream(pf.ID, string(downstream.Unknown), at) // defer; a known signal is kept
+			}
+			continue
+		}
+		for _, pf := range groups[k] {
+			sig := downstream.Unknown
+			if t, ok := pipeline.MatchThread(pf.Finding, threads, d.GH.Login, d.Cfg.Watermark); ok {
+				sig = downstream.Interpret(downstreamState(t))
+			}
+			if err := d.Store.SetDownstream(pf.ID, string(sig), at); err != nil {
+				log.Printf("downstream %s#%d: %v", k.repo, k.number, err)
+			}
+		}
+	}
+}
+
+// downstreamState reads the observable state of the bot's matched thread: resolved, the 👍/👎 on its first (the bot's)
+// comment, and how many replies followed. The thread was matched to the finding, so the comment exists.
+func downstreamState(t gh.Thread) downstream.State {
+	st := downstream.State{Exists: true, Resolved: t.Resolved}
+	if len(t.Comments) > 0 {
+		st.ThumbsUp = t.Comments[0].ThumbsUp
+		st.ThumbsDown = t.Comments[0].ThumbsDown
+		st.Replies = len(t.Comments) - 1
+	}
+	return st
 }
 
 // seed records the requests that were already open when the bot first started as skipped, so it doesn't fire off

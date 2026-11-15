@@ -478,17 +478,21 @@ type Thread struct {
 }
 
 type ThreadComment struct {
-	Author    string
-	Body      string
-	CreatedAt time.Time
+	Author     string
+	Body       string
+	CreatedAt  time.Time
+	ThumbsUp   int // 👍 reactions on the comment
+	ThumbsDown int // 👎 reactions on the comment
 }
 
-// ReviewThreads returns the PR's inline review threads (the latest 100, each with its first 50 comments).
+// ReviewThreads returns the PR's inline review threads (the latest 100, each with its first 50 comments). Each comment
+// carries its 👍/👎 counts, so the downstream poller can read how a posted finding was received without a second fetch.
 func (c *Client) ReviewThreads(repo string, number int) ([]Thread, error) {
 	owner, name, _ := strings.Cut(repo, "/")
 	const query = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
 	  pullRequest(number: $number) { reviewThreads(last: 100) { nodes { id isResolved path line originalLine
-	    comments(first: 50) { nodes { author { login } body createdAt } } } } } } }`
+	    comments(first: 50) { nodes { author { login } body createdAt
+	      reactionGroups { content reactors { totalCount } } } } } } } } }`
 	var resp struct {
 		Repository struct {
 			PullRequest struct {
@@ -501,9 +505,15 @@ func (c *Client) ReviewThreads(repo string, number int) ([]Thread, error) {
 						OriginalLine int    `json:"originalLine"`
 						Comments     struct {
 							Nodes []struct {
-								Author    struct{ Login string } `json:"author"`
-								Body      string                 `json:"body"`
-								CreatedAt time.Time              `json:"createdAt"`
+								Author         struct{ Login string } `json:"author"`
+								Body           string                 `json:"body"`
+								CreatedAt      time.Time              `json:"createdAt"`
+								ReactionGroups []struct {
+									Content  string `json:"content"`
+									Reactors struct {
+										TotalCount int `json:"totalCount"`
+									} `json:"reactors"`
+								} `json:"reactionGroups"`
 							}
 						} `json:"comments"`
 					}
@@ -518,7 +528,16 @@ func (c *Client) ReviewThreads(repo string, number int) ([]Thread, error) {
 	for _, n := range resp.Repository.PullRequest.ReviewThreads.Nodes {
 		t := Thread{ID: n.ID, Resolved: n.IsResolved, Path: n.Path, Line: n.Line, OriginalLine: n.OriginalLine}
 		for _, cm := range n.Comments.Nodes {
-			t.Comments = append(t.Comments, ThreadComment{Author: cm.Author.Login, Body: cm.Body, CreatedAt: cm.CreatedAt})
+			c := ThreadComment{Author: cm.Author.Login, Body: cm.Body, CreatedAt: cm.CreatedAt}
+			for _, rg := range cm.ReactionGroups {
+				switch rg.Content {
+				case "THUMBS_UP":
+					c.ThumbsUp = rg.Reactors.TotalCount
+				case "THUMBS_DOWN":
+					c.ThumbsDown = rg.Reactors.TotalCount
+				}
+			}
+			t.Comments = append(t.Comments, c)
 		}
 		out = append(out, t)
 	}

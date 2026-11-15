@@ -230,3 +230,164 @@ func TestFailures(t *testing.T) {
 		t.Errorf("got %+v, want only review %d (o/r#1)", got, failed)
 	}
 }
+
+// PostedToCheck yields the posted inline findings whose downstream state is due, and is bounded: a finding drops out
+// once its PR is merged or closed, once its review predates `since`, or when it was checked since `before`. Discarded,
+// pending, non-inline and dry-run findings are never in it.
+func TestPostedToCheck(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	post := func(rev int64, status string, inline bool, line int) int64 {
+		id, err := s.AddFinding(&Finding{ReviewID: rev, Agent: "logic", Path: "a.go", Line: line, Severity: "low",
+			Title: "t", Comment: "c", Status: Candidate, Inline: inline})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.UpdateFinding(&Finding{ID: id, Path: "a.go", Line: line, Comment: "c", Status: status,
+			Inline: inline, PostedURL: "u"}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	open, _ := s.Insert(&Review{Repo: "o/r", Number: 1, Status: Done})
+	merged, _ := s.Insert(&Review{Repo: "o/r", Number: 2, Status: Done})
+	dry, _ := s.Insert(&Review{Repo: "o/r", Number: 3, Status: Done, DryRun: true})
+
+	wantA := post(open, Posted, true, 10)
+	wantB := post(open, AutoPosted, true, 11)
+	post(open, Posted, false, 0)    // non-inline (design): no thread to read
+	post(open, Discarded, true, 12) // never posted
+	post(open, Pending, true, 13)   // not posted yet
+	onMerged := post(merged, Posted, true, 10)
+	post(dry, Posted, true, 10) // dry run posts nothing
+	if err := s.SetPRStatus("o/r", 2, PRStatus{State: PRMerged}); err != nil {
+		t.Fatal(err)
+	}
+
+	const before, since = "3000-01-01T00:00:00Z", "2000-01-01T00:00:00Z"
+	due, err := s.PostedToCheck(before, since, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]PostedFinding{}
+	for _, pf := range due {
+		got[pf.ID] = pf
+	}
+	if _, a := got[wantA]; !a {
+		t.Errorf("open PR's posted finding %d is missing", wantA)
+	}
+	if _, b := got[wantB]; !b {
+		t.Errorf("open PR's auto-posted finding %d is missing", wantB)
+	}
+	if _, m := got[onMerged]; m || len(got) != 2 {
+		t.Fatalf("due = %v, want exactly %d and %d (the merged PR's %d must drop out)", keysOf(got), wantA, wantB, onMerged)
+	}
+	if pf := got[wantA]; pf.Repo != "o/r" || pf.Number != 1 || !pf.Inline || pf.Comment != "c" {
+		t.Errorf("carried the wrong shape for MatchThread: %+v", pf)
+	}
+
+	// Age cap: a `since` in the future makes every review too old, so nothing is due.
+	if none, _ := s.PostedToCheck(before, "3999-01-01T00:00:00Z", 100); len(none) != 0 {
+		t.Errorf("age cap ignored: %d still due", len(none))
+	}
+	// Staleness: a finding checked after `before` waits; one never checked is still due.
+	if err := s.SetDownstream(wantA, "endorsed", "2500-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	for _, pf := range mustCheck(t, s, "2400-01-01T00:00:00Z", since) {
+		if pf.ID == wantA {
+			t.Error("a finding checked more recently than `before` should wait its turn")
+		}
+	}
+}
+
+func mustCheck(t *testing.T, s *Store, before, since string) []PostedFinding {
+	t.Helper()
+	due, err := s.PostedToCheck(before, since, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return due
+}
+
+func keysOf(m map[int64]PostedFinding) []int64 {
+	var ks []int64
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
+}
+
+// SetDownstream records a signal, and an unknown result never erases a signal already seen — it only moves the check
+// time forward.
+func TestSetDownstream(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rev, _ := s.Insert(&Review{Repo: "o/r", Number: 1, Status: Done})
+	id, _ := s.AddFinding(&Finding{ReviewID: rev, Agent: "logic", Path: "a.go", Line: 1, Severity: "low", Title: "t",
+		Comment: "c", Status: Candidate, Inline: true})
+	_ = s.UpdateFinding(&Finding{ID: id, Path: "a.go", Line: 1, Comment: "c", Status: Posted, Inline: true, PostedURL: "u"})
+
+	if err := s.SetDownstream(id, "endorsed", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := s.Finding(id); f.Downstream != "endorsed" {
+		t.Fatalf("downstream = %q, want endorsed", f.Downstream)
+	}
+	// unknown must not clobber the endorsement, but should move the check time on.
+	if err := s.SetDownstream(id, "unknown", "2026-02-02T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := s.Finding(id); f.Downstream != "endorsed" {
+		t.Errorf("an unknown result erased the signal: now %q, want endorsed kept", f.Downstream)
+	} else if !f.DownstreamAt.Equal(parseTime("2026-02-02T00:00:00Z")) {
+		t.Errorf("check time not moved on: %v", f.DownstreamAt)
+	}
+	// a real signal does overwrite.
+	if err := s.SetDownstream(id, "disputed", "2026-03-03T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := s.Finding(id); f.Downstream != "disputed" {
+		t.Errorf("downstream = %q, want disputed", f.Downstream)
+	}
+}
+
+// DownstreamMix counts posted findings by what became of them; dry-run and non-inline findings are left out.
+func TestDownstreamMix(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rev, _ := s.Insert(&Review{Repo: "o/r", Number: 1, Status: Done})
+	post := func(signal string) {
+		id, _ := s.AddFinding(&Finding{ReviewID: rev, Agent: "logic", Path: "a.go", Line: 1, Severity: "low",
+			Title: "t", Comment: "c", Status: Candidate, Inline: true})
+		_ = s.UpdateFinding(&Finding{ID: id, Path: "a.go", Line: 1, Comment: "c", Status: Posted, Inline: true, PostedURL: "u"})
+		if signal != "" {
+			_ = s.SetDownstream(id, signal, "2026-01-01T00:00:00Z")
+		}
+	}
+	post("endorsed")
+	post("endorsed")
+	post("disputed")
+	post("quiet")
+	post("") // unchecked
+
+	m, err := s.DownstreamMix()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (DownstreamMix{Endorsed: 2, Quiet: 1, Disputed: 1, Unchecked: 1}); m != want {
+		t.Errorf("DownstreamMix = %+v, want %+v", m, want)
+	}
+	if m.Known() != 4 {
+		t.Errorf("Known = %d, want 4", m.Known())
+	}
+}

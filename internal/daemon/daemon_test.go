@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
@@ -129,5 +130,56 @@ func TestCheckPRs(t *testing.T) {
 	checkPRs(d, get, time.Now())
 	if asked[1] != 1 || asked[3] != 1 || asked[4] != 1 {
 		t.Errorf("asked again right away: %v (a merged PR never, the others after a while)", asked)
+	}
+}
+
+// checkDownstream matches each posted finding to the bot's own thread before reading its state, so a colleague's thread
+// on the same line is never taken for it, and a PR that can't be read keeps any signal already seen.
+func TestCheckDownstream(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	const owner, wm = "me", "[personal-review-bot]"
+	post := func(repo string, number int, line int, comment string) int64 {
+		rev, _ := st.Insert(&store.Review{Repo: repo, Number: number, Status: store.Done})
+		id, _ := st.AddFinding(&store.Finding{ReviewID: rev, Agent: "logic", Path: "a.go", Line: line, Severity: "low",
+			Title: "t", Comment: comment, Status: store.Candidate, Inline: true})
+		_ = st.UpdateFinding(&store.Finding{ID: id, Path: "a.go", Line: line, Comment: comment, Status: store.Posted,
+			Inline: true, PostedURL: "u"})
+		return id
+	}
+	endorsed := post("o/r", 1, 10, "null deref here")  // the bot's thread is resolved → endorsed
+	notBot := post("o/r", 1, 20, "off-by-one in loop") // only a colleague's thread sits on this line → stays unchecked
+	errored := post("o/x", 2, 5, "leaks the token")    // its PR can't be read → keep the prior signal
+	if err := st.SetDownstream(errored, "disputed", "2000-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+
+	threads := map[string][]gh.Thread{
+		"o/r": {
+			{Path: "a.go", Line: 10, Resolved: true, Comments: []gh.ThreadComment{{Author: owner, Body: "null deref here\n" + wm}}},
+			{Path: "a.go", Line: 20, Comments: []gh.ThreadComment{{Author: "someone-else", Body: "off-by-one in loop " + wm, ThumbsDown: 1}}},
+		},
+	}
+	threadsOf := func(repo string, _ int) ([]gh.Thread, error) {
+		ts, ok := threads[repo]
+		if !ok {
+			return nil, errors.New("HTTP 404: Not Found")
+		}
+		return ts, nil
+	}
+	d := pipeline.Deps{Store: st, GH: &gh.Client{Login: owner}, Cfg: config.Config{Watermark: wm}}
+	checkDownstream(d, threadsOf, time.Now())
+
+	if f, _ := st.Finding(endorsed); f.Downstream != "endorsed" {
+		t.Errorf("the bot's resolved thread: downstream = %q, want endorsed", f.Downstream)
+	}
+	if f, _ := st.Finding(notBot); f.Downstream != "" {
+		t.Errorf("a colleague's 👎 on their own thread was taken for the bot's finding: downstream = %q, want unchecked", f.Downstream)
+	}
+	if f, _ := st.Finding(errored); f.Downstream != "disputed" {
+		t.Errorf("a PR that couldn't be read erased the prior signal: downstream = %q, want disputed kept", f.Downstream)
 	}
 }
