@@ -53,6 +53,7 @@ type Review struct {
 	Deletions int
 	Files     int
 	Source    string // auto | manual
+	Channel   string // the channel that owns this review ("" = the default channel)
 	DryRun    bool
 	Deep      bool   // you asked for a deep review: Opus and the design review whatever the PR's size
 	Summary   string // the verifier's verdict on the findings
@@ -140,7 +141,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   title TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT '', head_sha TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL, stage TEXT NOT NULL DEFAULT '', tier TEXT NOT NULL DEFAULT '', models TEXT NOT NULL DEFAULT '',
   additions INTEGER NOT NULL DEFAULT 0, deletions INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0,
-  source TEXT NOT NULL DEFAULT 'auto', dry_run INTEGER NOT NULL DEFAULT 0, summary TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'auto', channel TEXT NOT NULL DEFAULT '', dry_run INTEGER NOT NULL DEFAULT 0, summary TEXT NOT NULL DEFAULT '',
   decision TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', reasons TEXT NOT NULL DEFAULT '', cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL, started_at TEXT NOT NULL DEFAULT '', finished_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS reviews_pr ON reviews (repo, number, head_sha);
@@ -189,6 +190,7 @@ func Open(path string) (*Store, error) {
 		{"reviews", "approval", "INTEGER NOT NULL DEFAULT 0"},
 		{"reviews", "approval_reason", "TEXT NOT NULL DEFAULT ''"},
 		{"reviews", "labels", "TEXT NOT NULL DEFAULT ''"},
+		{"reviews", "channel", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "context", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "wrong", "INTEGER NOT NULL DEFAULT 0"},
 		{"findings", "followup", "TEXT NOT NULL DEFAULT ''"},
@@ -269,7 +271,7 @@ func (s *Store) CSRFToken() (string, error) {
 // ── reviews ──────────────────────────────────────────────────────────────────
 
 const reviewCols = `id, repo, number, url, title, author, head_sha, status, stage, tier, models, additions, deletions,
-  files, source, dry_run, deep, summary, about, approval, approval_reason, labels, decision, error, reasons, cost_usd, created_at, started_at, finished_at,
+  files, source, channel, dry_run, deep, summary, about, approval, approval_reason, labels, decision, error, reasons, cost_usd, created_at, started_at, finished_at,
   (SELECT count(*) FROM reviews p WHERE p.repo = reviews.repo AND p.number = reviews.number AND p.id < reviews.id
     AND p.tier <> '' AND p.dry_run = 0) + 1,
   coalesce((SELECT state || char(31) || by || char(31) || changed_at || char(31) || checked_at FROM prs
@@ -280,7 +282,7 @@ func scanReview(row interface{ Scan(...any) error }) (*Review, error) {
 	var dry, deep int
 	var created, started, finished, labels, pr string
 	err := row.Scan(&r.ID, &r.Repo, &r.Number, &r.URL, &r.Title, &r.Author, &r.HeadSHA, &r.Status, &r.Stage, &r.Tier,
-		&r.Models, &r.Additions, &r.Deletions, &r.Files, &r.Source, &dry, &deep, &r.Summary, &r.About, &r.Approval, &r.ApprovalReason, &labels, &r.Decision, &r.Error,
+		&r.Models, &r.Additions, &r.Deletions, &r.Files, &r.Source, &r.Channel, &dry, &deep, &r.Summary, &r.About, &r.Approval, &r.ApprovalReason, &labels, &r.Decision, &r.Error,
 		&r.Reasons, &r.CostUSD, &created, &started, &finished, &r.Iteration, &pr)
 	if err != nil {
 		return nil, err
@@ -318,9 +320,9 @@ func (s *Store) Insert(r *Review) (int64, error) {
 	if r.Deep {
 		deep = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO reviews (repo, number, url, title, author, head_sha, status, source, dry_run,
-	  deep, decision, created_at, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.Repo, r.Number, r.URL, r.Title, r.Author, r.HeadSHA, r.Status, r.Source, dry, deep, r.Decision, now(),
+	res, err := s.db.Exec(`INSERT INTO reviews (repo, number, url, title, author, head_sha, status, source, channel, dry_run,
+	  deep, decision, created_at, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Repo, r.Number, r.URL, r.Title, r.Author, r.HeadSHA, r.Status, r.Source, r.Channel, dry, deep, r.Decision, now(),
 		map[bool]string{true: now(), false: ""}[r.Status == Running])
 	if err != nil {
 		return 0, err

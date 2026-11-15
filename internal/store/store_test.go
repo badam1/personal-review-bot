@@ -230,3 +230,26 @@ func TestFailures(t *testing.T) {
 		t.Errorf("got %+v, want only review %d (o/r#1)", got, failed)
 	}
 }
+
+// A review records which channel owns it, so the worker reviews it with that channel's subscription and settings; a
+// review with no channel reads back empty (the default channel).
+func TestReviewChannelRoundTrip(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	id, err := s.Insert(&Review{Repo: "acme/web", Number: 1, Status: Queued, Source: "auto", Channel: "company"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := s.Get(id); err != nil {
+		t.Fatal(err)
+	} else if r.Channel != "company" {
+		t.Errorf("channel = %q, want company", r.Channel)
+	}
+	id2, _ := s.Insert(&Review{Repo: "me/x", Number: 2, Status: Queued})
+	if r2, _ := s.Get(id2); r2.Channel != "" {
+		t.Errorf("channel = %q, want empty for a review with no channel", r2.Channel)
+	}
+}
