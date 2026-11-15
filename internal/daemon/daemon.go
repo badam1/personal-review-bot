@@ -169,7 +169,7 @@ func checkPRs(d pipeline.Deps, get func(repo string, number int) (gh.PR, error),
 // requested lists the open review requests addressed to you, and says so when GitHub matched more than one
 // search returns: the ones left out are never reviewed, and watching several orgs makes that likelier.
 func requested(d pipeline.Deps) ([]gh.PR, error) {
-	prs, total, err := d.GH.RequestedFromMe(d.Cfg.Orgs)
+	prs, total, err := d.GH.RequestedFromMe(d.Channel().Orgs)
 	if err != nil {
 		return nil, err
 	}

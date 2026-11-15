@@ -64,6 +64,11 @@ func (d Deps) Current() Deps {
 	return d
 }
 
+// Channel is the channel this Deps acts for. Today it is always the single default channel, derived from the current
+// config, so the review and poll paths read per-channel values (orgs now; more later) from a Channel rather than from
+// Cfg directly. Later phases load several channels and give each run its own; this is where that resolves.
+func (d Deps) Channel() config.Channel { return config.DefaultChannel(d.Cfg) }
+
 // Run reviews the PR behind review id. It records every outcome in the store and only returns an error for
 // failures it could not record.
 func Run(ctx context.Context, d Deps, id int64) (err error) {
@@ -133,7 +138,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	defer ws.Cleanup()
 	in := agents.Input{Repo: r.Repo, Number: r.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Base: pr.BaseRef, Head: pr.HeadRef, Diff: diff, Dir: ws.Dir, HeadSHA: pr.HeadSHA, Effort: plan.Effort,
-		Owner: d.GH.Login, Org: relatedOrg(d.Cfg.Orgs, r.Repo)}
+		Owner: d.GH.Login, Org: relatedOrg(d.Channel().Orgs, r.Repo)}
 	if prev, err := d.Store.PreviousComplete(r.Repo, r.Number, id); err == nil && prev != nil {
 		in.PrevSHA = prev.HeadSHA
 	}
