@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,6 +41,30 @@ type ClaudeAuth struct {
 	ConfigDir     string // a dedicated CLAUDE_CONFIG_DIR holding this channel's subscription login
 	OAuthTokenEnv string // env var holding a `claude setup-token` OAuth token
 	APIKeyEnv     string // env var holding an ANTHROPIC_API_KEY
+}
+
+// Env returns the environment overrides that select this channel's Claude account for a `claude` subprocess. It reads a
+// secret from the environment variable the channel named, never storing it, and returns an error when that variable is
+// unset so a misconfigured channel fails fast. The zero value returns nil — the ambient login (today's behavior). The
+// caller appends these after the inherited environment, so they take precedence over any ambient credentials.
+func (a ClaudeAuth) Env() ([]string, error) {
+	switch {
+	case a.ConfigDir != "":
+		return []string{"CLAUDE_CONFIG_DIR=" + a.ConfigDir}, nil
+	case a.OAuthTokenEnv != "":
+		v, ok := os.LookupEnv(a.OAuthTokenEnv)
+		if !ok {
+			return nil, fmt.Errorf("the OAuth-token env var %q is not set", a.OAuthTokenEnv)
+		}
+		return []string{"CLAUDE_CODE_OAUTH_TOKEN=" + v}, nil
+	case a.APIKeyEnv != "":
+		v, ok := os.LookupEnv(a.APIKeyEnv)
+		if !ok {
+			return nil, fmt.Errorf("the API-key env var %q is not set", a.APIKeyEnv)
+		}
+		return []string{"ANTHROPIC_API_KEY=" + v}, nil
+	}
+	return nil, nil
 }
 
 // GitHubAuth says how a channel acts on GitHub. The zero value means the ambient `gh` login (today's behavior).

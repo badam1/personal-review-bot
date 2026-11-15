@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,6 +11,29 @@ import (
 	"testing"
 	"time"
 )
+
+// claudeCmdEnv carries the agent marker and appends a channel's auth overrides last, so they win over any ambient
+// credential in the inherited environment.
+func TestClaudeCmdEnv(t *testing.T) {
+	if base := claudeCmdEnv(context.Background(), "/bin"); !slices.Contains(base, "PERSONAL_REVIEW_BOT_AGENT=1") {
+		t.Error("the agent marker is missing from the subprocess env")
+	}
+	ctx := WithClaudeEnv(context.Background(), []string{"CLAUDE_CONFIG_DIR=/chan"})
+	if v := lastEnv(claudeCmdEnv(ctx, "/bin"), "CLAUDE_CONFIG_DIR"); v != "/chan" {
+		t.Errorf("channel override not applied last: CLAUDE_CONFIG_DIR=%q, want /chan", v)
+	}
+}
+
+// lastEnv returns the value of the last KEY= entry, which is the one exec uses when a key repeats.
+func lastEnv(env []string, key string) string {
+	v := ""
+	for _, e := range env {
+		if k, val, ok := strings.Cut(e, "="); ok && k == key {
+			v = val
+		}
+	}
+	return v
+}
 
 func TestSchemasAreValidJSON(t *testing.T) {
 	for name, s := range map[string]string{"findings": findingsSchema, "verdicts": verdictsSchema} {

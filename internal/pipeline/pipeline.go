@@ -98,6 +98,14 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		return fail(fmt.Errorf("reviewers and prompts (check with `personal-review-bot agents`): %w", err))
 	}
 
+	// This channel's Claude subscription is injected into every `claude` subprocess for this review. The default
+	// channel resolves to nothing, so the ambient login is used, unchanged.
+	claudeEnv, err := d.Channel().Claude.Env()
+	if err != nil {
+		return fail(fmt.Errorf("channel %q Claude auth: %w", d.Channel().Name, err))
+	}
+	ctx = agents.WithClaudeEnv(ctx, claudeEnv)
+
 	stage("fetching PR")
 	pr, err := d.GH.GetPR(r.Repo, r.Number)
 	if err != nil {

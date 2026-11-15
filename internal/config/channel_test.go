@@ -44,6 +44,28 @@ func TestDefaultChannelNoOrgs(t *testing.T) {
 	}
 }
 
+// ClaudeAuth.Env resolves to the right subprocess override, reads a secret from the named env var, and fails fast when
+// that var is unset. The zero value is the ambient login (no override).
+func TestClaudeAuthEnv(t *testing.T) {
+	if env, err := (ClaudeAuth{}).Env(); err != nil || env != nil {
+		t.Errorf("zero value: env=%v err=%v, want nil,nil (ambient login)", env, err)
+	}
+	if env, err := (ClaudeAuth{ConfigDir: "/claude/company"}).Env(); err != nil || !slices.Equal(env, []string{"CLAUDE_CONFIG_DIR=/claude/company"}) {
+		t.Errorf("ConfigDir: env=%v err=%v", env, err)
+	}
+	t.Setenv("PRB_TEST_TOKEN", "tok-123")
+	if env, err := (ClaudeAuth{OAuthTokenEnv: "PRB_TEST_TOKEN"}).Env(); err != nil || !slices.Equal(env, []string{"CLAUDE_CODE_OAUTH_TOKEN=tok-123"}) {
+		t.Errorf("OAuthTokenEnv: env=%v err=%v", env, err)
+	}
+	t.Setenv("PRB_TEST_KEY", "sk-xyz")
+	if env, err := (ClaudeAuth{APIKeyEnv: "PRB_TEST_KEY"}).Env(); err != nil || !slices.Equal(env, []string{"ANTHROPIC_API_KEY=sk-xyz"}) {
+		t.Errorf("APIKeyEnv: env=%v err=%v", env, err)
+	}
+	if _, err := (ClaudeAuth{OAuthTokenEnv: "PRB_DEFINITELY_UNSET_XYZ"}).Env(); err == nil {
+		t.Error("a named env var that is not set should be an error (fail fast)")
+	}
+}
+
 // No channels/ directory means the bot runs the single default channel — today's behavior.
 func TestLoadChannelsNone(t *testing.T) {
 	c := Config{Orgs: []string{"acme"}, Threshold: 80, AutoPost: []string{"low", "medium"}}

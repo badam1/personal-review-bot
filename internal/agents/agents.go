@@ -382,6 +382,31 @@ var baseArgs = []string{"-p", "--output-format", "stream-json", "--verbose", "--
 	"--strict-mcp-config",
 	"--no-session-persistence"} // no transcripts: they'd clutter ~/.claude and mix with your own sessions
 
+// claudeEnvKey carries per-channel environment overrides for the `claude` subprocess on the context.
+type claudeEnvKey struct{}
+
+// WithClaudeEnv returns a context that makes every `claude` subprocess started under it carry these extra environment
+// entries — a channel's CLAUDE_CONFIG_DIR, CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY — appended after the inherited
+// environment so they select that channel's account over any ambient login. An empty env leaves the context unchanged.
+func WithClaudeEnv(ctx context.Context, env []string) context.Context {
+	if len(env) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, claudeEnvKey{}, env)
+}
+
+func claudeEnv(ctx context.Context) []string {
+	env, _ := ctx.Value(claudeEnvKey{}).([]string)
+	return env
+}
+
+// claudeCmdEnv is the environment for a `claude` subprocess: the inherited environment, the agent marker, the bin dir
+// (holding gh-read and git-read) at the front of PATH, and last the channel's auth overrides so they win.
+func claudeCmdEnv(ctx context.Context, bin string) []string {
+	env := append(os.Environ(), "PERSONAL_REVIEW_BOT_AGENT=1", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return append(env, claudeEnv(ctx)...)
+}
+
 // claude runs `claude -p` with the prompt on stdin (diffs can exceed the argv limit) and streams its events, which,
 // unlike the plain JSON output, carry the plan's rate-limit usage.
 func claude(ctx context.Context, dir, prompt string, args ...string) (*result, *Usage, error) {
@@ -392,8 +417,7 @@ func claude(ctx context.Context, dir, prompt string, args ...string) (*result, *
 	if err != nil {
 		return nil, nil, fmt.Errorf("gh-read: %w", err)
 	}
-	// The last PATH in the list is the one the run gets.
-	cmd.Env = append(os.Environ(), "PERSONAL_REVIEW_BOT_AGENT=1", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cmd.Env = claudeCmdEnv(ctx, bin)
 	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
