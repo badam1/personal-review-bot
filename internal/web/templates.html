@@ -507,6 +507,7 @@
   <span class="paren">(<span class="elapsed">{{if eq .Status "running"}}{{since .StartedAt}}{{else}}queued{{end}}</span><span class="stage">{{.Stage}}</span>)</span></div>{{end}}
 
 {{define "labels"}}{{if .}}<span class="labels" title="The PR's labels">{{range .}}<span class="plabel {{labelKind .}}">{{.}}</span>{{end}}</span>{{end}}{{end}}
+{{define "channel-tag"}}{{if and . (ne . "default")}}<span class="tag" title="Reviewed by the {{.}} channel">{{.}}</span>{{end}}{{end}}
 
 {{define "steps"}}<ol class="steps" aria-label="Progress" data-steps-for="{{.ID}}">{{range reviewSteps .}}<li class="{{.State}}"><span class="bar"></span><span>{{.Label}}</span></li>{{end}}</ol>{{end}}
 
@@ -558,7 +559,7 @@
       <div class="main">
         <a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
         <div class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
-          <span>by <b>@{{.Author}}</b></span>{{with iteration .Review}}<span>{{.}}</span>{{end}}<span>{{ago .FinishedAt}}</span>{{template "labels" .Labels}}</div>
+          <span>by <b>@{{.Author}}</b></span>{{with iteration .Review}}<span>{{.}}</span>{{end}}<span>{{ago .FinishedAt}}</span>{{template "labels" .Labels}}{{template "channel-tag" .Channel}}</div>
         <div class="badges">{{range .Badges}}<span class="badge {{.Kind}}">{{.Text}}</span>{{end}}<span class="cost">{{money .CostUSD}}</span></div>
       </div>
       <div class="side">{{template "gh-pr" .URL}}<a class="btn primary" href="/r/{{.ID}}">Open review</a></div>
@@ -575,7 +576,7 @@
         <div class="main">
           <a class="ttl" href="/r/{{.ID}}">{{.Title}}</a>
           <div class="meta"><a class="mono pr" href="{{timeline .Repo .Number}}" title="{{.Repo}}: every review of this PR">{{repoName .Repo}}#{{.Number}}</a>
-            <span>by <b>@{{.Author}}</b></span>{{if .Deep}}<span class="tag deep">deep review</span>{{end}}{{with iteration .}}<span>{{.}}</span>{{end}}{{template "labels" .Labels}}{{if .CostUSD}}<span>{{money .CostUSD}} so far</span>{{end}}</div>
+            <span>by <b>@{{.Author}}</b></span>{{if .Deep}}<span class="tag deep">deep review</span>{{end}}{{with iteration .}}<span>{{.}}</span>{{end}}{{template "labels" .Labels}}{{template "channel-tag" .Channel}}{{if .CostUSD}}<span>{{money .CostUSD}} so far</span>{{end}}</div>
         </div>
         {{template "gh-pr-small" .URL}}
       </div>
@@ -617,7 +618,7 @@
     <div class="meta">{{template "pr-pill" .R.PR}}{{$o := outcome .R}}<span class="badge {{$o.Kind}}">{{$o.Text}}</span>
       <span>opened by <b>@{{.R.Author}}</b></span>
       <span><span class="add">+{{.R.Additions}}</span> <span class="del">−{{.R.Deletions}}</span> in {{.R.Files}} files</span>
-      {{with .R.Tier}}<span class="size {{sizeKind .}}">{{.}}</span>{{end}}{{template "labels" .R.Labels}}
+      {{with .R.Tier}}<span class="size {{sizeKind .}}">{{.}}</span>{{end}}{{template "labels" .R.Labels}}{{template "channel-tag" .R.Channel}}
       {{with iteration .R}}<span>{{.}}</span>{{end}}{{with .R.HeadSHA}}<span class="mono">{{short .}}</span>{{end}}
       {{if and .R.Deep (not .R.Tier)}}<span class="tag deep">deep review</span>{{end}}
       {{if .R.DryRun}}<span class="tag">dry run: nothing goes to GitHub</span>{{end}}</div>

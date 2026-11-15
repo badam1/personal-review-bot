@@ -3,10 +3,32 @@ package web
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/badam1/personal-review-bot/internal/store"
 )
+
+// The channel tag names the channel that handled a review, but stays silent for the default channel (or none), so a
+// single-channel setup shows no new clutter.
+func TestChannelTag(t *testing.T) {
+	render := func(ch string) string {
+		var b strings.Builder
+		if err := tmpl.ExecuteTemplate(&b, "channel-tag", ch); err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(b.String())
+	}
+	if out := render("company"); !strings.Contains(out, "company") || !strings.Contains(out, "tag") {
+		t.Errorf("channel-tag(company) = %q, want a tag naming the channel", out)
+	}
+	if out := render("default"); out != "" {
+		t.Errorf("channel-tag(default) = %q, want nothing", out)
+	}
+	if out := render(""); out != "" {
+		t.Errorf("channel-tag(\"\") = %q, want nothing", out)
+	}
+}
 
 // An update's state lays out as five steps, the current one saying what it does.
 func TestUpdateSteps(t *testing.T) {
