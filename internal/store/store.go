@@ -714,6 +714,48 @@ func (s *Store) Decisions(threshold int) (time.Time, []DecisionRow, error) {
 	return parseTime(since), rows, q.Err()
 }
 
+// Edits is how the findings you posted yourself split by whether you kept the bot's wording.
+type Edits struct{ Verbatim, Edited, Unknown int }
+
+// Known is the postings whose wording decision was recorded (Verbatim or Edited); Unknown ones predate the capture.
+func (e Edits) Known() int { return e.Verbatim + e.Edited }
+
+// VerbatimShare is the share of the recorded postings that went out word for word, 0 when none were recorded.
+func (e Edits) VerbatimShare() float64 {
+	if e.Known() == 0 {
+		return 0
+	}
+	return float64(e.Verbatim) / float64(e.Known())
+}
+
+// PostedEdits reports, among the findings you chose to post (status Posted, not the bot's auto-posts), how many went
+// out word for word and how many you reworded first. Auto-posts are always verbatim, so counting them would hide how
+// often you change the wording; they are left out. Dry runs post nothing, so they are excluded too.
+func (s *Store) PostedEdits() (Edits, error) {
+	q, err := s.db.Query(`SELECT f.authored_comment, f.comment FROM findings f JOIN reviews r ON r.id = f.review_id
+	  WHERE f.status = ? AND r.dry_run = 0`, Posted)
+	if err != nil {
+		return Edits{}, err
+	}
+	defer q.Close()
+	var e Edits
+	for q.Next() {
+		var authored, comment string
+		if err := q.Scan(&authored, &comment); err != nil {
+			return Edits{}, err
+		}
+		switch metrics.Classify(authored, comment) {
+		case metrics.Verbatim:
+			e.Verbatim++
+		case metrics.Edited:
+			e.Edited++
+		default:
+			e.Unknown++
+		}
+	}
+	return e, q.Err()
+}
+
 const findingCols = `id, review_id, agent, path, line, severity, title, comment, agent_confidence, confidence, verdict,
   status, inline, posted_url, context, wrong, followup, followup_note, followup_review, reminded_sha, reminded_at,
   authored_comment`

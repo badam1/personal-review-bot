@@ -278,3 +278,55 @@ func TestAuthoredCommentProvenance(t *testing.T) {
 		t.Errorf("unchanged post: Edited() = %s, want verbatim", f2.Edited())
 	}
 }
+
+// PostedEdits counts only the findings you posted yourself, split by whether you kept the bot's wording. The bot's
+// auto-posts (always verbatim) and dry-run findings (posted nothing) are left out.
+func TestPostedEdits(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "reviews.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	review := func(dry bool) int64 {
+		id, err := s.Insert(&Review{Repo: "o/r", Number: 1, Status: Done, DryRun: dry})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	// post settles the bot's wording (a bot write) then records your decision with your final wording.
+	post := func(rid int64, status, botWords, yourWords string) {
+		id, err := s.AddFinding(&Finding{ReviewID: rid, Agent: "logic", Path: "a", Line: 1, Severity: "low",
+			Title: "t", Comment: botWords, Status: Candidate})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.UpdateFinding(&Finding{ID: id, Line: 1, Comment: botWords, Status: Pending}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.UpdateFinding(&Finding{ID: id, Line: 1, Comment: yourWords, Status: status, PostedURL: "u"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	live, dry := review(false), review(true)
+	post(live, Posted, "the bot said this", "the bot said this") // verbatim
+	post(live, Posted, "keep it", "keep it")                     // verbatim
+	post(live, Posted, "the bot said this", "my own rewrite")    // reworded
+	post(live, AutoPosted, "auto one", "auto one")               // bot's auto-post: not counted
+	post(live, Discarded, "dropped", "dropped")                  // discarded: not counted
+	post(dry, Posted, "dry one", "dry one")                      // dry run: not counted
+
+	e, err := s.PostedEdits()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (Edits{Verbatim: 2, Edited: 1, Unknown: 0}); e != want {
+		t.Errorf("PostedEdits() = %+v, want %+v", e, want)
+	}
+	if e.Known() != 3 {
+		t.Errorf("Known() = %d, want 3", e.Known())
+	}
+	if got := e.VerbatimShare(); got < 0.66 || got > 0.67 {
+		t.Errorf("VerbatimShare() = %v, want ~0.667", got)
+	}
+}
