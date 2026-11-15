@@ -71,7 +71,10 @@ func Prepare(ctx context.Context, cacheDir, repo string, number int, sha string)
 	}
 	_ = os.RemoveAll(dir)
 	_ = git(ctx, repoDir, "worktree", "prune")
-	if err := git(ctx, repoDir, "worktree", "add", "--quiet", "--detach", dir, sha); err != nil {
+	// core.symlinks=false writes a committed symlink as a plain file holding its target's path, rather than a live
+	// link. A PR that commits `notes.md -> ~/.ssh/id_ed25519` is then read as that text, not the key it points at, so
+	// untrusted PR content cannot reach a file outside the checkout this way (GHSA-qc4c-5hr3-rr6x).
+	if err := git(ctx, repoDir, "-c", "core.symlinks=false", "worktree", "add", "--quiet", "--detach", dir, sha); err != nil {
 		return nil, err
 	}
 	return &Workspace{Dir: dir, repoDir: repoDir}, nil

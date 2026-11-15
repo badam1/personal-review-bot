@@ -453,11 +453,17 @@ func parseStream(out []byte, now time.Time) (*result, *Usage) {
 // or a field (-f, -F, --input), and a permission rule only sees the command's text, which quoting a flag gets past
 // ('-fname=x' and "-X" POST both reached gh as writes past a deny list naming them). gh-read checks the arguments
 // the shell actually hands it. `gh api` itself is denied outright. (Found by @krisztiankoszegi in #24.)
+//
+// git is read through git-read for the same reason: bare `git` is denied, and git-read allows only log, show, diff and
+// blame, none of them with a flag that reaches a path outside the checkout. `git diff --no-index` and `--output`, `-O`,
+// and `git blame --contents` otherwise read or write any host file, escaping the sandbox the untrusted PR is reviewed
+// in, and a deny list naming the flags is slipped past by an abbreviation like `--con` for `--contents`
+// (GHSA-qc4c-5hr3-rr6x).
 var readOnly = []string{"--permission-mode", "default",
 	"--tools", "Read", "Grep", "Glob", "Bash",
 	"--allowedTools", "Read", "Grep", "Glob",
-	"Bash(gh search code *)", "Bash(gh-read *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)", "Bash(git blame *)",
-	"--disallowedTools", "Bash(gh api *)"}
+	"Bash(gh search code *)", "Bash(gh-read *)", "Bash(git-read *)",
+	"--disallowedTools", "Bash(gh api *)", "Bash(git *)"}
 
 // ghRead is the gh-read command the runs find first on their PATH: one GET of the GitHub API. It takes exactly one
 // argument, refuses one that is a flag or another host, and passes it after "--", where gh can only take it for the
@@ -474,18 +480,41 @@ esac
 exec gh api --method GET -- "$1"
 `
 
+// gitRead is the git-read command the runs find first on their PATH: read-only git and nothing else. It allows only
+// log, show, diff and blame, and refuses the flags that reach a path outside the checkout — --no-index, --output, -O
+// and --contents (which abbreviates to --con, so a prefix is refused) — then hands the rest to git unchanged.
+const gitRead = `#!/bin/sh
+# git-read: read-only git and nothing else, for personal-review-bot's reviewers.
+case "$1" in
+  log|show|diff|blame) ;;
+  *) echo "git-read: only log, show, diff and blame are allowed, not: $1" >&2; exit 2 ;;
+esac
+for a in "$@"; do
+  case "$a" in
+    --no-index|--output|--output=*|--con|--con[!-]*|-O|-O?*)
+      echo "git-read: refused a flag that can reach a path outside the checkout: $a" >&2; exit 2 ;;
+  esac
+done
+exec git "$@"
+`
+
 var (
 	binOnce sync.Once
 	binDir  string
 	binErr  error
 )
 
-// commandDir writes gh-read into a private directory of its own, once, and returns the directory, for the front of
-// the runs' PATH.
+// commandDir writes gh-read and git-read into a private directory of its own, once, and returns the directory, for the
+// front of the runs' PATH.
 func commandDir() (string, error) {
 	binOnce.Do(func() {
-		if binDir, binErr = os.MkdirTemp("", "personal-review-bot-bin-"); binErr == nil {
-			binErr = os.WriteFile(filepath.Join(binDir, "gh-read"), []byte(ghRead), 0o755)
+		if binDir, binErr = os.MkdirTemp("", "personal-review-bot-bin-"); binErr != nil {
+			return
+		}
+		for name, script := range map[string]string{"gh-read": ghRead, "git-read": gitRead} {
+			if binErr = os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755); binErr != nil {
+				return
+			}
 		}
 	})
 	return binDir, binErr
