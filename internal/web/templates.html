@@ -847,6 +847,16 @@
       If you post most of a range that waits for you, the rule could post it; if you discard most of one the bot posts, tighten it.</p>
   </section>
 
+  <section class="sect" aria-labelledby="landed"><h2 id="landed" class="h2">How posted findings landed</h2>
+    {{if .Downstream.Known}}<div class="tbl-wrap"><table class="tbl" style="min-width: 0"><tr>
+        <th class="n">endorsed</th><th class="n">quiet</th><th class="n">disputed</th><th class="n">unchecked</th></tr>
+      <tr><td class="n">{{.Downstream.Endorsed}}</td><td class="n">{{.Downstream.Quiet}}</td><td class="n">{{.Downstream.Disputed}}</td><td class="n">{{.Downstream.Unchecked}}</td></tr></table></div>
+    <p class="fine">What became of the findings you and the bot posted, read from GitHub: <b>endorsed</b> (thumbed up, or its thread resolved), <b>quiet</b>
+      (still there, no reaction), <b>disputed</b> (thumbed down). Each is matched to the bot's own thread; one that can't be located stays unchecked
+      rather than guessed. A finding is checked until its PR is merged or closed.</p>
+    {{else}}<p class="fine">Nothing read yet — posted findings are checked on GitHub a while after they go out.</p>{{end}}
+  </section>
+
   <section class="sect" aria-labelledby="bysize"><h2 id="bysize" class="h2">Spend by PR size</h2>
     <div class="tbl-wrap"><table class="tbl" style="min-width: 0"><tr><th>tier</th><th class="n">reviews</th><th class="n">spend</th><th class="n">per review</th></tr>
     {{range .Tiers}}<tr><td><span class="size {{sizeKind .Name}}">{{.Name}}</span></td><td class="n">{{.Count}}</td><td class="n">{{money .CostUSD}}</td><td class="n">{{money .Average}}</td></tr>{{end}}</table></div>
