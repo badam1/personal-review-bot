@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/badam1/personal-review-bot/internal/downstream"
 	_ "modernc.org/sqlite"
 )
 
@@ -101,6 +102,8 @@ type Finding struct {
 	FollowupReview  int64     // the review that checked it last
 	RemindedSHA     string    // the PR's head when you last reminded the author it is still open ("" = never)
 	RemindedAt      time.Time // when
+	Downstream      string    // what became of it on GitHub: endorsed | disputed | quiet ("" = unchecked / couldn't be located)
+	DownstreamAt    time.Time // when the downstream state was last checked
 }
 
 // Follow-up statuses. Fixed, moot and declined are settled and not checked again.
@@ -151,7 +154,8 @@ CREATE TABLE IF NOT EXISTS findings (
   status TEXT NOT NULL, inline INTEGER NOT NULL DEFAULT 0, posted_url TEXT NOT NULL DEFAULT '',
   context TEXT NOT NULL DEFAULT '', wrong INTEGER NOT NULL DEFAULT 0, followup TEXT NOT NULL DEFAULT '',
   followup_note TEXT NOT NULL DEFAULT '', followup_review INTEGER NOT NULL DEFAULT 0,
-  reminded_sha TEXT NOT NULL DEFAULT '', reminded_at TEXT NOT NULL DEFAULT '');
+  reminded_sha TEXT NOT NULL DEFAULT '', reminded_at TEXT NOT NULL DEFAULT '',
+  downstream TEXT NOT NULL DEFAULT '', downstream_at TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS runs (
   id INTEGER PRIMARY KEY, review_id INTEGER NOT NULL REFERENCES reviews (id), agent TEXT NOT NULL, model TEXT NOT NULL,
   findings INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, denials INTEGER NOT NULL DEFAULT 0,
@@ -196,6 +200,8 @@ func Open(path string) (*Store, error) {
 		{"findings", "followup_review", "INTEGER NOT NULL DEFAULT 0"},
 		{"findings", "reminded_sha", "TEXT NOT NULL DEFAULT ''"},
 		{"findings", "reminded_at", "TEXT NOT NULL DEFAULT ''"},
+		{"findings", "downstream", "TEXT NOT NULL DEFAULT ''"},
+		{"findings", "downstream_at", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := addColumn(db, c.table, c.column, c.def); err != nil {
 			db.Close()
@@ -706,7 +712,8 @@ func (s *Store) Decisions(threshold int) (time.Time, []DecisionRow, error) {
 }
 
 const findingCols = `id, review_id, agent, path, line, severity, title, comment, agent_confidence, confidence, verdict,
-  status, inline, posted_url, context, wrong, followup, followup_note, followup_review, reminded_sha, reminded_at`
+  status, inline, posted_url, context, wrong, followup, followup_note, followup_review, reminded_sha, reminded_at,
+  downstream, downstream_at`
 
 func (s *Store) AddFinding(f *Finding) (int64, error) {
 	res, err := s.db.Exec(`INSERT INTO findings (review_id, agent, path, line, severity, title, comment, agent_confidence,
@@ -764,7 +771,7 @@ func (s *Store) SetReminded(id int64, sha string) error {
 func (s *Store) EarlierPosted(repo string, number int, before int64) ([]Finding, error) {
 	return s.queryFindings(`SELECT f.id, f.review_id, f.agent, f.path, f.line, f.severity, f.title, f.comment,
 	  f.agent_confidence, f.confidence, f.verdict, f.status, f.inline, f.posted_url, f.context, f.wrong, f.followup,
-	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at
+	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at, f.downstream, f.downstream_at
 	  FROM findings f JOIN reviews r ON r.id = f.review_id
 	  WHERE r.repo = ? AND r.number = ? AND r.id < ? AND r.dry_run = 0 AND f.status IN (?, ?) ORDER BY f.id`,
 		repo, number, before, AutoPosted, Posted)
@@ -790,10 +797,106 @@ func (s *Store) Findings(reviewID int64) ([]Finding, error) {
 func (s *Store) PriorFindings(repo string, number int, before int64) ([]Finding, error) {
 	return s.queryFindings(`SELECT f.id, f.review_id, f.agent, f.path, f.line, f.severity, f.title, f.comment,
 	  f.agent_confidence, f.confidence, f.verdict, f.status, f.inline, f.posted_url, f.context, f.wrong, f.followup,
-	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at
+	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at, f.downstream, f.downstream_at
 	  FROM findings f JOIN reviews r ON r.id = f.review_id
 	  WHERE r.repo = ? AND r.number = ? AND r.id < ? AND f.status IN (?, ?, ?, ?)
 	  ORDER BY f.id DESC LIMIT 50`, repo, number, before, AutoPosted, Posted, Discarded, Pending)
+}
+
+// PostedFinding is a finding the bot put on GitHub, paired with its PR. The embedded Finding carries what MatchThread
+// needs to locate the bot's own review thread; Repo and Number say which PR to read.
+type PostedFinding struct {
+	Finding
+	Repo   string
+	Number int
+}
+
+// PostedToCheck returns posted inline findings whose downstream state is due for a check, least-recently-checked first.
+// The set is bounded so the work can't grow without end: a finding drops out once its PR is merged or closed (no more
+// reactions will come), and once its review is older than `since`. `before` is the staleness cutoff — a finding checked
+// since then waits for later. Design concerns and non-inline findings have no thread to read and are left out.
+func (s *Store) PostedToCheck(before, since string, limit int) ([]PostedFinding, error) {
+	rows, err := s.db.Query(`SELECT f.id, f.review_id, f.agent, f.path, f.line, f.severity, f.title, f.comment,
+	  f.agent_confidence, f.confidence, f.verdict, f.status, f.inline, f.posted_url, f.context, f.wrong, f.followup,
+	  f.followup_note, f.followup_review, f.reminded_sha, f.reminded_at, f.downstream, f.downstream_at, r.repo, r.number
+	  FROM findings f
+	  JOIN reviews r ON r.id = f.review_id
+	  LEFT JOIN prs p ON p.repo = r.repo AND p.number = r.number
+	  WHERE f.status IN (?, ?) AND f.inline = 1 AND r.dry_run = 0
+	    AND coalesce(p.state, '') NOT IN (?, ?)
+	    AND coalesce(f.downstream_at, '') < ?
+	    AND r.created_at >= ?
+	  ORDER BY coalesce(f.downstream_at, '') ASC, f.id ASC LIMIT ?`,
+		AutoPosted, Posted, PRMerged, PRClosed, before, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PostedFinding
+	for rows.Next() {
+		var pf PostedFinding
+		var inline, wrong int
+		var reminded, downstreamAt string
+		if err := rows.Scan(&pf.ID, &pf.ReviewID, &pf.Agent, &pf.Path, &pf.Line, &pf.Severity, &pf.Title, &pf.Comment,
+			&pf.AgentConfidence, &pf.Confidence, &pf.Verdict, &pf.Status, &inline, &pf.PostedURL, &pf.Context, &wrong,
+			&pf.Followup, &pf.FollowupNote, &pf.FollowupReview, &pf.RemindedSHA, &reminded, &pf.Downstream, &downstreamAt,
+			&pf.Repo, &pf.Number); err != nil {
+			return nil, err
+		}
+		pf.Inline, pf.Wrong = inline == 1, wrong == 1
+		pf.RemindedAt, pf.DownstreamAt = parseTime(reminded), parseTime(downstreamAt)
+		out = append(out, pf)
+	}
+	return out, rows.Err()
+}
+
+// SetDownstream records what became of a posted finding and when it was checked. An unknown result never overwrites a
+// signal already seen — a comment that briefly can't be located shouldn't erase an endorsement or dispute recorded
+// earlier — it only moves the check time forward, so the finding waits its turn instead of being read every tick.
+func (s *Store) SetDownstream(id int64, signal, at string) error {
+	if signal == "" || signal == "unknown" {
+		_, err := s.db.Exec(`UPDATE findings SET downstream_at = ? WHERE id = ?`, at, id)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE findings SET downstream = ?, downstream_at = ? WHERE id = ?`, signal, at, id)
+	return err
+}
+
+// DownstreamMix is what became of the findings the bot posted: how many were endorsed, left quiet, or disputed, and
+// how many are still unchecked (never read, or the comment couldn't be located).
+type DownstreamMix struct{ Endorsed, Quiet, Disputed, Unchecked int }
+
+// Known is the posted findings whose downstream state has been read (endorsed, quiet or disputed).
+func (m DownstreamMix) Known() int { return m.Endorsed + m.Quiet + m.Disputed }
+
+// DownstreamMix counts what became of the findings the bot posted (by the bot or by you), for the Stats page. Dry runs
+// post nothing, so they are left out.
+func (s *Store) DownstreamMix() (DownstreamMix, error) {
+	rows, err := s.db.Query(`SELECT f.downstream, count(*) FROM findings f JOIN reviews r ON r.id = f.review_id
+	  WHERE f.status IN (?, ?) AND f.inline = 1 AND r.dry_run = 0 GROUP BY f.downstream`, AutoPosted, Posted)
+	if err != nil {
+		return DownstreamMix{}, err
+	}
+	defer rows.Close()
+	var m DownstreamMix
+	for rows.Next() {
+		var sig string
+		var n int
+		if err := rows.Scan(&sig, &n); err != nil {
+			return DownstreamMix{}, err
+		}
+		switch sig {
+		case string(downstream.Endorsed):
+			m.Endorsed = n
+		case string(downstream.Quiet):
+			m.Quiet = n
+		case string(downstream.Disputed):
+			m.Disputed = n
+		default: // "" (unchecked / couldn't be located), and any signal not shown on its own
+			m.Unchecked += n
+		}
+	}
+	return m, rows.Err()
 }
 
 func (s *Store) queryFindings(query string, args ...any) ([]Finding, error) {
@@ -806,13 +909,13 @@ func (s *Store) queryFindings(query string, args ...any) ([]Finding, error) {
 	for rows.Next() {
 		var f Finding
 		var inline, wrong int
-		var reminded string
+		var reminded, downstreamAt string
 		if err := rows.Scan(&f.ID, &f.ReviewID, &f.Agent, &f.Path, &f.Line, &f.Severity, &f.Title, &f.Comment,
 			&f.AgentConfidence, &f.Confidence, &f.Verdict, &f.Status, &inline, &f.PostedURL, &f.Context, &wrong,
-			&f.Followup, &f.FollowupNote, &f.FollowupReview, &f.RemindedSHA, &reminded); err != nil {
+			&f.Followup, &f.FollowupNote, &f.FollowupReview, &f.RemindedSHA, &reminded, &f.Downstream, &downstreamAt); err != nil {
 			return nil, err
 		}
-		f.Inline, f.Wrong, f.RemindedAt = inline == 1, wrong == 1, parseTime(reminded)
+		f.Inline, f.Wrong, f.RemindedAt, f.DownstreamAt = inline == 1, wrong == 1, parseTime(reminded), parseTime(downstreamAt)
 		out = append(out, f)
 	}
 	return out, rows.Err()
