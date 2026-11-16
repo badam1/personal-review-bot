@@ -121,10 +121,10 @@ func (d Deps) RouteChannel(repo string) (name string, owned bool) {
 	return ch.Name, ok
 }
 
-// clientFor is the GitHub client a review runs under: its channel's own, when that channel acts under a distinct
+// ClientFor is the GitHub client a review runs under: its channel's own, when that channel acts under a distinct
 // identity, else GH (the ambient login). A nil Clients map or an absent channel both fall back to GH, so a single-
 // identity setup is unchanged.
-func (d Deps) clientFor(r *store.Review) *gh.Client {
+func (d Deps) ClientFor(r *store.Review) *gh.Client {
 	if c := d.Clients[r.Channel]; c != nil {
 		return c
 	}
@@ -178,7 +178,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	}
 	ctx = agents.WithClaudeEnv(ctx, claudeEnv)
 	// And its GitHub identity: the channel's own client when it has one, else the ambient login.
-	ghc := d.clientFor(r)
+	ghc := d.ClientFor(r)
 
 	stage("fetching PR")
 	pr, err := ghc.GetPR(r.Repo, r.Number)
@@ -772,7 +772,7 @@ func postAuto(d Deps, auto []store.Finding, post func([]store.Finding) (string, 
 // findings whose line is not in the diff go into the review body instead of inline. A reminder is a reply in its
 // finding's thread (reopening it when it was resolved), or, without one, a line in the review body.
 func Post(d Deps, r *store.Review, event string, fs []store.Finding, reminders []Reminder) (string, error) {
-	ghc := d.clientFor(r) // post under the review's channel identity, not necessarily the ambient one
+	ghc := d.ClientFor(r) // post under the review's channel identity, not necessarily the ambient one
 	body, comments := reviewBody(d.Cfg, fs)
 	section, replies := reminderParts(d.Cfg, reminders)
 	body = append(section, body...)

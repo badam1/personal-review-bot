@@ -42,6 +42,7 @@ type Config struct {
 	// GitHub App: process-level credentials shared by channels that act as the App (each names its own installation).
 	GitHubAppID      string // GITHUB_APP_ID: the App's id (App ID or client id); empty = no App configured
 	GitHubAppKeyFile string // GITHUB_APP_KEY_FILE: path to the App's private-key PEM
+	WebhookAddr      string // WEBHOOK_ADDR: the webhook server's listen address (empty = :8080)
 }
 
 // Load reads the settings. The environment wins over config.env, so a one-off run can override the file.
@@ -83,6 +84,7 @@ func LoadFrom(dir string) Config {
 		DataRepoDir:      s.str("DATA_REPO", ""),
 		GitHubAppID:      s.str("GITHUB_APP_ID", ""),
 		GitHubAppKeyFile: s.str("GITHUB_APP_KEY_FILE", ""),
+		WebhookAddr:      s.str("WEBHOOK_ADDR", ""),
 	}
 }
 

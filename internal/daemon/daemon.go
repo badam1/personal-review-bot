@@ -69,6 +69,46 @@ func channelClients(ctx context.Context, channels []config.Channel, ambient *gh.
 	return clients, nil
 }
 
+// reviewDeps builds the parts of pipeline.Deps that the poller and the webhook server share: the configured channels,
+// their routing, each channel's GitHub identity, and the optional git data store. The caller sets Live and Store (the
+// poller's persistent one; a webhook's per-review ephemeral one).
+func reviewDeps(ctx context.Context, cfg config.Config, client *gh.Client) (pipeline.Deps, error) {
+	channels, err := config.LoadChannels(cfg.ConfigDir, cfg)
+	if err != nil {
+		return pipeline.Deps{}, fmt.Errorf("channels: %w", err)
+	}
+	if channels, err = config.SelectChannels(channels, cfg.ChannelSelect); err != nil {
+		return pipeline.Deps{}, err
+	}
+	router, err := config.NewRouter(channels)
+	if err != nil {
+		return pipeline.Deps{}, err
+	}
+	var dataRepo *datarepo.Store
+	if cfg.DataRepoDir != "" {
+		if dataRepo, err = datarepo.Open(cfg.DataRepoDir); err != nil {
+			return pipeline.Deps{}, fmt.Errorf("data repo: %w", err)
+		}
+		log.Printf("recording review outcomes to %s", cfg.DataRepoDir)
+	}
+	var app *ghapp.App
+	if cfg.GitHubAppID != "" {
+		key, err := os.ReadFile(cfg.GitHubAppKeyFile)
+		if err != nil {
+			return pipeline.Deps{}, fmt.Errorf("github app key (GITHUB_APP_KEY_FILE): %w", err)
+		}
+		if app, err = ghapp.New(cfg.GitHubAppID, key); err != nil {
+			return pipeline.Deps{}, fmt.Errorf("github app: %w", err)
+		}
+	}
+	clients, err := channelClients(ctx, channels, client, app)
+	if err != nil {
+		return pipeline.Deps{}, err
+	}
+	return pipeline.Deps{Cfg: cfg, GH: client, Log: log.Printf,
+		Channels: channels, Router: router, DataRepo: dataRepo, Clients: clients}, nil
+}
+
 func Run(ctx context.Context, cfg config.Config) error {
 	st, err := store.Open(cfg.DBPath())
 	if err != nil {
@@ -79,40 +119,13 @@ func Run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	channels, err := config.LoadChannels(cfg.ConfigDir, cfg)
-	if err != nil {
-		return fmt.Errorf("channels: %w", err)
-	}
-	if channels, err = config.SelectChannels(channels, cfg.ChannelSelect); err != nil {
-		return err
-	}
-	router, err := config.NewRouter(channels)
+	d, err := reviewDeps(ctx, cfg, client)
 	if err != nil {
 		return err
 	}
-	var dataRepo *datarepo.Store
-	if cfg.DataRepoDir != "" {
-		if dataRepo, err = datarepo.Open(cfg.DataRepoDir); err != nil {
-			return fmt.Errorf("data repo: %w", err)
-		}
-		log.Printf("recording review outcomes to %s", cfg.DataRepoDir)
-	}
-	var app *ghapp.App
-	if cfg.GitHubAppID != "" {
-		key, err := os.ReadFile(cfg.GitHubAppKeyFile)
-		if err != nil {
-			return fmt.Errorf("github app key (GITHUB_APP_KEY_FILE): %w", err)
-		}
-		if app, err = ghapp.New(cfg.GitHubAppID, key); err != nil {
-			return fmt.Errorf("github app: %w", err)
-		}
-	}
-	clients, err := channelClients(ctx, channels, client, app)
-	if err != nil {
-		return err
-	}
-	d := pipeline.Deps{Cfg: cfg, Live: config.NewLive(cfg), Store: st, GH: client, Log: log.Printf,
-		Channels: channels, Router: router, DataRepo: dataRepo, Clients: clients}
+	d.Live = config.NewLive(cfg)
+	d.Store = st
+	channels := d.Channels
 	auto := cfg.AutoPostSeverities()
 	if auto == "" {
 		auto = "no severity"
