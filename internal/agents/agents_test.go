@@ -173,9 +173,12 @@ func TestBaseArgsIgnoreTheCheckout(t *testing.T) {
 }
 
 // GitHub is read through gh-read alone and git through git-read alone: `gh api` and bare `git` are not allowed, and
-// are denied outright.
+// are denied outright. No tool is allowed whole: Read, Grep or Glob allowed without a path reads any file on the machine.
 func TestReadOnlyTools(t *testing.T) {
 	allowed := readOnly[slices.Index(readOnly, "--allowedTools")+1 : slices.Index(readOnly, "--disallowedTools")]
+	if i := slices.IndexFunc(allowed, func(s string) bool { return !strings.Contains(s, "(") }); i >= 0 {
+		t.Errorf("allowed %q: %s is allowed whole, beyond the checkout", allowed, allowed[i])
+	}
 	if !slices.Contains(allowed, "Bash(gh-read *)") || slices.ContainsFunc(allowed, func(s string) bool { return strings.Contains(s, "gh api") }) {
 		t.Errorf("allowed %q: want gh-read and no gh api", allowed)
 	}
@@ -259,12 +262,17 @@ func TestGitRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	written := filepath.Join(t.TempDir(), "written")
+	up, err := filepath.Rel(repo, outside) // the same file, reached from the checkout through ..
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// The commands reviewers use must still work, including a pickaxe (-S) and a flag that only shares a prefix with
-	// a refused one (--no-indent-heuristic vs --no-index).
+	// The commands reviewers use must still work, including a pickaxe (-S), a flag that only shares a prefix with
+	// a refused one (--no-indent-heuristic vs --no-index), and a commit range, whose .. is not a path.
 	for _, args := range [][]string{
 		{"log", "--oneline"}, {"show", "HEAD"}, {"diff", "HEAD", "--", "a.txt"}, {"blame", "a.txt"},
 		{"log", "-Shello", "--oneline"}, {"diff", "--no-indent-heuristic", "HEAD"},
+		{"log", "--oneline", "HEAD~0..HEAD"}, {"blame", "-L", "1,1", "a.txt"}, {"show", "HEAD:a.txt"},
 	} {
 		cmd := exec.Command(gitRead, args...)
 		cmd.Dir = repo
@@ -275,13 +283,19 @@ func TestGitRead(t *testing.T) {
 
 	// Escapes must be refused, leak no canary, and write no file.
 	for _, args := range [][]string{
-		{"status"},                                // not a read-only subcommand
-		{"diff", "--no-index", "a.txt", outside},  // reads any path
-		{"blame", "--contents", outside, "a.txt"}, // reads any path
-		{"blame", "--con", outside, "a.txt"},      // ...however the flag is abbreviated
-		{"diff", "--output=" + written, "HEAD"},   // writes any path
-		{"show", "--output=" + written, "HEAD"},   // ...from any of the subcommands
-		{"diff", "-O" + outside, "HEAD"},          // reads an order file
+		{"status"},                                        // not a read-only subcommand
+		{"diff", "--no-index", "a.txt", outside},          // reads any path
+		{"blame", "--contents", outside, "a.txt"},         // reads any path
+		{"blame", "--con", outside, "a.txt"},              // ...however the flag is abbreviated
+		{"diff", "--output=" + written, "HEAD"},           // writes any path
+		{"show", "--output=" + written, "HEAD"},           // ...from any of the subcommands
+		{"diff", "-O" + outside, "HEAD"},                  // reads an order file
+		{"diff", "a.txt", outside},                        // a path outside the repo turns diff into --no-index by itself
+		{"diff", "a.txt", up},                             // ...reached through .. too
+		{"blame", "-S", outside, "a.txt"},                 // a revs file: each line it can't parse is printed back
+		{"blame", "-wS" + outside, "a.txt"},               // ...behind another short flag
+		{"blame", "--ignore-revs-file", outside, "a.txt"}, // its first line is printed back
+		{"blame", "--ignore-revs-f=" + outside, "a.txt"},  // ...however the flag is abbreviated
 	} {
 		cmd := exec.Command(gitRead, args...)
 		cmd.Dir = repo

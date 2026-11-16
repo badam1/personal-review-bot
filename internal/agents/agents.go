@@ -449,6 +449,11 @@ func parseStream(out []byte, now time.Time) (*result, *Usage) {
 
 // readOnly is what reviewers and the verifier may use: the checkout, and a few commands that only read.
 //
+// Read, Grep and Glob are given but not allowed: allowed, even by name alone, they read any file on the machine
+// (~/.ssh, ~/.aws, ~/.kube), which a finding could then carry to GitHub. Not allowed, they read the working
+// directory, which is the checkout, and a read anywhere else asks for a permission a run with nobody watching never
+// gets.
+//
 // GitHub is read through gh-read, never `gh api`: the same `gh api` writes with your token when given -X, --method
 // or a field (-f, -F, --input), and a permission rule only sees the command's text, which quoting a flag gets past
 // ('-fname=x' and "-X" POST both reached gh as writes past a deny list naming them). gh-read checks the arguments
@@ -458,11 +463,12 @@ func parseStream(out []byte, now time.Time) (*result, *Usage) {
 // blame, none of them with a flag that reaches a path outside the checkout. `git diff --no-index` and `--output`, `-O`,
 // and `git blame --contents` otherwise read or write any host file, escaping the sandbox the untrusted PR is reviewed
 // in, and a deny list naming the flags is slipped past by an abbreviation like `--con` for `--contents`
-// (GHSA-qc4c-5hr3-rr6x).
+// (GHSA-qc4c-5hr3-rr6x). Nor do the flags alone reach every path: `git diff` given a path outside the repo turns into
+// --no-index by itself, and `git blame -S` and `--ignore-revs-file` print back the lines of a file they can't parse.
+// So git-read refuses the path too.
 var readOnly = []string{"--permission-mode", "default",
 	"--tools", "Read", "Grep", "Glob", "Bash",
-	"--allowedTools", "Read", "Grep", "Glob",
-	"Bash(gh search code *)", "Bash(gh-read *)", "Bash(git-read *)",
+	"--allowedTools", "Bash(gh search code *)", "Bash(gh-read *)", "Bash(git-read *)",
 	"--disallowedTools", "Bash(gh api *)", "Bash(git *)"}
 
 // ghRead is the gh-read command the runs find first on their PATH: one GET of the GitHub API. It takes exactly one
@@ -482,7 +488,9 @@ exec gh api --method GET -- "$1"
 
 // gitRead is the git-read command the runs find first on their PATH: read-only git and nothing else. It allows only
 // log, show, diff and blame, and refuses the flags that reach a path outside the checkout — --no-index, --output, -O
-// and --contents (which abbreviates to --con, so a prefix is refused) — then hands the rest to git unchanged.
+// and --contents (which abbreviates to --con, so a prefix is refused) — and any argument that can name such a path:
+// one starting with / or ~, one through .., and a short flag's value written onto it (-S/path), as any short flag may
+// take a file. Then it hands the rest to git unchanged. A commit range's .. is not a path and passes.
 const gitRead = `#!/bin/sh
 # git-read: read-only git and nothing else, for personal-review-bot's reviewers.
 case "$1" in
@@ -493,6 +501,8 @@ for a in "$@"; do
   case "$a" in
     --no-index|--output|--output=*|--con|--con[!-]*|-O|-O?*)
       echo "git-read: refused a flag that can reach a path outside the checkout: $a" >&2; exit 2 ;;
+    /*|~*|..|../*|*/..|*/../*|*=/*|*=~*|*=..|*=../*|-[!-]*/*)
+      echo "git-read: refused an argument that can name a path outside the checkout: $a (give a path relative to the checkout, without .., and a short flag's value as an argument of its own)" >&2; exit 2 ;;
   esac
 done
 exec git "$@"
