@@ -59,9 +59,10 @@ with no behavior change unless the task says otherwise.
 ## Milestone B — run anywhere (on-demand / container)
 
 ### P4 — Per-channel GitHub identity: token (D3 part 1)
-- [ ] **P4.1 — Build the `gh` client per channel with its token** (vs. the ambient `gh` login).
-  - Outcome: a channel can act under a distinct token; default = ambient login. *(Optional for a single-GitHub-account
-    user — one token already covers all their orgs.)*
+- [x] **P4.1 — Build the `gh` client per channel with its token** (vs. the ambient `gh` login).
+  - Outcome: a channel can act under a distinct token; default = ambient login. `gh.NewWithToken` pins the host and
+    consults no gh config (works in CI); `Deps.ClientFor` resolves a review's client. *(Optional for a single-GitHub-
+    account user — one token already covers all their orgs.)* ✅ committed (PR #52).
   - Depends on: P0.2
 
 ### P5 — Pluggable state (D5) + git data store (D6)
@@ -99,12 +100,18 @@ with no behavior change unless the task says otherwise.
 ## Milestone C — webhook / community install
 
 ### P7 — GitHub App identity + webhook receiver (D3 part 2)
-- [ ] **P7.1 — GitHub App auth.** App JWT → per-install short-lived token in the `gh` client.
-  - Outcome: the bot acts as the App with per-install tokens; nothing long-lived on the server.
+- [x] **P7.1 — GitHub App auth.** App JWT → per-install short-lived token in the `gh` client.
+  - Outcome: the bot acts as the App with per-install tokens; nothing long-lived on the server but the App key.
+    `internal/ghapp` signs the JWT, mints + caches installation tokens, and wraps gh's transport; `gh.NewWithAuth`
+    builds the App client. ✅ committed (PR #52). *Live JWT acceptance + real token mint need a registered App —
+    built to GitHub's contract, tested behind seams.*
   - Depends on: P4.1
-- [ ] **P7.2 — Webhook receiver.** Verify the signature, map installation/repo → channel (edge-routed), run the
+- [x] **P7.2 — Webhook receiver.** Verify the signature, map installation/repo → channel (edge-routed), run the
   one-shot review.
-  - Outcome: a PR event triggers a review with the owning channel; bad signatures are rejected.
+  - Outcome: a PR event triggers a review with the owning channel; bad signatures are rejected. `internal/webhook`
+    (HMAC verify + parse + dispatch) and the `webhook` command (`daemon.ServeWebhook`) review in memory under the
+    channel's identity. ✅ committed (PR #52). *An end-to-end delivery needs a registered App — the verify/parse/route
+    are tested.*
   - Depends on: P6.1, P7.1
 
 ---
