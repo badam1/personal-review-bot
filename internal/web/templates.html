@@ -847,6 +847,13 @@
       If you post most of a range that waits for you, the rule could post it; if you discard most of one the bot posts, tighten it.</p>
   </section>
 
+  {{if .Edits.Known}}<section class="sect" aria-labelledby="wording"><h2 id="wording" class="h2">Posted in the bot's words</h2>
+    <p>Of the {{.Edits.Known}} findings you posted yourself, <b>{{pct .Edits.VerbatimShare}}</b> went out word for word
+      ({{.Edits.Verbatim}} verbatim, {{.Edits.Edited}} reworded first).</p>
+    <p class="fine">Counts only findings you posted, where keeping or changing the wording was your choice; the bot's auto-posts
+      are always verbatim, so they are left out.{{if .Edits.Unknown}} {{.Edits.Unknown}} more predate this being recorded.{{end}}</p>
+  </section>{{end}}
+
   <section class="sect" aria-labelledby="bysize"><h2 id="bysize" class="h2">Spend by PR size</h2>
     <div class="tbl-wrap"><table class="tbl" style="min-width: 0"><tr><th>tier</th><th class="n">reviews</th><th class="n">spend</th><th class="n">per review</th></tr>
     {{range .Tiers}}<tr><td><span class="size {{sizeKind .Name}}">{{.Name}}</span></td><td class="n">{{.Count}}</td><td class="n">{{money .CostUSD}}</td><td class="n">{{money .Average}}</td></tr>{{end}}</table></div>

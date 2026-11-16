@@ -17,3 +17,6 @@ go.work.sum
 config.env
 
 .DS_Store
+
+# Python bytecode (scripts/screenshots.py)
+__pycache__/
