@@ -1,4 +1,5 @@
-// Package gh talks to GitHub with the user's existing `gh` login (via go-gh), so no separate token is needed.
+// Package gh talks to GitHub via go-gh. By default it uses the user's existing `gh` login, so no separate token is
+// needed; a channel can instead act under its own identity — a token (NewWithToken) or a GitHub App installation.
 package gh
 
 import (
@@ -76,23 +77,55 @@ type Comment struct {
 	Body string `json:"body"`
 }
 
+// New builds a client from the user's ambient gh login (the GH_TOKEN / GITHUB_TOKEN env vars or the gh CLI config), as
+// the bot has always run.
 func New() (*Client, error) {
-	t := transport()
-	rest, err := api.NewRESTClient(api.ClientOptions{Transport: t, Timeout: callTimeout})
+	return newClient("")
+}
+
+// NewWithToken builds a client that authenticates with token instead of the ambient gh login, so a channel can act
+// under its own GitHub identity (a personal access token, or a GitHub App installation token). It consults no gh
+// config, so it works on a bare server or in CI where `gh auth login` was never run.
+func NewWithToken(token string) (*Client, error) {
+	if token == "" {
+		return nil, fmt.Errorf("github token is empty")
+	}
+	return newClient(token)
+}
+
+func newClient(token string) (*Client, error) {
+	return newClientWith(token, transport())
+}
+
+// newClientWith builds the REST, diff, GraphQL and download clients over transport t, then learns the login. token ""
+// uses the ambient gh login; a non-empty token authenticates every call as that token and pins the host, so no gh
+// config is read. t is a seam for tests; production passes transport().
+func newClientWith(token string, t http.RoundTripper) (*Client, error) {
+	// opts applies our transport to every client, and — for a token identity — the token and a pinned host, so go-gh
+	// authenticates as the token and never falls back to the ambient gh config.
+	opts := func(o api.ClientOptions) api.ClientOptions {
+		o.Transport = t
+		if token != "" {
+			o.AuthToken = token
+			o.Host = "github.com"
+		}
+		return o
+	}
+	rest, err := api.NewRESTClient(opts(api.ClientOptions{Timeout: callTimeout}))
 	if err != nil {
 		return nil, fmt.Errorf("GitHub login (run `gh auth login`): %w", err)
 	}
-	diff, err := api.NewRESTClient(api.ClientOptions{Transport: t, Timeout: callTimeout,
-		Headers: map[string]string{"Accept": "application/vnd.github.v3.diff"}})
+	diff, err := api.NewRESTClient(opts(api.ClientOptions{Timeout: callTimeout,
+		Headers: map[string]string{"Accept": "application/vnd.github.v3.diff"}}))
 	if err != nil {
 		return nil, err
 	}
-	gql, err := api.NewGraphQLClient(api.ClientOptions{Transport: t, Timeout: callTimeout})
+	gql, err := api.NewGraphQLClient(opts(api.ClientOptions{Timeout: callTimeout}))
 	if err != nil {
 		return nil, err
 	}
 	// No overall limit on a release download, which can be slow; a dead connection still fails on the transport's.
-	dl, err := api.NewHTTPClient(api.ClientOptions{Transport: t, Headers: map[string]string{"Accept": "application/octet-stream"}})
+	dl, err := api.NewHTTPClient(opts(api.ClientOptions{Headers: map[string]string{"Accept": "application/octet-stream"}}))
 	if err != nil {
 		return nil, err
 	}

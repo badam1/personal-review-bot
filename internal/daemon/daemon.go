@@ -20,6 +20,32 @@ import (
 	"github.com/badam1/personal-review-bot/internal/web"
 )
 
+// channelClients builds the GitHub client each channel acts under. A channel with its own token gets a token client;
+// the rest share the ambient client and are simply left out of the map. It fails fast on a misconfigured channel so a
+// bad token surfaces at startup, not mid-review. Returns nil when every channel uses the ambient login.
+func channelClients(channels []config.Channel, ambient *gh.Client) (map[string]*gh.Client, error) {
+	clients := map[string]*gh.Client{}
+	for _, ch := range channels {
+		tok, err := ch.GitHub.Token()
+		if err != nil {
+			return nil, fmt.Errorf("channel %q: %w", ch.Name, err)
+		}
+		if tok == "" {
+			continue // ambient login
+		}
+		c, err := gh.NewWithToken(tok)
+		if err != nil {
+			return nil, fmt.Errorf("channel %q github client: %w", ch.Name, err)
+		}
+		clients[ch.Name] = c
+		log.Printf("channel %q acts on GitHub as @%s", ch.Name, c.Login)
+	}
+	if len(clients) == 0 {
+		return nil, nil
+	}
+	return clients, nil
+}
+
 func Run(ctx context.Context, cfg config.Config) error {
 	st, err := store.Open(cfg.DBPath())
 	if err != nil {
@@ -48,8 +74,12 @@ func Run(ctx context.Context, cfg config.Config) error {
 		}
 		log.Printf("recording review outcomes to %s", cfg.DataRepoDir)
 	}
+	clients, err := channelClients(channels, client)
+	if err != nil {
+		return err
+	}
 	d := pipeline.Deps{Cfg: cfg, Live: config.NewLive(cfg), Store: st, GH: client, Log: log.Printf,
-		Channels: channels, Router: router, DataRepo: dataRepo}
+		Channels: channels, Router: router, DataRepo: dataRepo, Clients: clients}
 	auto := cfg.AutoPostSeverities()
 	if auto == "" {
 		auto = "no severity"

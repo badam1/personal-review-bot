@@ -75,6 +75,20 @@ type GitHubAuth struct {
 	App      string // a GitHub App installation reference, resolved later
 }
 
+// Token resolves this channel's GitHub token from the environment variable it named, never storing the secret. It
+// returns "" when the channel configures no token (the ambient gh login, today's behavior), and an error when the
+// named variable is unset so a misconfigured channel fails fast — mirroring ClaudeAuth.Env.
+func (a GitHubAuth) Token() (string, error) {
+	if a.TokenEnv == "" {
+		return "", nil
+	}
+	v, ok := os.LookupEnv(a.TokenEnv)
+	if !ok {
+		return "", fmt.Errorf("the GitHub-token env var %q is not set", a.TokenEnv)
+	}
+	return v, nil
+}
+
 // ReviewSettings are the per-channel review knobs. The default channel copies them from the global config; it is kept
 // small on purpose and extended as later phases make more settings per-channel.
 type ReviewSettings struct {

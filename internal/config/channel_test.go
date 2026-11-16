@@ -66,6 +66,21 @@ func TestClaudeAuthEnv(t *testing.T) {
 	}
 }
 
+// GitHubAuth.Token resolves the channel's token from its named env var: empty for the ambient login, the value when
+// set, and an error (fail fast) when the named var is missing.
+func TestGitHubAuthToken(t *testing.T) {
+	if tok, err := (GitHubAuth{}).Token(); err != nil || tok != "" {
+		t.Errorf("zero value: tok=%q err=%v, want \"\",nil (ambient login)", tok, err)
+	}
+	t.Setenv("PRB_TEST_GH_TOKEN", "ghp_abc")
+	if tok, err := (GitHubAuth{TokenEnv: "PRB_TEST_GH_TOKEN"}).Token(); err != nil || tok != "ghp_abc" {
+		t.Errorf("TokenEnv: tok=%q err=%v, want ghp_abc,nil", tok, err)
+	}
+	if _, err := (GitHubAuth{TokenEnv: "PRB_DEFINITELY_UNSET_XYZ"}).Token(); err == nil {
+		t.Error("a named env var that is not set should be an error (fail fast)")
+	}
+}
+
 // No channels/ directory means the bot runs the single default channel — today's behavior.
 func TestLoadChannelsNone(t *testing.T) {
 	c := Config{Orgs: []string{"acme"}, Threshold: 80, AutoPost: []string{"low", "medium"}}

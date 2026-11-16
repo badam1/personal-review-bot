@@ -37,6 +37,9 @@ type Deps struct {
 	Channels []config.Channel // the channels this instance runs; empty = just the default channel
 	Router   *config.Router   // routes a repo to its owning channel; nil = the default channel owns everything
 	DataRepo *datarepo.Store  // durable git-backed record of every review's outcome (nil = none; the default)
+	// Clients holds a channel's own GitHub client, by channel name, when it acts under a distinct identity (a token or
+	// a GitHub App installation). A channel absent here (the common case) uses GH, the ambient login.
+	Clients map[string]*gh.Client
 }
 
 // PRStatus is what the store keeps of a PR's state on GitHub.
@@ -118,6 +121,16 @@ func (d Deps) RouteChannel(repo string) (name string, owned bool) {
 	return ch.Name, ok
 }
 
+// clientFor is the GitHub client a review runs under: its channel's own, when that channel acts under a distinct
+// identity, else GH (the ambient login). A nil Clients map or an absent channel both fall back to GH, so a single-
+// identity setup is unchanged.
+func (d Deps) clientFor(r *store.Review) *gh.Client {
+	if c := d.Clients[r.Channel]; c != nil {
+		return c
+	}
+	return d.GH
+}
+
 // skipReview reports whether an automatic one-shot should skip because the data store already holds a record for this
 // PR at this exact head — idempotency for CI retries and duplicate webhook deliveries, which keeps a re-run from
 // posting the same review twice. An explicit human review (source "manual" / "re-request") is never skipped, and with
@@ -164,9 +177,11 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		return fail(fmt.Errorf("channel %q Claude auth: %w", ch.Name, err))
 	}
 	ctx = agents.WithClaudeEnv(ctx, claudeEnv)
+	// And its GitHub identity: the channel's own client when it has one, else the ambient login.
+	ghc := d.clientFor(r)
 
 	stage("fetching PR")
-	pr, err := d.GH.GetPR(r.Repo, r.Number)
+	pr, err := ghc.GetPR(r.Repo, r.Number)
 	if err != nil {
 		return fail(fmt.Errorf("fetch PR: %w", err))
 	}
@@ -181,11 +196,11 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 		return d.Store.Finish(id, store.Ignored, fmt.Sprintf("already reviewed at %.7s", pr.HeadSHA), "", "")
 	}
 
-	files, err := d.GH.Files(r.Repo, r.Number)
+	files, err := ghc.Files(r.Repo, r.Number)
 	if err != nil {
 		return fail(fmt.Errorf("fetch files: %w", err))
 	}
-	diff, err := d.GH.Diff(r.Repo, r.Number)
+	diff, err := ghc.Diff(r.Repo, r.Number)
 	if err != nil {
 		return fail(fmt.Errorf("fetch diff: %w", err))
 	}
@@ -214,7 +229,7 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 	defer ws.Cleanup()
 	in := agents.Input{Repo: r.Repo, Number: r.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Base: pr.BaseRef, Head: pr.HeadRef, Diff: diff, Dir: ws.Dir, HeadSHA: pr.HeadSHA, Effort: plan.Effort,
-		Owner: d.GH.Login, Org: relatedOrg(ch.Orgs, r.Repo)}
+		Owner: ghc.Login, Org: relatedOrg(ch.Orgs, r.Repo)}
 	if prev, err := d.Store.PreviousComplete(r.Repo, r.Number, id); err == nil && prev != nil {
 		in.PrevSHA = prev.HeadSHA
 	}
@@ -229,12 +244,12 @@ func Run(ctx context.Context, d Deps, id int64) (err error) {
 
 	// The discussion so far: intentional choices, answers to earlier comments, what's resolved.
 	stage("reading the conversation")
-	if in.Conversation, err = d.GH.Conversation(r.Repo, r.Number, d.Cfg.Watermark); err != nil {
+	if in.Conversation, err = ghc.Conversation(r.Repo, r.Number, d.Cfg.Watermark); err != nil {
 		d.Log("%s: conversation unavailable: %v", tag, err)
 		in.Conversation = "(could not load the conversation)"
 	}
 	if prior, err := d.Store.PriorFindings(r.Repo, r.Number, id); err == nil {
-		in.Prior = formatPrior(prior, "@"+d.GH.Login)
+		in.Prior = formatPrior(prior, "@"+ghc.Login)
 	}
 
 	// Reviewers in parallel, with the design reviewer on a first review (or one you asked for), and a follow-up check
@@ -757,12 +772,13 @@ func postAuto(d Deps, auto []store.Finding, post func([]store.Finding) (string, 
 // findings whose line is not in the diff go into the review body instead of inline. A reminder is a reply in its
 // finding's thread (reopening it when it was resolved), or, without one, a line in the review body.
 func Post(d Deps, r *store.Review, event string, fs []store.Finding, reminders []Reminder) (string, error) {
+	ghc := d.clientFor(r) // post under the review's channel identity, not necessarily the ambient one
 	body, comments := reviewBody(d.Cfg, fs)
 	section, replies := reminderParts(d.Cfg, reminders)
 	body = append(section, body...)
 	// The approval text is said once per PR: a re-approval after new commits goes without it.
 	if event == "APPROVE" && d.Cfg.ApproveText != "" {
-		said, err := d.GH.ApprovedWith(r.Repo, r.Number, d.Cfg.ApproveText)
+		said, err := ghc.ApprovedWith(r.Repo, r.Number, d.Cfg.ApproveText)
 		if err != nil {
 			d.Log("%s#%d: couldn't read earlier approvals, saying %q anyway: %v", r.Repo, r.Number, d.Cfg.ApproveText, err)
 		}
@@ -770,7 +786,7 @@ func Post(d Deps, r *store.Review, event string, fs []store.Finding, reminders [
 			body = append([]string{d.Cfg.ApproveText}, body...)
 		}
 	}
-	return d.GH.PostReviewWithReplies(r.Repo, r.Number, r.HeadSHA, event, strings.Join(body, "\n\n"), comments, replies)
+	return ghc.PostReviewWithReplies(r.Repo, r.Number, r.HeadSHA, event, strings.Join(body, "\n\n"), comments, replies)
 }
 
 // reminderParts lays the reminders out: replies in their threads, and a section for the review body that lists the
