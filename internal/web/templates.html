@@ -732,7 +732,7 @@
 
       {{if .Runs}}<section class="sect tight" aria-labelledby="how">
         <h2 id="how" class="h2">How it was reviewed</h2>
-        <div class="card list">{{range .Runs}}<div class="item runrow"{{if .Denials}} title="{{plural .Denials "tool call" "tool calls"}} outside its read-only tools (Read, Grep, Glob, gh search code, gh-read, git log/show/diff/blame) were blocked; it carried on with those."{{end}}>
+        <div class="card list">{{range .Runs}}<div class="item runrow"{{if .Denials}} title="{{plural .Denials "tool call" "tool calls"}} outside its read-only tools (Read, Grep and Glob in the checkout, gh search code, gh-read, git-read) were blocked; it carried on with those."{{end}}>
           <div class="itemhead"><b>{{.Agent}}</b><span class="sub">{{.Model}}</span>{{template "run-result" .}}<span class="grow"></span>
             <span class="sub">{{dur .Duration}} · {{.Turns}} turns · {{money .CostUSD}}</span></div>
           {{if .Error}}<p class="bad">{{.Error}}</p>{{else if and .Checked (ne .Agent "design") (ne .Agent "summary")}}<p class="sub">{{ticks .Checked}}</p>{{end}}
