@@ -28,7 +28,7 @@ func (c *captureRT) RoundTrip(r *http.Request) (*http.Response, error) {
 // transport — and learns its own login, so a channel can act under a distinct GitHub identity.
 func TestNewWithTokenAuthenticates(t *testing.T) {
 	rt := &captureRT{body: `{"login":"acme-bot"}`}
-	c, err := newClientWith("ghs_secret123", rt)
+	c, err := newClientWith(clientOpts{token: "ghs_secret123"}, rt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,5 +44,36 @@ func TestNewWithTokenAuthenticates(t *testing.T) {
 func TestNewWithTokenEmpty(t *testing.T) {
 	if _, err := NewWithToken(""); err == nil {
 		t.Error("NewWithToken(\"\") should error")
+	}
+}
+
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// An App-installation client uses the login it was given (it cannot call GET /user), and its auth transport sets the
+// real installation token per request, overriding go-gh's placeholder.
+func TestAppAuthClient(t *testing.T) {
+	rt := &captureRT{body: `{}`}
+	auth := func(base http.RoundTripper) http.RoundTripper {
+		return rtFunc(func(r *http.Request) (*http.Response, error) {
+			r2 := r.Clone(r.Context())
+			r2.Header.Set("Authorization", "token ghs_install")
+			return base.RoundTrip(r2)
+		})
+	}
+	c, err := newClientWith(clientOpts{auth: auth, login: "myapp[bot]"}, rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Login != "myapp[bot]" {
+		t.Errorf("login = %q, want myapp[bot] (used as-is, no GET /user)", c.Login)
+	}
+	var ignore map[string]any
+	if err := c.rest.Get("meta", &ignore); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if rt.auth != "token ghs_install" {
+		t.Errorf("Authorization = %q, want the App installation token (placeholder overridden)", rt.auth)
 	}
 }

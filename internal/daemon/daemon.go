@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/datarepo"
 	"github.com/badam1/personal-review-bot/internal/gh"
+	"github.com/badam1/personal-review-bot/internal/ghapp"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
 	"github.com/badam1/personal-review-bot/internal/update"
@@ -20,25 +22,46 @@ import (
 	"github.com/badam1/personal-review-bot/internal/web"
 )
 
-// channelClients builds the GitHub client each channel acts under. A channel with its own token gets a token client;
-// the rest share the ambient client and are simply left out of the map. It fails fast on a misconfigured channel so a
-// bad token surfaces at startup, not mid-review. Returns nil when every channel uses the ambient login.
-func channelClients(channels []config.Channel, ambient *gh.Client) (map[string]*gh.Client, error) {
+// channelClients builds the GitHub client each channel acts under: a GitHub App installation, its own token, or — the
+// common case — the ambient client (left out of the map). It fails fast on a misconfigured channel so a bad token or
+// App surfaces at startup, not mid-review. Returns nil when every channel uses the ambient login.
+func channelClients(ctx context.Context, channels []config.Channel, ambient *gh.Client, app *ghapp.App) (map[string]*gh.Client, error) {
 	clients := map[string]*gh.Client{}
 	for _, ch := range channels {
-		tok, err := ch.GitHub.Token()
-		if err != nil {
-			return nil, fmt.Errorf("channel %q: %w", ch.Name, err)
+		switch {
+		case ch.GitHub.App != "":
+			if app == nil {
+				return nil, fmt.Errorf("channel %q names a GitHub App installation but GITHUB_APP_ID is not set", ch.Name)
+			}
+			installID, err := strconv.ParseInt(ch.GitHub.App, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("channel %q: GitHub App installation id %q: %w", ch.Name, ch.GitHub.App, err)
+			}
+			login, err := app.Login(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("channel %q github app: %w", ch.Name, err)
+			}
+			c, err := gh.NewWithAuth(app.Transport(installID), login)
+			if err != nil {
+				return nil, fmt.Errorf("channel %q github app client: %w", ch.Name, err)
+			}
+			clients[ch.Name] = c
+			log.Printf("channel %q acts as the GitHub App @%s (installation %d)", ch.Name, login, installID)
+		default:
+			tok, err := ch.GitHub.Token()
+			if err != nil {
+				return nil, fmt.Errorf("channel %q: %w", ch.Name, err)
+			}
+			if tok == "" {
+				continue // ambient login
+			}
+			c, err := gh.NewWithToken(tok)
+			if err != nil {
+				return nil, fmt.Errorf("channel %q github client: %w", ch.Name, err)
+			}
+			clients[ch.Name] = c
+			log.Printf("channel %q acts on GitHub as @%s", ch.Name, c.Login)
 		}
-		if tok == "" {
-			continue // ambient login
-		}
-		c, err := gh.NewWithToken(tok)
-		if err != nil {
-			return nil, fmt.Errorf("channel %q github client: %w", ch.Name, err)
-		}
-		clients[ch.Name] = c
-		log.Printf("channel %q acts on GitHub as @%s", ch.Name, c.Login)
 	}
 	if len(clients) == 0 {
 		return nil, nil
@@ -74,7 +97,17 @@ func Run(ctx context.Context, cfg config.Config) error {
 		}
 		log.Printf("recording review outcomes to %s", cfg.DataRepoDir)
 	}
-	clients, err := channelClients(channels, client)
+	var app *ghapp.App
+	if cfg.GitHubAppID != "" {
+		key, err := os.ReadFile(cfg.GitHubAppKeyFile)
+		if err != nil {
+			return fmt.Errorf("github app key (GITHUB_APP_KEY_FILE): %w", err)
+		}
+		if app, err = ghapp.New(cfg.GitHubAppID, key); err != nil {
+			return fmt.Errorf("github app: %w", err)
+		}
+	}
+	clients, err := channelClients(ctx, channels, client, app)
 	if err != nil {
 		return err
 	}

@@ -39,6 +39,9 @@ type Config struct {
 	CacheDir      string        // repo clones and per-review worktrees
 	ChannelSelect string        // CHANNELS: which of the configured channels this instance runs (empty = all)
 	DataRepoDir   string        // DATA_REPO: a git work tree where durable review records are committed (empty = none)
+	// GitHub App: process-level credentials shared by channels that act as the App (each names its own installation).
+	GitHubAppID      string // GITHUB_APP_ID: the App's id (App ID or client id); empty = no App configured
+	GitHubAppKeyFile string // GITHUB_APP_KEY_FILE: path to the App's private-key PEM
 }
 
 // Load reads the settings. The environment wins over config.env, so a one-off run can override the file.
@@ -56,28 +59,30 @@ func LoadFrom(dir string) Config {
 	home, _ := os.UserHomeDir()
 	s := settings(readEnvFile(filepath.Join(dir, "config.env")))
 	return Config{
-		Orgs:          orgs(s),
-		PollInterval:  time.Duration(s.int("POLL_SECONDS")) * time.Second,
-		Threshold:     s.int("THRESHOLD"),
-		AutoPost:      autoPost(s),
-		ApproveText:   s.str("APPROVE_TEXT", Defaults["APPROVE_TEXT"]),
-		WebAddr:       s.str("ADDR", Defaults["ADDR"]),
-		MaxParallel:   s.int("PARALLEL"),
-		AgentTimeout:  time.Duration(s.int("AGENT_TIMEOUT_MINUTES")) * time.Minute,
-		SaveAt:        s.int("SAVE_AT"),
-		MinAt:         s.int("MIN_AT"),
-		SkipDrafts:    s.str("SKIP_DRAFTS", Defaults["SKIP_DRAFTS"]) == "1",
-		MaxAge:        time.Duration(s.int("MAX_AGE_DAYS")) * 24 * time.Hour,
-		Watermark:     s.str("WATERMARK", Defaults["WATERMARK"]),
-		UpdateCheck:   s.str("UPDATE_CHECK", Defaults["UPDATE_CHECK"]) == "1",
-		UpdateRepo:    s.str("UPDATE_REPO", Defaults["UPDATE_REPO"]),
-		ShowLabels:    list(s.str("SHOW_LABELS", Defaults["SHOW_LABELS"])),
-		LabelsTitle:   strings.TrimSpace(s.str("LABELS_TITLE", Defaults["LABELS_TITLE"])),
-		ConfigDir:     dir,
-		StateDir:      s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
-		CacheDir:      s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),
-		ChannelSelect: s.str("CHANNELS", ""),
-		DataRepoDir:   s.str("DATA_REPO", ""),
+		Orgs:             orgs(s),
+		PollInterval:     time.Duration(s.int("POLL_SECONDS")) * time.Second,
+		Threshold:        s.int("THRESHOLD"),
+		AutoPost:         autoPost(s),
+		ApproveText:      s.str("APPROVE_TEXT", Defaults["APPROVE_TEXT"]),
+		WebAddr:          s.str("ADDR", Defaults["ADDR"]),
+		MaxParallel:      s.int("PARALLEL"),
+		AgentTimeout:     time.Duration(s.int("AGENT_TIMEOUT_MINUTES")) * time.Minute,
+		SaveAt:           s.int("SAVE_AT"),
+		MinAt:            s.int("MIN_AT"),
+		SkipDrafts:       s.str("SKIP_DRAFTS", Defaults["SKIP_DRAFTS"]) == "1",
+		MaxAge:           time.Duration(s.int("MAX_AGE_DAYS")) * 24 * time.Hour,
+		Watermark:        s.str("WATERMARK", Defaults["WATERMARK"]),
+		UpdateCheck:      s.str("UPDATE_CHECK", Defaults["UPDATE_CHECK"]) == "1",
+		UpdateRepo:       s.str("UPDATE_REPO", Defaults["UPDATE_REPO"]),
+		ShowLabels:       list(s.str("SHOW_LABELS", Defaults["SHOW_LABELS"])),
+		LabelsTitle:      strings.TrimSpace(s.str("LABELS_TITLE", Defaults["LABELS_TITLE"])),
+		ConfigDir:        dir,
+		StateDir:         s.str("STATE_DIR", filepath.Join(xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state")), "personal-review-bot")),
+		CacheDir:         s.str("CACHE_DIR", filepath.Join(xdg("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "personal-review-bot")),
+		ChannelSelect:    s.str("CHANNELS", ""),
+		DataRepoDir:      s.str("DATA_REPO", ""),
+		GitHubAppID:      s.str("GITHUB_APP_ID", ""),
+		GitHubAppKeyFile: s.str("GITHUB_APP_KEY_FILE", ""),
 	}
 }
 

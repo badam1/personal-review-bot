@@ -1,15 +1,41 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/badam1/personal-review-bot/internal/config"
 	"github.com/badam1/personal-review-bot/internal/gh"
 	"github.com/badam1/personal-review-bot/internal/pipeline"
 	"github.com/badam1/personal-review-bot/internal/store"
 )
+
+// channelClients maps only the channels that act under a distinct identity; the rest use the ambient client and are
+// left out. It fails fast on misconfiguration before any network call. (The happy paths that reach GitHub — a token
+// client's GET /user, an App's identity lookup — are covered in the gh and ghapp packages.)
+func TestChannelClients(t *testing.T) {
+	ambient := &gh.Client{Login: "ambient"}
+	ctx := context.Background()
+
+	// Every channel on the ambient login: nothing to map.
+	m, err := channelClients(ctx, []config.Channel{{Name: "default"}, {Name: "other"}}, ambient, nil)
+	if err != nil || m != nil {
+		t.Errorf("all-ambient: map=%v err=%v, want nil,nil", m, err)
+	}
+
+	// A channel names an App installation, but no App is configured.
+	if _, err := channelClients(ctx, []config.Channel{{Name: "c", GitHub: config.GitHubAuth{App: "123"}}}, ambient, nil); err == nil {
+		t.Error("App installation without GITHUB_APP_ID should error")
+	}
+
+	// A channel's token env var is not set.
+	if _, err := channelClients(ctx, []config.Channel{{Name: "c", GitHub: config.GitHubAuth{TokenEnv: "PRB_DEFINITELY_UNSET_XYZ"}}}, ambient, nil); err == nil {
+		t.Error("an unset token env var should error")
+	}
+}
 
 // Only a PR nobody has touched for maxAge is skipped, however long ago it was opened.
 func TestIdle(t *testing.T) {
