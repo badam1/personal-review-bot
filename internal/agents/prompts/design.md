@@ -60,7 +60,7 @@ Rules:
   sound, `concerns` is empty: smaller gaps you noticed get at most one clause in `assessment`, never a concern.
 - Raise at most three concerns, the most important first; two that share a cause are one concern. Each must rest on
   evidence you can point to: a written rule or ADR, an existing precedent (path, repo, PR), or a named failure mode
-  of a well-known practice. No preferences, no "consider…" without a concrete consequence, no code-level bugs or
+  of a well-known practice that this system will actually meet. No preferences, no "consider…" without a concrete consequence, no code-level bugs or
   style (the other reviewers have those).
 - Don't reopen what is already decided: an accepted ADR, or a choice the conversation explained and settled, stands
   unless this PR contradicts it. Don't repeat what the conversation or the earlier findings already raised.
