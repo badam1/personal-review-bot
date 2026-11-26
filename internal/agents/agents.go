@@ -473,7 +473,8 @@ var readOnly = []string{"--permission-mode", "default",
 
 // ghRead is the gh-read command the runs find first on their PATH: one GET of the GitHub API. It takes exactly one
 // argument, refuses one that is a flag or another host, and passes it after "--", where gh can only take it for the
-// endpoint, so no form of the call can change the method or add a body.
+// endpoint, so no form of the call can change the method or add a body. A file under contents/ comes back as its
+// text: the JSON form holds it in base64, which a reviewer can't decode without a pipe.
 const ghRead = `#!/bin/sh
 # gh-read: a GET of the GitHub API and nothing else, for personal-review-bot's reviewers.
 if [ "$#" -ne 1 ]; then
@@ -482,6 +483,7 @@ if [ "$#" -ne 1 ]; then
 fi
 case "$1" in
   -*|*://*) echo "gh-read: not an API endpoint: $1" >&2; exit 2 ;;
+  repos/*/contents/*) exec gh api --method GET -H 'Accept: application/vnd.github.raw' -- "$1" ;;
 esac
 exec gh api --method GET -- "$1"
 `
