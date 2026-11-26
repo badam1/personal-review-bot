@@ -520,8 +520,8 @@ func TestCheckForUpdates(t *testing.T) {
 	}
 }
 
-// Still-open earlier findings can be reminded of: unanswered ones start ticked, a reply or a reminder at this commit
-// unticks one, a resolved thread is reopened, and the ticked ones go out with the review you post.
+// Still-open earlier findings can be reminded of: unanswered ones start ticked, a reply or an earlier reminder, even
+// at an older commit, unticks one, a resolved thread is reopened, and the ticked ones go out with the review you post.
 func TestReminders(t *testing.T) {
 	s := newSite(t)
 	s.srv.d.Cfg.Watermark = "🤖 acme-bot"
@@ -540,7 +540,7 @@ func TestReminders(t *testing.T) {
 	design := add("second release path", "design", "", false, store.FollowOpen, "")
 	reminded := add("log level", "logic", "e.go", true, store.FollowOpen, "e.go:7 unchanged.")
 	_ = add("nil map", "logic", "f.go", true, store.FollowFixed, "Fixed in bbb.")
-	_ = s.st.SetReminded(reminded, "aaa")
+	_ = s.st.SetReminded(reminded, "zzz")
 
 	thread := func(id, path, finding string, resolved bool, replies ...gh.ThreadComment) gh.Thread {
 		first := gh.ThreadComment{Author: "octocat", Body: "The " + finding + " is wrong.\n\n<sub>🤖 acme-bot · 91%</sub>"}
@@ -565,7 +565,7 @@ func TestReminders(t *testing.T) {
 	}
 	want(t, page, `<form id="decide"`, "Still open at `aaa`: a.go:9 still returns nil.", "Only partly fixed at `aaa`:",
 		"Last reply: @dev: Doing it in a follow-up PR.", "resolved: reminding reopens it", "in the review body",
-		"you reminded the author at aaa", "Nothing new found, but 5 earlier finding(s) are still open", `value="post"`,
+		"you reminded the author at zzz", "Nothing new found, but 5 earlier finding(s) are still open", `value="post"`,
 		`</svg>View comment<svg class="ext"`, `title="The review that checked this finding">Later review<svg`)
 	if strings.Contains(page, fmt.Sprintf(`name="rm_%d"`, quiet+5)) {
 		t.Error("a fixed finding can't be reminded of")
@@ -604,7 +604,7 @@ func TestReminders(t *testing.T) {
 	}
 	earlier, _ := s.st.EarlierPosted("acme/infra", 30, again)
 	for _, f := range earlier {
-		if want := f.ID == quiet || f.ID == resolved || f.ID == design || f.ID == reminded; (f.RemindedSHA == "aaa") != want {
+		if want := f.ID == quiet || f.ID == resolved || f.ID == design; (f.RemindedSHA == "aaa") != want {
 			t.Errorf("finding %d (%s) reminded at %q", f.ID, f.Title, f.RemindedSHA)
 		}
 	}

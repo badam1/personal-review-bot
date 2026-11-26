@@ -289,7 +289,7 @@ type earlierView struct {
 
 type reminderView struct {
 	Text     string // what the reminder says; you can edit it
-	Ticked   bool   // nobody answered its thread, and it wasn't reminded at this commit yet
+	Ticked   bool   // nobody answered its thread, and you haven't reminded the author of it yet
 	Thread   bool   // it goes as a reply in the finding's thread, else as a line in the review body
 	Resolved bool   // the thread is resolved: reminding reopens it
 	Answer   string // the latest reply by someone else, e.g. "@dev: done in a follow-up PR"
@@ -800,7 +800,7 @@ func posted(findings, reminders int) string {
 
 // reminder is what the page offers for a still-open earlier finding: its thread's state and the text to post.
 func (s *server) reminder(rev *store.Review, f store.Finding, threads []gh.Thread) *reminderView {
-	rm := &reminderView{Text: pipeline.ReminderText(f, rev.HeadSHA), Ticked: f.RemindedSHA != rev.HeadSHA}
+	rm := &reminderView{Text: pipeline.ReminderText(f, rev.HeadSHA), Ticked: f.RemindedSHA == ""}
 	if t, ok := pipeline.MatchThread(f, threads, s.login, s.cfg().Watermark); ok {
 		rm.Thread, rm.Resolved = true, t.Resolved
 		if a, ok := pipeline.Answer(t, s.login); ok {
