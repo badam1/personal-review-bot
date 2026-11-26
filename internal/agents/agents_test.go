@@ -192,7 +192,7 @@ func TestReadOnlyTools(t *testing.T) {
 }
 
 // gh-read passes one endpoint to gh as a GET, after "--", and refuses anything else: a second argument, a flag
-// (attached or not), another host. A fake gh records what reaches it.
+// (attached or not), another host. A file's contents are asked for as text. A fake gh records what reaches it.
 func TestGhRead(t *testing.T) {
 	bin, err := commandDir()
 	if err != nil {
@@ -225,7 +225,8 @@ func TestGhRead(t *testing.T) {
 		}
 	}
 	calls, _ := os.ReadFile(log)
-	want := "api|--method|GET|--|repos/o/r/contents/go.mod|\napi|--method|GET|--|repos/o/r/labels -fname=x|\n"
+	want := "api|--method|GET|-H|Accept: application/vnd.github.raw|--|repos/o/r/contents/go.mod|\n" +
+		"api|--method|GET|--|repos/o/r/labels -fname=x|\n"
 	if string(calls) != want {
 		t.Errorf("gh received:\n%s\nwant:\n%s", calls, want)
 	}
