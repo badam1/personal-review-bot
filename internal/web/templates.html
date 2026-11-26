@@ -674,7 +674,7 @@
           </div>{{end}}{{end}}
         </div>
         {{with .ThreadsErr}}<div class="callout bad">Couldn't read the PR's review threads, so reminders go in the review body: {{.}}</div>{{end}}
-        {{if .Reminders}}<p class="fine">Ticked reminders go out with the review you post, as one notification. Unanswered ones start ticked.</p>{{end}}
+        {{if .Reminders}}<p class="fine">Ticked reminders go out with the review you post, as one notification. Unanswered ones start ticked until you've reminded the author once.</p>{{end}}
         {{if .OpenHigh}}<div class="callout warn">{{.OpenHigh}} high-severity finding(s) posted earlier are still open. Approving asks once more.</div>{{end}}
       </section>{{end}}
 
